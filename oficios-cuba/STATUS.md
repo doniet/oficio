@@ -58,3 +58,13 @@
 - Security: sin cambios de red/Traefik/túnel. Único error de consola: la CSP bloquea el beacon de CF Web Analytics (pendiente de decidir, ver entrada 06:10).
 - Next: queda en `data/uploads/` un PNG de prueba de 72 bytes de la verificación (del proveedor demo, sin usar). Pendientes menores en la entrada de las 07:00.
 - Blockers: ninguno.
+
+## 2026-09-25 11:00 UTC — cc-jarvis-ubuntu — Apps móviles, Parte 1 (rama feat/apps-moviles, sin mergear)
+- Changes: plan `docs/superpowers/plans/2026-09-25-apps-moviles-parte-1-fundacion-y-push.md` ejecutado con subagentes (implementador + revisor por tarea, revisión final de rama). Tasks 1–6, 8, 9 hechas:
+  - `shared/` (@oficio/shared): tipos, formato, validación zod, cliente API sobre fetch.
+  - `mobile/` (Expo SDK 57 + expo-router): sesión en SecureStore, entrar/registro, inicio, servicio → solicitud → chat con sondeo, iconos, aviso "sin conexión" con reintentar, estado del push en Cuenta, registro de push con token FCM nativo (refresco, borrado al salir, abrir chat al tocar).
+  - `backend/`: `push_devices` (migración v3), POST/DELETE `/api/push/devices`, avisos de solicitud/mensaje sin el texto del mensaje, canal FCM HTTP v1 directo, script `push-prueba`; la API arranca aunque falten las credenciales FCM.
+- Tests: pass — shared 15/15, backend 48/48, mobile 27/27, tsc limpio en los tres; `expo export` android OK; flujo verificado en emulador (capturas en el workspace de SDD). Mutaciones en cada arreglo importante.
+- Security: el DELETE de dispositivos borra por token para cualquier usuario autenticado (decisión documentada); cambiar la contraseña borra los dispositivos push del usuario; `.gitignore` cubre `secrets/`, `google-services.json`, `*firebase-adminsdk*.json`.
+- Next: Task 7 (Dariel/Doniet: proyecto Firebase "oficios-cuba" + google-services.json + clave de cuenta de servicio), Task 10 (push de punta a punta en emulador con Google Play), Task 11 (🚨 OK de Dariel: salida a internet para `oficio_api`; deploy; APK de prueba; protocolo en Cuba). Merge de la rama a master pendiente de decisión.
+- Blockers: credenciales de Firebase y OK de Dariel para la salida de red.
