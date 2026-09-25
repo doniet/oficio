@@ -1,223 +1,191 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { serviceApi, categoryApi } from '../../services/api';
-import { useAuth } from '../../hooks/useAuth';
-import { providerApi } from '../../services/api';
-import type { Service, Category } from '../../types';
-import { Plus, Edit, Trash2, Eye, ToggleLeft, ToggleRight, Loader2, Building2, Search, Filter, ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Briefcase, Eye, EyeOff, ExternalLink, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { apiError, serviceApi } from '../../services/api';
+import type { Plan, ServiceSummary } from '../../types';
+import { formatPrice, planLabel, relativeTime } from '../../lib/format';
+import { PageTitle } from '../../components/DashboardLayout';
+import { EmptyState, ErrorState, RatingInline, Spinner, cn } from '../../components/ui';
+import { ConfirmDialog, ServiceThumb } from './parts';
 
 export default function MyServices() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [services, setServices] = useState<Service[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const toast = useToast();
+  const [services, setServices] = useState<ServiceSummary[]>([]);
+  const [plan, setPlan] = useState<Plan>('free');
+  const [max, setMax] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [providerId, setProviderId] = useState<string>('');
+  const [error, setError] = useState('');
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<ServiceSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (user?.user_type !== 'provider') return;
-
-    const fetchData = async () => {
-      try {
-        const [providerRes, servicesRes, categoriesRes] = await Promise.all([
-          providerApi.getMyProfile(),
-          serviceApi.getAll({ provider_id: '', page: 1, limit: 50 }),
-          categoryApi.getFlat(),
-        ]);
-        setProviderId(providerRes.data.provider.id);
-        setServices(servicesRes.data.services);
-        setCategories(categoriesRes.data.categories);
-      } catch (error) {
-        console.error('Error fetching services:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [user]);
-
-  const handleToggle = async (service: Service) => {
-    setTogglingId(service.id);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      await serviceApi.toggle(service.id);
-      setServices(prev => prev.map(s => s.id === service.id ? { ...s, is_active: !s.is_active } : s));
-    } catch (error) {
-      console.error('Error toggling service:', error);
-      alert('Error al cambiar el estado');
+      const res = await serviceApi.mine();
+      setServices(res.data.services);
+      setPlan(res.data.plan);
+      setMax(res.data.max_services);
+    } catch (err) {
+      setError(apiError(err, 'No se pudieron cargar tus servicios.'));
     } finally {
-      setTogglingId(null);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (s: ServiceSummary) => {
+    setToggling(s.id);
+    try {
+      const res = await serviceApi.toggle(s.id);
+      setServices((list) => list.map((x) => (x.id === s.id ? { ...x, is_active: res.data.is_active } : x)));
+      toast(res.data.is_active ? 'Servicio visible de nuevo' : 'Servicio pausado: ya no aparece en las búsquedas');
+    } catch (err) {
+      toast(apiError(err, 'No se pudo cambiar el estado.'), 'error');
+    } finally {
+      setToggling(null);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este servicio? Esta acción no se puede deshacer.')) return;
-    
-    setDeletingId(id);
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
     try {
-      await serviceApi.delete(id);
-      setServices(prev => prev.filter(s => s.id !== id));
-    } catch (error) {
-      console.error('Error deleting service:', error);
-      alert('Error al eliminar el servicio');
+      await serviceApi.delete(toDelete.id);
+      setServices((list) => list.filter((x) => x.id !== toDelete.id));
+      toast('Servicio eliminado');
+      setToDelete(null);
+    } catch (err) {
+      toast(apiError(err, 'No se pudo eliminar el servicio.'), 'error');
     } finally {
-      setDeletingId(null);
+      setDeleting(false);
     }
   };
 
-  const getCategoryName = (categoryId: string) => {
-    const cat = categories.find(c => c.id === categoryId);
-    return cat?.name || 'Sin categoría';
-  };
+  // El límite del plan cuenta también los servicios pausados (así lo valida el servidor).
+  const atLimit = max !== null && services.length >= max;
 
-  const getCategoryIcon = (categoryId: string) => {
-    const cat = categories.find(c => c.id === categoryId);
-    return cat?.icon || '🔧';
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
+  const newButton = atLimit ? (
+    <Link to="/dashboard/suscripcion" className="btn-primary"><Sparkles className="h-4 w-4" /> Mejorar plan</Link>
+  ) : (
+    <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Mis Servicios</h1>
-            <p className="text-gray-600 mt-1">Gestiona y publica tus servicios profesionales</p>
-          </div>
-          <Link to="/dashboard/servicios/nuevo" className="btn-primary gap-2">
-            <Plus className="w-5 h-5" />
-            Nuevo servicio
-          </Link>
-        </div>
+    <div>
+      <PageTitle title="Mis servicios" subtitle="Lo que ofreces y cómo lo ven tus clientes." action={!loading && !error && newButton} />
 
-        {services.length === 0 ? (
-          <div className="card p-12 text-center">
-            <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">No tienes servicios publicados</h2>
-            <p className="text-gray-500 mb-6 max-w-md mx-auto">
-              Crea tu primer servicio para empezar a aparecer en las búsquedas de clientes en tu zona.
-            </p>
-            <Link to="/dashboard/servicios/nuevo" className="btn-primary inline-flex gap-2">
-              <Plus className="w-5 h-5" />
-              Crear mi primer servicio
-            </Link>
-          </div>
-        ) : (
-          <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Servicio</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {services.map((service) => (
-                    <tr key={service.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center">
-                            <span className="text-lg">{getCategoryIcon(service.category_id)}</span>
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{service.title}</p>
-                            <p className="text-sm text-gray-500 truncate max-w-xs">{service.description}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="badge bg-primary-100 text-primary-800">{getCategoryName(service.category_id)}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium text-gray-900">
-                          {service.price_type === 'negotiable' ? (
-                            'Negociable'
-                          ) : service.price_min && service.price_max && service.price_min !== service.price_max ? (
-                            `$${service.price_min} - $${service.price_max}`
-                          ) : (
-                            `$${service.price_min || service.price_max}`
-                          )}
-                          {service.price_type !== 'negotiable' && service.price_type !== 'fixed' && (
-                            <span className="text-sm text-gray-500 ml-1">/{service.price_type === 'hourly' ? 'h' : 'día'}</span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => handleToggle(service)}
-                          disabled={togglingId === service.id}
-                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors ${
-                            service.is_active
-                              ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                          }`}
-                        >
-                          {togglingId === service.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : service.is_active ? (
-                            <>
-                              <ToggleRight className="w-4 h-4" />
-                              Activo
-                            </>
-                          ) : (
-                            <>
-                              <ToggleLeft className="w-4 h-4" />
-                              Inactivo
-                            </>
-                          )}
-                        </button>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            to={`/servicio/${service.id}`}
-                            target="_blank"
-                            className="btn-secondary p-2 hover:bg-primary-50 hover:border-primary-300 hover:text-primary-700"
-                            title="Ver público"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Link>
-                          <Link
-                            to={`/dashboard/servicios/${service.id}/editar`}
-                            className="btn-secondary p-2"
-                            title="Editar"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Link>
-                          <button
-                            onClick={() => handleDelete(service.id)}
-                            disabled={deletingId === service.id}
-                            className="btn-secondary p-2 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
-                            title="Eliminar"
-                          >
-                            {deletingId === service.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {loading ? (
+        <div className="card divide-y divide-sand-200">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-4 p-4">
+              <div className="skeleton h-16 w-20 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <div className="skeleton h-4 w-3/5" />
+                <div className="skeleton h-3.5 w-2/5" />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : (
+        <div className="space-y-4">
+          {max !== null && (
+            <div className={cn('flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between',
+              atLimit ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-sand-200 bg-white text-ink-600')}
+            >
+              <div className="flex-1">
+                <p>
+                  Plan <strong>{planLabel[plan]}</strong>: usas <strong>{services.length} de {max}</strong> {max === 1 ? 'servicio' : 'servicios'}.
+                  {atLimit && ' Para publicar otro, mejora tu plan o elimina uno existente.'}
+                </p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand-200" aria-hidden="true">
+                  <div className={cn('h-full rounded-full', atLimit ? 'bg-amber-500' : 'bg-sea-500')} style={{ width: `${Math.min(100, (services.length / max) * 100)}%` }} />
+                </div>
+              </div>
+              {!atLimit && <Link to="/dashboard/suscripcion" className="link shrink-0">Ver planes</Link>}
+            </div>
+          )}
+
+          {services.length === 0 ? (
+            <EmptyState
+              icon={<Briefcase className="h-6 w-6" />}
+              title="Publica tu primer servicio"
+              action={<Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>}
+            >
+              Describe lo que haces, añade fotos de tus trabajos y un precio orientativo. Así te encuentran los clientes.
+            </EmptyState>
+          ) : (
+            <ul className="card divide-y divide-sand-200 overflow-hidden">
+              {services.map((s) => (
+                <li key={s.id} className={cn('flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 sm:px-5', !s.is_active && 'bg-sand-50')}>
+                  <Link to={`/dashboard/servicios/${s.id}/editar`} className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+                    <ServiceThumb src={s.cover} icon={s.category_icon} className={cn('h-16 w-20', !s.is_active && 'opacity-60')} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={cn('badge', s.is_active ? 'bg-sea-100 text-sea-800' : 'bg-sand-200 text-ink-500')}>
+                          {s.is_active ? 'Activo' : 'Pausado'}
+                        </span>
+                        <span className="truncate text-xs text-ink-400">{s.category_icon} {s.category_name}</span>
+                      </div>
+                      <p className="mt-1 truncate font-semibold text-ink-900">{s.title}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-ink-500">
+                        <span className="font-semibold text-ink-700">{formatPrice(s)}</span>
+                        <RatingInline rating={s.rating} count={s.review_count} className="text-xs" />
+                        <span>Publicado {relativeTime(s.created_at)}</span>
+                      </p>
+                    </div>
+                  </Link>
+                  <div className="flex shrink-0 items-center gap-1 border-t border-sand-200 pt-2 sm:border-0 sm:pt-0">
+                    <button
+                      type="button"
+                      onClick={() => toggle(s)}
+                      disabled={toggling === s.id}
+                      className="btn-ghost btn-sm flex-1 sm:flex-none"
+                      aria-label={s.is_active ? `Pausar ${s.title}` : `Activar ${s.title}`}
+                    >
+                      {toggling === s.id ? <Spinner className="h-4 w-4" /> : s.is_active ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      <span>{s.is_active ? 'Pausar' : 'Activar'}</span>
+                    </button>
+                    {s.is_active && (
+                      <Link to={`/servicio/${s.id}`} className="btn-ghost btn-sm flex-1 sm:flex-none" aria-label={`Ver ${s.title} como cliente`}>
+                        <ExternalLink className="h-4 w-4" /> <span className="sm:sr-only">Ver</span>
+                      </Link>
+                    )}
+                    <Link to={`/dashboard/servicios/${s.id}/editar`} className="btn-ghost btn-sm flex-1 sm:flex-none" aria-label={`Editar ${s.title}`}>
+                      <Pencil className="h-4 w-4" /> <span className="sm:sr-only">Editar</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setToDelete(s)}
+                      className="btn-ghost btn-sm flex-1 text-red-600 hover:bg-red-50 hover:text-red-700 sm:flex-none"
+                      aria-label={`Eliminar ${s.title}`}
+                    >
+                      <Trash2 className="h-4 w-4" /> <span className="sm:sr-only">Eliminar</span>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(toDelete)}
+        title="¿Eliminar este servicio?"
+        confirmLabel="Eliminar"
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onClose={() => setToDelete(null)}
+      >
+        Vas a eliminar <strong className="text-ink-900">{toDelete?.title}</strong>. Esta acción no se puede deshacer.
+        Si solo quieres ocultarlo un tiempo, usa <strong>Pausar</strong>.
+      </ConfirmDialog>
     </div>
   );
-  }
+}

@@ -1,192 +1,48 @@
-import { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, X, CheckCircle, Search } from 'lucide-react';
-import type { Province, Municipality } from '../types';
+import 'leaflet/dist/leaflet.css';
+import { ChevronLeft, Check, LocateFixed, MapPin, Search } from 'lucide-react';
+import type { Municipality, Province } from '../types';
+import { Spinner, cn } from './ui';
 
-const CubaBounds: [[number, number], [number, number]] = [[19.8, -85.0], [23.5, -74.0]];
-const CubaCenter: [number, number] = [21.5, -79.5];
+const CUBA_CENTER: [number, number] = [21.6, -79.6];
+const CUBA_BOUNDS: L.LatLngBoundsExpression = [[19.5, -85.3], [23.6, -73.9]];
 
-const provinceCenters: Record<string, [number, number]> = {
-  'Pinar del Río': [22.4123, -83.6919],
-  'Artemisa': [22.8136, -82.7633],
-  'La Habana': [23.1136, -82.3666],
-  'Mayabeque': [22.9583, -82.1542],
-  'Matanzas': [23.0494, -81.5736],
-  'Cienfuegos': [22.1456, -80.4364],
-  'Villa Clara': [22.4067, -79.9647],
-  'Sancti Spíritus': [21.9339, -79.4433],
-  'Ciego de Ávila': [21.8408, -78.7633],
-  'Camagüey': [21.3814, -77.9167],
-  'Las Tunas': [20.9611, -76.9517],
-  'Granma': [20.3789, -76.6453],
-  'Holguín': [20.8870, -76.2636],
-  'Santiago de Cuba': [20.0217, -75.8294],
-  'Guantánamo': [20.1411, -75.2092],
-  'Isla de la Juventud': [21.8333, -82.7833],
-};
-
-const provinceColors: Record<string, string> = {
-  'Pinar del Río': '#1e40af',
-  'Artemisa': '#047857',
-  'La Habana': '#dc2626',
-  'Mayabeque': '#7c3aed',
-  'Matanzas': '#ea580c',
-  'Cienfuegos': '#0891b2',
-  'Villa Clara': '#65a30d',
-  'Sancti Spíritus': '#db2777',
-  'Ciego de Ávila': '#c2410c',
-  'Camagüey': '#4338ca',
-  'Las Tunas': '#e11d48',
-  'Granma': '#059669',
-  'Holguín': '#d97706',
-  'Santiago de Cuba': '#9333ea',
-  'Guantánamo': '#0d9488',
-  'Isla de la Juventud': '#475569',
-};
-
-function MapEvents({
-  selectedProvince,
-  setSelectedProvince,
-  selectedMunicipality,
-  setSelectedMunicipality,
-  municipalities,
-}: {
-  selectedProvince: Province | null;
-  setSelectedProvince: (province: Province | null) => void;
-  selectedMunicipality: Municipality | null;
-  setSelectedMunicipality: (municipality: Municipality | null) => void;
-  municipalities: Municipality[];
-}) {
-  const map = useMapEvents({
-    click(e) {
-      if (!selectedProvince) return;
-      const { lat, lng } = e.latlng;
-      const closest = municipalities.reduce((closest, muni) => {
-        const dist = Math.hypot(muni.lat - lat, muni.lng - lng);
-        const closestDist = Math.hypot(closest.lat - lat, closest.lng - lng);
-        return dist < closestDist ? muni : closest;
-      }, municipalities[0]);
-      if (closest) {
-        setSelectedMunicipality(closest);
-      }
-    },
+function pinIcon(label: string, active: boolean, small = false) {
+  const size = small ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  return L.divIcon({
+    className: 'map-pin',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    html: `<span title="${label.replace(/"/g, '')}" class="flex h-6 w-6 items-center justify-center">
+      <span class="${size} block rounded-full border-2 border-white shadow ${active ? 'bg-brand-600 ring-4 ring-brand-500/30' : 'bg-ink-900'}"></span>
+    </span>`,
   });
+}
 
+function MapView({ province }: { province: Province | null }) {
+  const map = useMap();
   useEffect(() => {
-    if (selectedProvince) {
-      const center = provinceCenters[selectedProvince.name] || CubaCenter;
-      map.setView(center, selectedProvince.zoom || 9);
-    } else {
-      map.fitBounds(CubaBounds);
-    }
-  }, [selectedProvince, map]);
-
+    if (province) map.flyTo([province.lat, province.lng], Math.max(province.zoom, 9), { duration: 0.6 });
+    else map.flyTo(CUBA_CENTER, 6, { duration: 0.6 });
+  }, [province, map]);
   return null;
 }
 
-function ProvinceMarker({ province, isSelected, onClick }: { province: Province; isSelected: boolean; onClick: () => void }) {
-  const color = provinceColors[province.name] || '#0ea5e9';
-  const icon = L.divIcon({
-    className: 'custom-marker',
-    html: `
-      <div style="
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: ${color};
-        border: 3px solid white;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: transform 0.2s;
-      " onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-          <circle cx="12" cy="10" r="3"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  });
+const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-  return (
-    <Marker position={[province.lat, province.lng]} icon={icon} onClick={onClick}>
-      <Popup>
-        <div className="p-2 min-w-[180px]">
-          <h3 className="font-semibold text-gray-900">{province.name}</h3>
-          <p className="text-sm text-gray-500">Capital: {province.capital}</p>
-          <button
-            onClick={onClick}
-            className={`mt-2 w-full py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              isSelected ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'
-            }`}
-          >
-            {isSelected ? 'Seleccionada ✓' : 'Seleccionar provincia'}
-          </button>
-        </div>
-      </Popup>
-    </Marker>
-  );
+function nearest<T extends { lat: number; lng: number }>(items: T[], lat: number, lng: number): T | null {
+  let best: T | null = null;
+  let bestD = Infinity;
+  for (const it of items) {
+    const d = (it.lat - lat) ** 2 + ((it.lng - lng) * Math.cos((lat * Math.PI) / 180)) ** 2;
+    if (d < bestD) { bestD = d; best = it; }
+  }
+  return best;
 }
 
-function MunicipalityMarker({ municipality, isSelected, onClick }: { municipality: Municipality; isSelected: boolean; onClick: () => void }) {
-  const icon = L.divIcon({
-    className: 'custom-marker',
-    html: `
-      <div style="
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        background: #0ea5e9;
-        border: 2px solid white;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-      ">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="5"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
-
-  return (
-    <Marker position={[municipality.lat, municipality.lng]} icon={icon} onClick={onClick}>
-      <Popup>
-        <div className="p-2 min-w-[160px]">
-          <h3 className="font-semibold text-gray-900">{municipality.name}</h3>
-          <button
-            onClick={onClick}
-            className={`mt-2 w-full py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              isSelected ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'
-            }`}
-          >
-            {isSelected ? 'Seleccionado ✓' : 'Seleccionar municipio'}
-          </button>
-        </div>
-      </Popup>
-    </Marker>
-  );
-}
-
-export default function ProvinceMapSelector({
-  provinces,
-  municipalities,
-  selectedProvince,
-  setSelectedProvince,
-  selectedMunicipality,
-  setSelectedMunicipality,
-  onConfirm,
-  className = '',
-}: {
+interface Props {
   provinces: Province[];
   municipalities: Municipality[];
   selectedProvince: Province | null;
@@ -195,247 +51,181 @@ export default function ProvinceMapSelector({
   setSelectedMunicipality: (municipality: Municipality | null) => void;
   onConfirm?: () => void;
   className?: string;
-}) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const mapRef = useRef<L.Map | null>(null);
+}
 
-  const filteredProvinces = provinces.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+export default function ProvinceMapSelector({
+  provinces, municipalities, selectedProvince, setSelectedProvince, selectedMunicipality, setSelectedMunicipality, onConfirm, className = '',
+}: Props) {
+  const [query, setQuery] = useState('');
+  const [locating, setLocating] = useState(false);
+  const [geoError, setGeoError] = useState('');
+  // La ubicación se resuelve en local contra las coordenadas conocidas: no se envía a ningún servicio externo.
+  const pendingCoords = useRef<{ lat: number; lng: number } | null>(null);
 
-  const filteredMunicipalities = municipalities.filter((m) =>
-    m.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    const coords = pendingCoords.current;
+    if (!coords || !municipalities.length) return;
+    pendingCoords.current = null;
+    const m = nearest(municipalities, coords.lat, coords.lng);
+    if (m) setSelectedMunicipality(m);
+  }, [municipalities, setSelectedMunicipality]);
 
-  const handleProvinceClick = (province: Province) => {
-    setSelectedProvince(province);
+  useEffect(() => setQuery(''), [selectedProvince?.id]);
+
+  const listing = selectedProvince ? municipalities : provinces;
+  const filtered = useMemo(() => {
+    const q = normalize(query.trim());
+    return q ? listing.filter((x) => normalize(x.name).includes(q)) : listing;
+  }, [listing, query]);
+
+  const pickProvince = (p: Province | null) => {
+    setSelectedProvince(p);
     setSelectedMunicipality(null);
-    setSearchQuery('');
   };
 
-  const handleMunicipalityClick = (municipality: Municipality) => {
-    setSelectedMunicipality(municipality);
-  };
-
-  const handleConfirm = () => {
-    if (selectedProvince) {
-      onConfirm?.();
-    }
-  };
-
-  const handleLocate = async () => {
+  const locate = () => {
+    setGeoError('');
     if (!navigator.geolocation) {
-      alert('Geolocalización no soportada');
+      setGeoError('Tu navegador no permite obtener la ubicación.');
       return;
     }
-
+    setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        if (mapRef.current) {
-          mapRef.current.setView([latitude, longitude], 12);
-        }
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=es`,
-            { headers: { 'User-Agent': 'OficiosCuba/1.0' } }
-          );
-          const data = await response.json();
-          const provinceName = data.address?.state || data.address?.province || data.address?.region;
-          if (provinceName) {
-            const province = provinces.find((p) => p.name.includes(provinceName) || provinceName.includes(p.name));
-            if (province) {
-              setSelectedProvince(province);
-              setSelectedMunicipality(null);
-            }
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
+      ({ coords }) => {
+        setLocating(false);
+        const p = nearest(provinces, coords.latitude, coords.longitude);
+        if (!p) return;
+        pendingCoords.current = { lat: coords.latitude, lng: coords.longitude };
+        if (p.id === selectedProvince?.id) {
+          const m = nearest(municipalities, coords.latitude, coords.longitude);
+          if (m) setSelectedMunicipality(m);
+          pendingCoords.current = null;
+        } else {
+          pickProvince(p);
         }
       },
-      (error) => {
-        alert('No se pudo obtener la ubicación: ' + error.message);
-      }
+      () => {
+        setLocating(false);
+        setGeoError('No pudimos obtener tu ubicación. Elige la provincia en la lista.');
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 },
     );
   };
 
   return (
-    <div className={`relative ${className}`}>
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={selectedProvince ? 'Buscar municipio...' : 'Buscar provincia...'}
-            className="w-full pl-10 pr-4 py-2 bg-white/95 backdrop-blur-sm rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+    <div className={cn('grid overflow-hidden rounded-2xl border border-sand-200 bg-white md:grid-cols-[1fr_17rem]', className)}>
+      <div className="relative h-64 md:h-[26rem]">
+        <MapContainer
+          center={CUBA_CENTER}
+          zoom={6}
+          minZoom={5}
+          maxBounds={CUBA_BOUNDS}
+          scrollWheelZoom={false}
+          className="h-full w-full"
+          attributionControl
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           />
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleLocate}
-            className="btn-secondary text-sm gap-2"
-            title="Usar mi ubicación"
-          >
-            <MapPin className="w-4 h-4" />
-            <span className="hidden sm:inline">Mi ubicación</span>
-          </button>
-        </div>
+          <MapView province={selectedProvince} />
+          {!selectedProvince && provinces.map((p) => (
+            <Marker key={p.id} position={[p.lat, p.lng]} icon={pinIcon(p.name, false)} eventHandlers={{ click: () => pickProvince(p) }}>
+              <Tooltip direction="top" offset={[0, -8]}>{p.name}</Tooltip>
+            </Marker>
+          ))}
+          {selectedProvince && municipalities.map((m) => (
+            <Marker
+              key={m.id}
+              position={[m.lat, m.lng]}
+              icon={pinIcon(m.name, m.id === selectedMunicipality?.id, true)}
+              eventHandlers={{ click: () => setSelectedMunicipality(m.id === selectedMunicipality?.id ? null : m) }}
+            >
+              <Tooltip direction="top" offset={[0, -6]}>{m.name}</Tooltip>
+            </Marker>
+          ))}
+        </MapContainer>
+        <button
+          type="button"
+          onClick={locate}
+          disabled={locating}
+          className="btn-secondary btn-sm absolute bottom-3 left-3 z-[400] shadow-card"
+        >
+          {locating ? <Spinner className="h-3.5 w-3.5" /> : <LocateFixed className="h-3.5 w-3.5" />} Usar mi ubicación
+        </button>
       </div>
 
-      <MapContainer
-        ref={mapRef}
-        center={selectedProvince ? (provinceCenters[selectedProvince.name] || CubaCenter) : CubaCenter}
-        zoom={selectedProvince ? (selectedProvince.zoom || 9) : 6}
-        bounds={CubaBounds}
-        maxBounds={CubaBounds}
-        maxBoundsViscosity={1.0}
-        className="w-full h-[500px] rounded-xl overflow-hidden shadow-lg"
-        attributionControl={false}
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          maxZoom={18}
-        />
-
-        {!selectedProvince && (
-          <>
-            {provinces.map((province) => (
-              <ProvinceMarker
-                key={province.id}
-                province={province}
-                isSelected={selectedProvince?.id === province.id}
-                onClick={() => handleProvinceClick(province)}
-              />
-            ))}
-          </>
-        )}
-
-        {selectedProvince && (
-          <>
-            <MapEvents
-              selectedProvince={selectedProvince}
-              setSelectedProvince={setSelectedProvince}
-              selectedMunicipality={selectedMunicipality}
-              setSelectedMunicipality={setSelectedMunicipality}
-              municipalities={municipalities}
+      <div className="flex min-h-0 flex-col border-t border-sand-200 md:border-l md:border-t-0">
+        <div className="space-y-2 border-b border-sand-200 p-3">
+          {selectedProvince ? (
+            <button type="button" onClick={() => pickProvince(null)} className="flex items-center gap-1 text-sm font-semibold text-ink-500 hover:text-ink-900">
+              <ChevronLeft className="h-4 w-4" /> Todas las provincias
+            </button>
+          ) : (
+            <p className="text-sm font-semibold text-ink-700">Elige una provincia</p>
+          )}
+          {selectedProvince && <p className="font-display text-lg font-bold leading-tight">{selectedProvince.name}</p>}
+          <label className="relative block">
+            <span className="sr-only">{selectedProvince ? 'Buscar municipio' : 'Buscar provincia'}</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={selectedProvince ? 'Buscar municipio…' : 'Buscar provincia…'}
+              className="input py-2 pl-9 text-sm"
             />
-            {municipalities.map((municipality) => (
-              <MunicipalityMarker
-                key={municipality.id}
-                municipality={municipality}
-                isSelected={selectedMunicipality?.id === municipality.id}
-                onClick={() => handleMunicipalityClick(municipality)}
-              />
-            ))}
-          </>
-        )}
-      </MapContainer>
-
-      <div className="mt-4 p-4 bg-white rounded-xl border border-gray-100">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Provincia seleccionada</label>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-primary-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">
-                    {selectedProvince ? selectedProvince.name : 'Ninguna seleccionada'}
-                  </p>
-                  {selectedProvince && (
-                    <p className="text-sm text-gray-500">Capital: {selectedProvince.capital}</p>
-                  )}
-                </div>
-              </div>
-              {selectedProvince && (
-                <button
-                  onClick={() => {
-                    setSelectedProvince(null);
-                    setSelectedMunicipality(null);
-                  }}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  Cambiar
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Municipio seleccionado</label>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">
-                    {selectedMunicipality ? selectedMunicipality.name : 'Ninguno (opcional)'}
-                  </p>
-                </div>
-              </div>
-              {selectedMunicipality && (
-                <button
-                  onClick={() => setSelectedMunicipality(null)}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  Quitar
-                </button>
-              )}
-            </div>
-          </div>
+          </label>
+          {geoError && <p className="text-xs text-red-700" role="alert">{geoError}</p>}
         </div>
 
-        {selectedProvince && onConfirm && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <button
-              onClick={handleConfirm}
-              className="btn-primary w-full"
-            >
-              Confirmar selección
+        <ul className="max-h-56 flex-1 overflow-y-auto p-1.5 md:max-h-none" role="listbox" aria-label={selectedProvince ? 'Municipios' : 'Provincias'}>
+          {selectedProvince && (
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={!selectedMunicipality}
+                onClick={() => setSelectedMunicipality(null)}
+                className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm', !selectedMunicipality ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
+              >
+                <MapPin className="h-4 w-4 shrink-0 opacity-60" /> Toda la provincia
+              </button>
+            </li>
+          )}
+          {filtered.map((item) => {
+            const active = selectedProvince ? item.id === selectedMunicipality?.id : false;
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => (selectedProvince ? setSelectedMunicipality(item as Municipality) : pickProvince(item as Province))}
+                  className={cn('flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm', active ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
+                >
+                  <span className="truncate">{item.name}</span>
+                  {active && <Check className="h-4 w-4 shrink-0" />}
+                </button>
+              </li>
+            );
+          })}
+          {selectedProvince && !municipalities.length && (
+            <li className="flex justify-center py-6 text-ink-300"><Spinner /></li>
+          )}
+          {filtered.length === 0 && query && (
+            <li className="px-3 py-6 text-center text-sm text-ink-400">Sin resultados para “{query}”.</li>
+          )}
+        </ul>
+
+        {onConfirm && (
+          <div className="border-t border-sand-200 p-3">
+            <button type="button" onClick={onConfirm} className="btn-primary w-full">
+              {selectedProvince
+                ? `Ver en ${selectedMunicipality?.name ?? selectedProvince.name}`
+                : 'Ver en toda Cuba'}
             </button>
           </div>
         )}
-      </div>
-
-      <div className="mt-4">
-        <h4 className="text-sm font-medium text-gray-700 mb-2">
-          {selectedProvince ? `Municipios de ${selectedProvince.name}` : 'Provincias de Cuba'}
-        </h4>
-        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto scrollbar-hide">
-          {selectedProvince
-            ? municipalities.map((muni) => (
-                <button
-                  key={muni.id}
-                  onClick={() => handleMunicipalityClick(muni)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                    selectedMunicipality?.id === muni.id
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {muni.name}
-                </button>
-              ))
-            : filteredProvinces.map((province) => (
-                <button
-                  key={province.id}
-                  onClick={() => handleProvinceClick(province)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                    selectedProvince?.id === province.id
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {province.name}
-                </button>
-              ))}
-        </div>
       </div>
     </div>
   );

@@ -1,91 +1,80 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import Layout from './components/Layout';
+import DashboardLayout from './components/DashboardLayout';
+import { PageLoader } from './components/ui';
 import Home from './pages/Home';
-import Search from './pages/Search';
-import ServiceDetail from './pages/ServiceDetail';
-import ProviderProfile from './pages/ProviderProfile';
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import Dashboard from './pages/dashboard/Dashboard';
-import ProviderProfileEdit from './pages/dashboard/ProviderProfileEdit';
-import MyServices from './pages/dashboard/MyServices';
-import ServiceForm from './pages/dashboard/ServiceForm';
-import MySubscriptions from './pages/dashboard/MySubscriptions';
-import Messages from './pages/dashboard/Messages';
-import Conversation from './pages/dashboard/Conversation';
-import Favorites from './pages/dashboard/Favorites';
-import Profile from './pages/dashboard/Profile';
-import NotFound from './pages/NotFound';
+import type { UserType } from './types';
 
-function PrivateRoute({ children, allowedTypes }: { children: React.ReactNode; allowedTypes?: ('client' | 'provider')[] }) {
+// La portada va en el bundle inicial; el resto se descarga al navegar.
+const Search = lazy(() => import('./pages/Search'));
+const Providers = lazy(() => import('./pages/Providers'));
+const Plans = lazy(() => import('./pages/Plans'));
+const ServiceDetail = lazy(() => import('./pages/ServiceDetail'));
+const ProviderProfile = lazy(() => import('./pages/ProviderProfile'));
+const Login = lazy(() => import('./pages/auth/Login'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'));
+const ProviderProfileEdit = lazy(() => import('./pages/dashboard/ProviderProfileEdit'));
+const MyServices = lazy(() => import('./pages/dashboard/MyServices'));
+const ServiceForm = lazy(() => import('./pages/dashboard/ServiceForm'));
+const MySubscription = lazy(() => import('./pages/dashboard/MySubscription'));
+const Messages = lazy(() => import('./pages/dashboard/Messages'));
+const Conversation = lazy(() => import('./pages/dashboard/Conversation'));
+const Favorites = lazy(() => import('./pages/dashboard/Favorites'));
+const Account = lazy(() => import('./pages/dashboard/Account'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+function RequireAuth({ children, only }: { children: ReactNode; only?: UserType }) {
   const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (allowedTypes && !allowedTypes.includes(user.user_type)) {
-    return <Navigate to="/" replace />;
-  }
-
+  const location = useLocation();
+  if (isLoading) return <PageLoader />;
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (only && user.user_type !== only) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
-function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
+function GuestOnly({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
+  const [params] = useSearchParams();
+  if (isLoading) return <PageLoader />;
   if (user) {
-    return <Navigate to="/" replace />;
+    const next = params.get('next');
+    return <Navigate to={next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'} replace />;
   }
-
   return <>{children}</>;
 }
 
-function App() {
+export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="buscar" element={<Search />} />
-        <Route path="servicio/:id" element={<ServiceDetail />} />
-        <Route path="proveedor/:id" element={<ProviderProfile />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="buscar" element={<Search />} />
+          <Route path="profesionales" element={<Providers />} />
+          <Route path="planes" element={<Plans />} />
+          <Route path="servicio/:id" element={<ServiceDetail />} />
+          <Route path="proveedor/:id" element={<ProviderProfile />} />
+          <Route path="login" element={<GuestOnly><Login /></GuestOnly>} />
+          <Route path="registro" element={<GuestOnly><Register /></GuestOnly>} />
 
-        <Route path="login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
-        <Route path="registro" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
-
-        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="dashboard/perfil" element={<ProviderProfileEdit />} />
-          <Route path="dashboard/servicios" element={<MyServices />} />
-          <Route path="dashboard/servicios/nuevo" element={<ServiceForm />} />
-          <Route path="dashboard/servicios/:id/editar" element={<ServiceForm />} />
-          <Route path="dashboard/suscripciones" element={<MySubscriptions />} />
-          <Route path="dashboard/mensajes" element={<Messages />} />
-          <Route path="dashboard/mensajes/:id" element={<Conversation />} />
-          <Route path="dashboard/favoritos" element={<Favorites />} />
-          <Route path="dashboard/cuenta" element={<Profile />} />
+          <Route path="dashboard/mensajes/:id" element={<RequireAuth><Conversation /></RequireAuth>} />
+          <Route path="dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
+            <Route index element={<Dashboard />} />
+            <Route path="mensajes" element={<Messages />} />
+            <Route path="cuenta" element={<Account />} />
+            <Route path="favoritos" element={<RequireAuth only="client"><Favorites /></RequireAuth>} />
+            <Route path="perfil" element={<RequireAuth only="provider"><ProviderProfileEdit /></RequireAuth>} />
+            <Route path="servicios" element={<RequireAuth only="provider"><MyServices /></RequireAuth>} />
+            <Route path="servicios/nuevo" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
+            <Route path="servicios/:id/editar" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
+            <Route path="suscripcion" element={<RequireAuth only="provider"><MySubscription /></RequireAuth>} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
         </Route>
-      </Route>
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
-
-export default App;

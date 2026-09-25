@@ -13,12 +13,20 @@ export class AppError extends Error {
   }
 }
 
-export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
-  console.error('Error:', err);
+export function errorHandler(err: Error & { status?: number; type?: string }, req: Request, res: Response, next: NextFunction) {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'El contenido enviado es demasiado grande' });
+  }
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido' });
+  }
+  if (!(err instanceof AppError) && !(err instanceof ZodError)) {
+    console.error('Error:', err);
+  }
 
   if (err instanceof ZodError) {
     return res.status(400).json({
-      error: 'Datos de entrada inválidos',
+      error: err.errors[0]?.message && err.errors[0].message !== 'Required' ? err.errors[0].message : 'Datos de entrada inválidos',
       details: err.errors.map(e => ({
         field: e.path.join('.'),
         message: e.message

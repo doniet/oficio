@@ -1,144 +1,325 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db from './index.js';
+import db, { refreshProviderRating } from './index.js';
 
-async function seedDemoUsers() {
-  const demoPassword = 'Demo123!';
-  const clientEmail = 'cliente@demo.com';
-  const providerEmail = 'proveedor@demo.com';
+export const DEMO_PASSWORD = 'Demo123!';
 
-  const clientId = uuidv4();
-  const providerId = uuidv4();
-  const providerProfileId = uuidv4();
+type Plan = 'free' | 'basic' | 'pro' | 'premium';
+type PriceType = 'fixed' | 'hourly' | 'daily' | 'negotiable';
 
-  const clientHash = await bcrypt.hash(demoPassword, 10);
-  const providerHash = await bcrypt.hash(demoPassword, 10);
-
-  const existingClient = db.prepare('SELECT id FROM users WHERE email = ?').get(clientEmail) as { id: string } | undefined;
-  if (!existingClient) {
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(
-      clientId,
-      clientEmail,
-      clientHash,
-      'Cliente Demo',
-      '+5350000001',
-      'client',
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80'
-    );
-  }
-
-  const existingProvider = db.prepare('SELECT id FROM users WHERE email = ?').get(providerEmail) as { id: string } | undefined;
-  if (!existingProvider) {
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(
-      providerId,
-      providerEmail,
-      providerHash,
-      'Proveedor Demo',
-      '+5350000002',
-      'provider',
-      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80'
-    );
-  }
-
-  const clientUserId = db.prepare('SELECT id FROM users WHERE email = ?').get(clientEmail) as { id: string } | undefined;
-  const providerUserId = db.prepare('SELECT id FROM users WHERE email = ?').get(providerEmail) as { id: string } | undefined;
-
-  const provinceId = db.prepare('SELECT id FROM provinces WHERE name = ?').get('La Habana')?.id ?? db.prepare('SELECT id FROM provinces LIMIT 1').get()?.id;
-  const municipalityId = db.prepare('SELECT id FROM municipalities WHERE province_id = ? LIMIT 1').get(provinceId)?.id;
-
-  if (!provinceId || !providerUserId || !clientUserId) {
-    throw new Error('No se pudo determinar la provincia o los usuarios demo');
-  }
-
-  const existingProviderProfile = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(providerUserId.id) as { id: string } | undefined;
-  const resolvedProviderProfileId = existingProviderProfile?.id ?? providerProfileId;
-
-  db.prepare(`
-    INSERT OR IGNORE INTO provider_profiles (
-      id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, whatsapp, telegram, email_contact, years_experience, rating, review_count, is_active, subscription_plan
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pro')
-  `).run(
-    resolvedProviderProfileId,
-    providerUserId.id,
-    'Electricidad & Plomería Demo',
-    'Servicios generales de electricidad, plomería y mantenimiento del hogar con atención rápida y profesional en La Habana.',
-    provinceId,
-    municipalityId,
-    'Calle 23 #123 e/ 10 y 12, Vedado, La Habana',
-    23.1367,
-    -82.3666,
-    '+5350000002',
-    '@demoelectricista',
-    'proveedor@demo.com',
-    8,
-    4.9,
-    18
-  );
-
-  const serviceCategoryIds = db.prepare('SELECT id FROM categories WHERE parent_id IS NOT NULL ORDER BY sort_order LIMIT 6').all() as { id: string }[];
-
-  const serviceRows = [
-    {
-      title: 'Instalación eléctrica residencial',
-      description: 'Cambios de tomas, cableado y mantenimiento eléctrico de viviendas.',
-      price_min: 35,
-      price_max: 90,
-      category_id: serviceCategoryIds[0]?.id,
-    },
-    {
-      title: 'Reparación de plomería rápida',
-      description: 'Arreglo de fugas, cañerías y grifería para casas y pequeños locales.',
-      price_min: 40,
-      price_max: 110,
-      category_id: serviceCategoryIds[1]?.id,
-    },
-    {
-      title: 'Mantenimiento general del hogar',
-      description: 'Mantenimiento preventivo y correctivo para viviendas en La Habana.',
-      price_min: 25,
-      price_max: 75,
-      category_id: serviceCategoryIds[2]?.id,
-    },
-  ];
-
-  const insertService = db.prepare(`
-    INSERT OR IGNORE INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, images, is_active)
-    VALUES (?, (SELECT id FROM provider_profiles WHERE user_id = ?), ?, ?, ?, ?, ?, 'fixed', ?, 1)
-  `);
-
-  for (const service of serviceRows) {
-    if (!service.category_id) continue;
-
-    insertService.run(
-      uuidv4(),
-      providerUserId.id,
-      service.category_id,
-      service.title,
-      service.description,
-      service.price_min,
-      service.price_max,
-      JSON.stringify([
-        'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1621905251918-48416bd8575a?auto=format&fit=crop&w=1200&q=80',
-      ])
-    );
-  }
-
-  const actualProviderProfileId = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(providerUserId.id) as { id: string } | undefined;
-
-  db.prepare(
-    'INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)'
-  ).run(uuidv4(), clientUserId.id, actualProviderProfileId?.id ?? resolvedProviderProfileId);
-
-  console.log('Demo credentials created:');
-  console.log(`Client: ${clientEmail} / ${demoPassword}`);
-  console.log(`Provider: ${providerEmail} / ${demoPassword}`);
+interface DemoService {
+  category: string;
+  title: string;
+  description: string;
+  price_min?: number;
+  price_max?: number;
+  price_type: PriceType;
+  images?: string[];
 }
 
-void seedDemoUsers();
+interface DemoProvider {
+  email: string;
+  full_name: string;
+  avatar?: string;
+  business_name: string;
+  description: string;
+  province: string;
+  municipality: string;
+  address: string;
+  whatsapp: string;
+  years: number;
+  plan: Plan;
+  services: DemoService[];
+}
+
+const img = (name: string) => `/demo/${name}.webp`;
+
+const providers: DemoProvider[] = [
+  {
+    email: 'proveedor@demo.com',
+    full_name: 'Yoandry Pérez',
+    avatar: img('avatar-7'),
+    business_name: 'ElectroHogar Vedado',
+    description: 'Electricista y plomero con 8 años de oficio en La Habana. Instalaciones nuevas, averías urgentes y mantenimiento de viviendas y pequeños negocios. Trabajo limpio, materiales garantizados y presupuesto sin compromiso.',
+    province: 'La Habana', municipality: 'Plaza de la Revolución',
+    address: 'Calle 23 e/ 10 y 12, Vedado', whatsapp: '+5352000002', years: 8, plan: 'pro',
+    services: [
+      { category: 'electricidad', title: 'Instalación eléctrica residencial', description: 'Cableado nuevo, cambio de tomacorrientes e interruptores, breakers y tierra física. Reviso la instalación completa antes de empezar y te entrego todo probado.', price_min: 35, price_max: 90, price_type: 'fixed', images: [img('electricidad-1'), img('electricidad-2')] },
+      { category: 'fontaneria-plomeria', title: 'Reparación de plomería y salideros', description: 'Salideros, tupiciones, cambio de llaves y mezcladoras, instalación de tanques y bombas de agua. Atención el mismo día en Plaza, Centro Habana y Vedado.', price_min: 20, price_max: 70, price_type: 'fixed', images: [img('plomeria-1'), img('plomeria-2')] },
+      { category: 'electricidad', title: 'Instalación de ventiladores y lámparas', description: 'Montaje de ventiladores de techo, lámparas LED y reflectores. Incluye revisión de la línea y fijación segura.', price_min: 10, price_max: 25, price_type: 'fixed' },
+    ],
+  },
+  {
+    email: 'carpinteria@demo.com',
+    full_name: 'Reinaldo Díaz',
+    avatar: img('avatar-2'),
+    business_name: 'Carpintería Hermanos Díaz',
+    description: 'Taller familiar con tres generaciones de carpinteros. Muebles a medida en maderas preciosas, restauración de piezas antiguas y carpintería de obra (puertas, ventanas y closets).',
+    province: 'Santiago de Cuba', municipality: 'Santiago de Cuba',
+    address: 'Calle Heredia #412, Centro histórico', whatsapp: '+5352000011', years: 22, plan: 'premium',
+    services: [
+      { category: 'carpinteria', title: 'Muebles a medida en madera preciosa', description: 'Closets, cocinas, libreros y camas diseñados para tu espacio. Te acompañamos desde el boceto hasta la instalación.', price_min: 150, price_max: 900, price_type: 'fixed', images: [img('carpinteria-1'), img('carpinteria-2')] },
+      { category: 'carpinteria', title: 'Restauración de muebles antiguos', description: 'Recuperamos sillones, cómodas y puertas coloniales: desarme, tratamiento contra comején, barniz y tapicería.', price_type: 'negotiable', images: [img('carpinteria-2')] },
+    ],
+  },
+  {
+    email: 'clima@demo.com',
+    full_name: 'Osmany Rodríguez',
+    avatar: img('avatar-3'),
+    business_name: 'Clima Frío Express',
+    description: 'Técnico en refrigeración y climatización. Instalo, limpio y reparo splits, neveras y aires de ventana. Carga de gas con equipo de medición y garantía de 3 meses.',
+    province: 'La Habana', municipality: 'Playa',
+    address: '5ta Avenida y 42, Miramar', whatsapp: '+5352000012', years: 11, plan: 'premium',
+    services: [
+      { category: 'aire-acondicionado', title: 'Instalación de split con garantía', description: 'Instalación completa de split de 1 a 2 toneladas: soporte, tubería, desagüe y puesta en marcha con prueba de presión.', price_min: 60, price_max: 120, price_type: 'fixed' },
+      { category: 'aire-acondicionado', title: 'Mantenimiento y limpieza de aire acondicionado', description: 'Limpieza profunda de evaporador y condensador, revisión de gas y ajuste eléctrico. Tu equipo enfría más y gasta menos.', price_min: 20, price_max: 35, price_type: 'fixed' },
+      { category: 'refrigeracion', title: 'Reparación de neveras y freezers', description: 'Diagnóstico a domicilio, cambio de termostato, relé y compresor. Carga de gas R134a y R600.', price_min: 25, price_max: 110, price_type: 'fixed' },
+    ],
+  },
+  {
+    email: 'belleza@demo.com',
+    full_name: 'Yamilé Castro',
+    avatar: img('avatar-5'),
+    business_name: 'Estudio de Belleza Yami',
+    description: 'Peluquería y maquillaje profesional en Santa Clara. Cortes, color, keratina y maquillaje para bodas y quinces. También voy a domicilio.',
+    province: 'Villa Clara', municipality: 'Santa Clara',
+    address: 'Calle Independencia #58', whatsapp: '+5352000013', years: 9, plan: 'basic',
+    services: [
+      { category: 'peluqueria-barberia', title: 'Corte, color y peinado', description: 'Corte a la moda, tinte o mechas y secado con peinado. Uso productos profesionales y te asesoro según tu tipo de pelo.', price_min: 8, price_max: 40, price_type: 'fixed', images: [img('salon-1')] },
+      { category: 'maquillaje', title: 'Maquillaje para bodas y quinces', description: 'Prueba previa incluida, maquillaje de larga duración y retoque. Paquetes para la novia o quinceañera y acompañantes.', price_min: 25, price_max: 60, price_type: 'fixed', images: [img('maquillaje-1')] },
+    ],
+  },
+  {
+    email: 'mecanica@demo.com',
+    full_name: 'Alexis Martínez',
+    business_name: 'Mecánica El Tinajón',
+    description: 'Taller de mecánica general para autos americanos, Ladas, Moskvich y carros modernos. Motor, caja, frenos y suspensión. Diagnóstico honesto antes de tocar nada.',
+    province: 'Camagüey', municipality: 'Camagüey',
+    address: 'Carretera Central km 3', whatsapp: '+5352000014', years: 17, plan: 'pro',
+    services: [
+      { category: 'mecanica-general', title: 'Reparación de motor y ajuste', description: 'Ajuste de motor, cambio de juntas, puesta a punto y adaptación de motores diésel. Te muestro las piezas cambiadas.', price_type: 'negotiable', images: [img('mecanica-1'), img('mecanica-3')] },
+      { category: 'mecanica-general', title: 'Cambio de aceite y revisión general', description: 'Cambio de aceite y filtros, revisión de frenos, luces y suspensión con informe por escrito.', price_min: 15, price_max: 30, price_type: 'fixed', images: [img('mecanica-2')] },
+    ],
+  },
+  {
+    email: 'tecnofix@demo.com',
+    full_name: 'Daniel Fuentes',
+    business_name: 'TecnoFix Holguín',
+    description: 'Reparación de celulares, tablets y laptops. Cambio de pantallas y baterías, software, recuperación de datos y liberaciones.',
+    province: 'Holguín', municipality: 'Holguín',
+    address: 'Calle Maceo, frente al parque Calixto García', whatsapp: '+5352000015', years: 6, plan: 'free',
+    services: [
+      { category: 'celulares-tablets', title: 'Cambio de pantalla y batería de celular', description: 'Pantallas y baterías para Samsung, Xiaomi, Motorola e iPhone. La mayoría de los arreglos quedan listos en el día.', price_min: 15, price_max: 85, price_type: 'fixed', images: [img('celulares-1'), img('electronica-1')] },
+    ],
+  },
+  {
+    email: 'dulces@demo.com',
+    full_name: 'Marisol Hernández',
+    avatar: img('avatar-4'),
+    business_name: 'Dulces La Abuela',
+    description: 'Repostería casera por encargo en Matanzas: cakes de cumpleaños, panetelas, pasteles y dulces finos para fiestas. Recetas de familia y buenos ingredientes.',
+    province: 'Matanzas', municipality: 'Matanzas',
+    address: 'Reparto Versalles', whatsapp: '+5352000016', years: 14, plan: 'basic',
+    services: [
+      { category: 'reposteria', title: 'Cakes de cumpleaños por encargo', description: 'Cakes decorados de 1 a 5 libras con merengue o chocolate. Encarga con 48 horas; entrega a domicilio en la ciudad.', price_min: 12, price_max: 45, price_type: 'fixed', images: [img('reposteria-1')] },
+      { category: 'comida-eventos', title: 'Buffet de dulces para fiestas', description: 'Mesa de dulces completa: bocaditos, pastelitos, gaceñiga y señoritas. Precio por invitado.', price_min: 2, price_max: 4, price_type: 'fixed', images: [img('cocina-1')] },
+    ],
+  },
+  {
+    email: 'profeana@demo.com',
+    full_name: 'Ana Beatriz Soto',
+    avatar: img('avatar-1'),
+    business_name: 'Profe Ana — Repasos',
+    description: 'Licenciada en Educación, especialidad Matemática. Repasos para pruebas de ingreso, secundaria y preuniversitario. Grupos pequeños o clases individuales.',
+    province: 'Cienfuegos', municipality: 'Cienfuegos',
+    address: 'Punta Gorda', whatsapp: '+5352000017', years: 12, plan: 'free',
+    services: [
+      { category: 'matematicas-fisica', title: 'Repaso de Matemática para pruebas de ingreso', description: 'Temario completo de las pruebas de ingreso, exámenes resueltos y simulacros cronometrados cada semana.', price_min: 5, price_max: 8, price_type: 'hourly', images: [img('clases-1'), img('clases-2')] },
+    ],
+  },
+  {
+    email: 'pinturas@demo.com',
+    full_name: 'Ernesto Valdés',
+    business_name: 'Pinturas Colonial Trinidad',
+    description: 'Pintura de interiores y fachadas, con especialidad en casas coloniales: resanes, cal, esmalte y rejas. Cuadrilla de tres pintores.',
+    province: 'Sancti Spíritus', municipality: 'Trinidad',
+    address: 'Calle Simón Bolívar', whatsapp: '+5352000018', years: 15, plan: 'pro',
+    services: [
+      { category: 'pintura', title: 'Pintura de fachadas e interiores', description: 'Preparación de superficie, resane, sellador y dos manos de pintura. Cotizo por metro cuadrado tras visitar la casa.', price_min: 2, price_max: 5, price_type: 'fixed', images: [img('pintura-1')] },
+      { category: 'soldadura', title: 'Rejas y portones a medida', description: 'Fabricación, soldadura y pintura anticorrosiva de rejas, portones y barandas.', price_type: 'negotiable', images: [img('soldadura-1')] },
+    ],
+  },
+  {
+    email: 'mudanzas@demo.com',
+    full_name: 'Raúl Cabrera',
+    business_name: 'Mudanzas Vueltabajo',
+    description: 'Mudanzas y fletes en camión cerrado dentro de Pinar del Río y hacia La Habana. Embalaje, carga y montaje de muebles.',
+    province: 'Pinar del Río', municipality: 'Pinar del Río',
+    address: 'Calle Martí final', whatsapp: '+5352000019', years: 7, plan: 'basic',
+    services: [
+      { category: 'mudanzas', title: 'Mudanza completa con embalaje', description: 'Camión cerrado, dos cargadores, mantas y embalaje de lo frágil. Precio cerrado según volumen y distancia.', price_min: 40, price_max: 180, price_type: 'fixed', images: [img('mudanzas-1')] },
+      { category: 'fletes-carga', title: 'Flete por día', description: 'Camión con chofer para cargas de materiales, mercancía o equipos.', price_min: 60, price_max: 60, price_type: 'daily' },
+    ],
+  },
+  {
+    email: 'limpieza@demo.com',
+    full_name: 'Lisandra Gómez',
+    business_name: 'Brillo Total',
+    description: 'Limpieza profunda de casas, apartamentos de renta y oficinas. Limpieza post-obra y de cristales.',
+    province: 'La Habana', municipality: 'Habana Vieja',
+    address: 'Calle Obispo', whatsapp: '+5352000020', years: 5, plan: 'free',
+    services: [
+      { category: 'limpieza-hogar', title: 'Limpieza profunda de vivienda', description: 'Cocina, baños, cristales y pisos. Ideal para rentas entre huéspedes. Llevamos los productos.', price_min: 15, price_max: 40, price_type: 'fixed', images: [img('limpieza-1')] },
+    ],
+  },
+  {
+    email: 'costura@demo.com',
+    full_name: 'Caridad Estrada',
+    business_name: 'Taller de Costura Cachita',
+    description: 'Arreglos de ropa, confección a medida y vestidos de quince. Trabajo rápido y con esmero.',
+    province: 'Granma', municipality: 'Bayamo',
+    address: 'Calle General García', whatsapp: '+5352000021', years: 25, plan: 'free',
+    services: [
+      { category: 'costura-arreglos', title: 'Arreglos y confección a medida', description: 'Dobladillos, zipper, ajustes de talla y confección de ropa a medida. Arreglos sencillos en 24 horas.', price_min: 2, price_max: 30, price_type: 'fixed', images: [img('costura-1')] },
+    ],
+  },
+];
+
+const clients = [
+  { email: 'cliente@demo.com', full_name: 'Laura Méndez', avatar: img('avatar-6') },
+  { email: 'carlos@demo.com', full_name: 'Carlos Ferrer' },
+  { email: 'maria@demo.com', full_name: 'María José Ruiz' },
+  { email: 'jorge@demo.com', full_name: 'Jorge Luis Batista' },
+  { email: 'dayana@demo.com', full_name: 'Dayana Quintero' },
+];
+
+const reviewComments: Record<number, string[]> = {
+  5: [
+    'Excelente trabajo, puntual y muy limpio. Lo recomiendo sin dudas.',
+    'Resolvió el problema en una sola visita y me explicó todo. Volveré a llamarlo.',
+    'Muy profesional y con buen precio. Quedé encantada.',
+    'Rápido, serio y cumplió exactamente lo acordado.',
+  ],
+  4: [
+    'Buen trabajo, aunque llegó un poco tarde. El resultado quedó muy bien.',
+    'Cumplió con lo prometido. El precio fue justo.',
+  ],
+  3: ['El trabajo quedó bien pero tardó más días de lo acordado.'],
+};
+
+const daysAgo = (d: number, h = 0) => new Date(Date.now() - (d * 24 + h) * 3600_000).toISOString();
+
+export async function seedDemo() {
+  const already = db.prepare('SELECT 1 FROM users WHERE email = ?').get('cliente@demo.com');
+  if (already) return false;
+
+  const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
+  const categoryId = (slug: string) => {
+    const row = db.prepare('SELECT id FROM categories WHERE slug = ?').get(slug) as { id: string } | undefined;
+    if (!row) throw new Error(`Categoría demo inexistente: ${slug}`);
+    return row.id;
+  };
+
+  const tx = db.transaction(() => {
+    const clientIds = clients.map((c, i) => {
+      const id = uuidv4();
+      db.prepare(`INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
+        VALUES (?, ?, ?, ?, ?, 'client', ?, 1, ?)`)
+        .run(id, c.email, hash, c.full_name, `+535300000${i + 1}`, c.avatar ?? null, daysAgo(200 - i * 10));
+      return id;
+    });
+
+    const providerRows: { profileId: string; userId: string; services: string[] }[] = [];
+    providers.forEach((p, i) => {
+      const userId = uuidv4();
+      const profileId = uuidv4();
+      const created = daysAgo(400 - i * 25);
+      db.prepare(`INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
+        VALUES (?, ?, ?, ?, ?, 'provider', ?, 1, ?)`)
+        .run(userId, p.email, hash, p.full_name, p.whatsapp, p.avatar ?? null, created);
+
+      const province = db.prepare('SELECT id, lat, lng FROM provinces WHERE name = ?').get(p.province) as { id: string; lat: number; lng: number };
+      const muni = db.prepare('SELECT id, lat, lng FROM municipalities WHERE province_id = ? AND name = ?').get(province.id, p.municipality) as { id: string; lat: number; lng: number } | undefined;
+      const expires = p.plan === 'free' ? null : new Date(Date.now() + 365 * 86400_000).toISOString();
+      db.prepare(`INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng,
+          whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan, subscription_expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+        .run(profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
+          muni?.lat ?? province.lat, muni?.lng ?? province.lng, p.whatsapp, p.whatsapp, p.email, p.years, p.plan, expires, created);
+
+      if (p.plan !== 'free') {
+        const subId = uuidv4();
+        const price = { basic: 9.99, pro: 19.99, premium: 39.99 }[p.plan];
+        db.prepare(`INSERT INTO subscriptions (id, provider_id, plan, amount, status, current_period_start, current_period_end)
+          VALUES (?, ?, ?, ?, 'active', ?, ?)`).run(subId, profileId, p.plan, price, daysAgo(20), expires);
+        db.prepare(`INSERT INTO payments (id, subscription_id, provider_id, amount, status, metadata, created_at)
+          VALUES (?, ?, ?, ?, 'succeeded', ?, ?)`).run(uuidv4(), subId, profileId, price, JSON.stringify({ demo: true }), daysAgo(20));
+      }
+
+      const serviceIds = p.services.map((s, j) => {
+        const sid = uuidv4();
+        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, images, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+          .run(sid, profileId, categoryId(s.category), s.title, s.description, s.price_min ?? null, s.price_max ?? null,
+            s.price_type, JSON.stringify(s.images ?? []), daysAgo(300 - i * 20 - j * 7));
+        return sid;
+      });
+
+      db.prepare('INSERT INTO service_areas (id, provider_id, municipality_id) SELECT ?, ?, id FROM municipalities WHERE province_id = ? ORDER BY name LIMIT 1')
+        .run(uuidv4(), profileId, province.id);
+      if (muni) db.prepare('INSERT OR IGNORE INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)').run(uuidv4(), profileId, muni.id);
+
+      providerRows.push({ profileId, userId, services: serviceIds });
+    });
+
+    // Reseñas deterministas: cada proveedor recibe entre 0 y 5, con conversación previa
+    // (la API solo deja reseñar a quien ya contactó al proveedor).
+    const ratingPattern = [5, 5, 4, 5, 3, 5, 4, 5];
+    providerRows.forEach((prov, i) => {
+      const count = [5, 4, 5, 3, 4, 1, 4, 2, 3, 2, 0, 1][i] ?? 0;
+      for (let k = 0; k < count; k++) {
+        const clientIndex = (i + k) % clients.length;
+        const clientId = clientIds[clientIndex];
+        const serviceId = prov.services[k % prov.services.length];
+        const rating = ratingPattern[(i * 3 + k) % ratingPattern.length];
+        const comments = reviewComments[rating];
+        const when = daysAgo(5 + i * 3 + k * 11);
+        const exists = db.prepare('SELECT 1 FROM conversations WHERE client_id = ? AND provider_id = ? AND service_id = ?').get(clientId, prov.profileId, serviceId);
+        if (!exists) {
+          db.prepare('INSERT INTO conversations (id, client_id, provider_id, service_id, last_message, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(uuidv4(), clientId, prov.profileId, serviceId, 'Gracias por todo.', when, when);
+        }
+        db.prepare('INSERT INTO reviews (id, service_id, client_id, provider_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(uuidv4(), serviceId, clientId, prov.profileId, rating, comments[(i + k) % comments.length], when);
+      }
+      refreshProviderRating(prov.profileId);
+    });
+
+    // Conversación viva entre las dos cuentas demo principales.
+    const laura = clientIds[0];
+    const electro = providerRows[0];
+    const convId = uuidv4();
+    const thread: [('client' | 'provider'), string, number][] = [
+      ['client', 'Hola Yoandry, se me botó el agua por la llave del fregadero y además el breaker de la cocina se dispara. ¿Puedes venir esta semana?', 50],
+      ['provider', '¡Hola Laura! Sí, puedo pasar el jueves por la mañana. ¿Me dices la dirección exacta?', 49],
+      ['client', 'Calle 17 #254 e/ H e I, Vedado. Segundo piso.', 48],
+      ['provider', 'Perfecto. Llevo la llave de repuesto y reviso el breaker. La visita más la llave sale en unos 35 USD.', 47],
+      ['client', 'Dale, te espero el jueves. ¡Gracias!', 2],
+    ];
+    const last = thread[thread.length - 1];
+    db.prepare('INSERT INTO conversations (id, client_id, provider_id, service_id, last_message, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(convId, laura, electro.profileId, electro.services[1], last[1], daysAgo(0, last[2]), daysAgo(0, thread[0][2]));
+    for (const [who, content, hoursAgo] of thread) {
+      const sender = who === 'client' ? laura : electro.userId;
+      const readAt = hoursAgo > 2 ? daysAgo(0, hoursAgo - 1) : null;
+      db.prepare('INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), convId, sender, who, content, readAt, daysAgo(0, hoursAgo));
+    }
+
+    for (const idx of [0, 2, 3]) {
+      db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)').run(uuidv4(), laura, providerRows[idx].profileId);
+    }
+  });
+  tx();
+  return true;
+}

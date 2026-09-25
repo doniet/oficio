@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db from './index.js';
 
@@ -155,195 +154,55 @@ const categories = [
   ]},
 ];
 
-export async function seedDemoUsers() {
-  const demoPassword = 'Demo123!';
-  const clientEmail = 'cliente@demo.com';
-  const providerEmail = 'proveedor@demo.com';
-
-  const clientId = uuidv4();
-  const providerId = uuidv4();
-  const providerProfileId = uuidv4();
-
-  const clientHash = await bcrypt.hash(demoPassword, 10);
-  const providerHash = await bcrypt.hash(demoPassword, 10);
-
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-  `).run(clientId, clientEmail, clientHash, 'Cliente Demo', '+5350000001', 'client', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80');
-
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-  `).run(providerId, providerEmail, providerHash, 'Proveedor Demo', '+5350000002', 'provider', 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80');
-
-  const provinceId = db.prepare('SELECT id FROM provinces WHERE name = ?').get('La Habana')?.id ?? db.prepare('SELECT id FROM provinces LIMIT 1').get()?.id;
-  const municipalityId = db.prepare('SELECT id FROM municipalities WHERE province_id = ? LIMIT 1').get(provinceId)?.id;
-
-  if (!provinceId) {
-    throw new Error('No se pudo determinar una provincia para el usuario demo');
-  }
-
-  db.prepare(`
-    INSERT OR IGNORE INTO provider_profiles (
-      id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, whatsapp, telegram, email_contact, years_experience, rating, review_count, is_active, subscription_plan
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pro')
-  `).run(
-    providerProfileId,
-    providerId,
-    'Electricidad & Plomería Demo',
-    'Servicios generales de electricidad, plomería y mantenimiento del hogar con atención rápida y profesional en La Habana.',
-    provinceId,
-    municipalityId,
-    'Calle 23 #123 e/ 10 y 12, Vedado, La Habana',
-    23.1367,
-    -82.3666,
-    '+5350000002',
-    '@demoelectricista',
-    'proveedor@demo.com',
-    8,
-    4.9,
-    18
-  );
-
-  const serviceCategoryIds = db.prepare('SELECT id FROM categories WHERE parent_id IS NOT NULL ORDER BY sort_order LIMIT 6').all() as { id: string }[];
-  const serviceRows = [
-    { title: 'Instalación eléctrica residencial', description: 'Cambios de tomas, cableado y mantenimiento eléctrico de viviendas.', price_min: 35, price_max: 90, category_id: serviceCategoryIds[0]?.id },
-    { title: 'Reparación de plomería rápida', description: 'Arreglo de fugas, cañerías y grifería para casas y pequeños locales.', price_min: 40, price_max: 110, category_id: serviceCategoryIds[1]?.id },
-    { title: 'Mantenimiento general del hogar', description: 'Mantenimiento preventivo y correctivo para viviendas en La Habana.', price_min: 25, price_max: 75, category_id: serviceCategoryIds[2]?.id },
-  ];
-
-  const insertService = db.prepare(`
-    INSERT OR IGNORE INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, images, is_active)
-    VALUES (?, (SELECT id FROM provider_profiles WHERE user_id = ?), ?, ?, ?, ?, ?, 'fixed', ?, 1)
-  `);
-
-  for (const service of serviceRows) {
-    if (!service.category_id) continue;
-    insertService.run(
-      uuidv4(),
-      providerId,
-      service.category_id,
-      service.title,
-      service.description,
-      service.price_min,
-      service.price_max,
-      JSON.stringify([
-        'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1621905251918-48416bd8575a?auto=format&fit=crop&w=1200&q=80'
-      ])
-    );
-  }
-
-  db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, (SELECT id FROM users WHERE email = ?), (SELECT id FROM provider_profiles WHERE user_id = ?))')
-    .run(uuidv4(), clientEmail, providerId);
-
-  console.log('Demo credentials created:');
-  console.log(`Client: ${clientEmail} / ${demoPassword}`);
-  console.log(`Provider: ${providerEmail} / ${demoPassword}`);
+// Los municipios no traen coordenadas reales: se reparten en espiral alrededor de la
+// capital provincial para que los marcadores no se solapen y sean estables entre arranques.
+function municipalityCoords(base: { lat: number; lng: number }, index: number) {
+  if (index === 0) return { lat: base.lat, lng: base.lng };
+  const angle = index * 2.39996;
+  const radius = 0.06 + 0.035 * Math.sqrt(index);
+  return { lat: base.lat + radius * Math.sin(angle), lng: base.lng + radius * 1.2 * Math.cos(angle) };
 }
 
-function seedDatabase() {
-  console.log('Seeding database...');
-
-  // Insert provinces
-  const insertProvince = db.prepare(`
-    INSERT OR IGNORE INTO provinces (id, name, capital, lat, lng, zoom)
-    VALUES (@id, @name, @capital, @lat, @lng, @zoom)
-  `);
-
-  const provinceMap = new Map<string, string>();
-  for (const province of provinces) {
-    const existingProvince = db.prepare('SELECT id FROM provinces WHERE name = ?').get(province.name) as { id: string } | undefined;
-    if (existingProvince) {
-      provinceMap.set(province.name, existingProvince.id);
-      continue;
+export function seedBase() {
+  const tx = db.transaction(() => {
+    const provinceIds = new Map<string, string>();
+    for (const province of provinces) {
+      const existing = db.prepare('SELECT id FROM provinces WHERE name = ?').get(province.name) as { id: string } | undefined;
+      if (existing) {
+        provinceIds.set(province.name, existing.id);
+        continue;
+      }
+      db.prepare('INSERT INTO provinces (id, name, capital, lat, lng, zoom) VALUES (@id, @name, @capital, @lat, @lng, @zoom)').run(province);
+      provinceIds.set(province.name, province.id);
     }
 
-    insertProvince.run(province);
-    provinceMap.set(province.name, province.id);
-  }
-  console.log(`Inserted ${provinces.length} provinces`);
-
-  // Insert municipalities
-  const insertMunicipality = db.prepare(`
-    INSERT OR IGNORE INTO municipalities (id, name, province_id, lat, lng)
-    VALUES (@id, @name, @province_id, @lat, @lng)
-  `);
-
-  let municipalityCount = 0;
-  const municipalityMap = new Map<string, string>();
-
-  for (const { province, municipalities: munis } of municipalities) {
-    const provinceId = provinceMap.get(province);
-    if (!provinceId) continue;
-
-    for (const muniName of munis) {
-      const id = uuidv4();
-      // Approximate coordinates - in production would use real geocoding
-      const provinceData = provinces.find(p => p.name === province);
-      const lat = provinceData!.lat + (Math.random() - 0.5) * 0.5;
-      const lng = provinceData!.lng + (Math.random() - 0.5) * 0.5;
-
-      insertMunicipality.run({ id, name: muniName, province_id: provinceId, lat, lng });
-      municipalityMap.set(`${province}:${muniName}`, id);
-      municipalityCount++;
-    }
-  }
-  console.log(`Inserted ${municipalityCount} municipalities`);
-
-  // Insert categories and subcategories
-  const insertCategory = db.prepare(`
-    INSERT OR IGNORE INTO categories (id, name, slug, icon, description, parent_id, sort_order)
-    VALUES (@id, @name, @slug, @icon, @description, @parent_id, @sort_order)
-  `);
-
-  let categoryCount = 0;
-  const categoryMap = new Map<string, string>();
-
-  for (const cat of categories) {
-    const existingCategory = db.prepare('SELECT id FROM categories WHERE slug = ?').get(cat.slug) as { id: string } | undefined;
-    const parentId = existingCategory?.id ?? cat.id;
-
-    if (!existingCategory) {
-      insertCategory.run({
-        id: cat.id,
-        name: cat.name,
-        slug: cat.slug,
-        icon: cat.icon,
-        description: cat.name,
-        parent_id: null,
-        sort_order: cat.sort_order
+    for (const { province, municipalities: names } of municipalities) {
+      const provinceId = provinceIds.get(province);
+      const base = provinces.find((p) => p.name === province);
+      if (!provinceId || !base) continue;
+      names.forEach((name, index) => {
+        const exists = db.prepare('SELECT 1 FROM municipalities WHERE name = ? AND province_id = ?').get(name, provinceId);
+        if (exists) return;
+        const { lat, lng } = municipalityCoords(base, index);
+        db.prepare('INSERT INTO municipalities (id, name, province_id, lat, lng) VALUES (?, ?, ?, ?, ?)').run(uuidv4(), name, provinceId, lat, lng);
       });
     }
 
-    const savedCategoryId = db.prepare('SELECT id FROM categories WHERE slug = ?').get(cat.slug) as { id: string } | undefined;
-    const resolvedParentId = savedCategoryId?.id ?? parentId;
-    categoryMap.set(cat.name, resolvedParentId);
-    categoryCount++;
-
-    for (let i = 0; i < cat.subcategories.length; i++) {
-      const sub = cat.subcategories[i];
-      const existingSubcategory = db.prepare('SELECT id FROM categories WHERE slug = ?').get(sub.slug) as { id: string } | undefined;
-
-      if (!existingSubcategory) {
-        insertCategory.run({
-          id: uuidv4(),
-          name: sub.name,
-          slug: sub.slug,
-          icon: sub.icon,
-          description: sub.name,
-          parent_id: resolvedParentId,
-          sort_order: i
-        });
+    const insertCategory = db.prepare(`
+      INSERT INTO categories (id, name, slug, icon, description, parent_id, sort_order)
+      VALUES (@id, @name, @slug, @icon, @description, @parent_id, @sort_order)
+    `);
+    for (const cat of categories) {
+      let parent = db.prepare('SELECT id FROM categories WHERE slug = ?').get(cat.slug) as { id: string } | undefined;
+      if (!parent) {
+        insertCategory.run({ id: cat.id, name: cat.name, slug: cat.slug, icon: cat.icon, description: cat.name, parent_id: null, sort_order: cat.sort_order });
+        parent = { id: cat.id };
       }
-
-      categoryCount++;
+      cat.subcategories.forEach((sub, i) => {
+        if (db.prepare('SELECT 1 FROM categories WHERE slug = ?').get(sub.slug)) return;
+        insertCategory.run({ id: uuidv4(), name: sub.name, slug: sub.slug, icon: sub.icon, description: sub.name, parent_id: parent!.id, sort_order: i });
+      });
     }
-  }
-  console.log(`Inserted ${categoryCount} categories`);
-
-  console.log('Database seeding completed!');
+  });
+  tx();
 }
-
-seedDatabase();

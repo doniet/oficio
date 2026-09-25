@@ -1,301 +1,135 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Briefcase, Check, Search, UserPlus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { Mail, Lock, Eye, EyeOff, User, MapPin, Building2, Briefcase, Shield, CheckCircle } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { apiError } from '../../services/api';
+import type { UserType } from '../../types';
+import { Alert, Field, Spinner, cn } from '../../components/ui';
+import { AuthShell, PasswordInput, safeNext } from './AuthShell';
+
+type Errors = Partial<Record<'full_name' | 'email' | 'phone' | 'password', string>>;
+
+function validate(f: { full_name: string; email: string; phone: string; password: string }, type: UserType): Errors {
+  const e: Errors = {};
+  if (f.full_name.trim().length < 2) e.full_name = 'Escribe tu nombre completo.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = 'Revisa el correo: parece incompleto.';
+  if (type === 'provider' && !f.phone.trim()) e.phone = 'Los clientes te contactarán por este número.';
+  else if (f.phone.trim() && !/^\+?[\d\s-]{8,20}$/.test(f.phone.trim())) e.phone = 'Usa solo números, por ejemplo +53 5 123 4567.';
+  if (f.password.length < 8) e.password = 'Usa al menos 8 caracteres.';
+  return e;
+}
+
+const TYPES: { value: UserType; title: string; text: string; icon: React.ReactNode }[] = [
+  { value: 'client', title: 'Busco un profesional', text: 'Encuentra, escribe y valora.', icon: <Search className="h-5 w-5" /> },
+  { value: 'provider', title: 'Ofrezco mis servicios', text: 'Publica gratis y recibe clientes.', icon: <Briefcase className="h-5 w-5" /> },
+];
 
 export default function Register() {
   const { register } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const defaultUserType = searchParams.get('type') === 'provider' ? 'provider' : 'client';
-
-  const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirm_password: '',
-    user_type: defaultUserType as 'client' | 'provider',
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [params] = useSearchParams();
+  const next = safeNext(params.get('next'));
+  const [type, setType] = useState<UserType>(['profesional', 'provider'].includes(params.get('tipo') ?? '') ? 'provider' : 'client');
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '' });
+  const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  const errors = touched ? validate(form, type) : {};
+  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched(true);
+    const found = validate(form, type);
+    if (Object.keys(found).length) {
+      document.getElementById(Object.keys(found)[0])?.focus();
+      return;
+    }
     setError('');
-
-    if (formData.password !== formData.confirm_password) {
-      setError('Las contraseñas no coinciden');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-
     setLoading(true);
-
     try {
       await register({
-        email: formData.email,
-        password: formData.password,
-        full_name: formData.full_name,
-        phone: formData.phone || undefined,
-        user_type: formData.user_type,
+        full_name: form.full_name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
+        password: form.password,
+        user_type: type,
       });
-      navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Error al registrarse');
-    } finally {
+      if (type === 'provider') {
+        toast('¡Cuenta creada! Completa tu perfil para aparecer en las búsquedas.');
+        navigate('/dashboard/perfil', { replace: true });
+      } else {
+        toast('¡Te damos la bienvenida a Oficios Cuba!');
+        navigate(next ?? '/dashboard', { replace: true });
+      }
+    } catch (err) {
+      setError(apiError(err, 'No pudimos crear tu cuenta.'));
       setLoading(false);
     }
   };
 
-  const benefits = {
-    client: [
-      { icon: Search, text: 'Busca servicios en tu zona' },
-      { icon: Heart, text: 'Guarda tus favoritos' },
-      { icon: MessageSquare, text: 'Chatea con proveedores' },
-      { icon: Star, text: 'Califica y reseña servicios' },
-    ],
-    provider: [
-      { icon: Briefcase, text: 'Publica tus servicios' },
-      { icon: MapPin, text: 'Llega a clientes en toda Cuba' },
-      { icon: Building2, text: 'Gestiona tu perfil profesional' },
-      { icon: Shield, text: 'Recibe pagos seguros' },
-    ],
-  };
+  const loginLink = next ? `/login?next=${encodeURIComponent(next)}` : '/login';
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-4xl">
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div className="relative bg-gradient-to-br from-primary-600 via-primary-700 to-primary-900 rounded-2xl p-8 text-white overflow-hidden">
-            <Link to="/" className="inline-flex items-center gap-2 mb-8">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                <MapPin className="w-6 h-6" />
-              </div>
-              <span className="text-xl font-bold">Oficios Cuba</span>
-            </Link>
-
-            <div className="relative z-10">
-              <h2 className="text-3xl font-bold mb-4">
-                {formData.user_type === 'provider' ? 'Únete como profesional' : 'Crea tu cuenta gratis'}
-              </h2>
-              <p className="text-primary-100 text-lg mb-8">
-                {formData.user_type === 'provider'
-                  ? 'Conecta con miles de clientes en Cuba y haz crecer tu negocio con nuestra plataforma.'
-                  : 'Encuentra los mejores profesionales para tus necesidades. Rápido, seguro y cerca de ti.'}
-              </p>
-
-              <div className="space-y-4">
-                {benefits[formData.user_type].map((benefit, index) => (
-                  <div key={index} className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <benefit.icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-primary-100">{benefit.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="absolute bottom-8 left-8 right-8 flex gap-4">
-              <button
-                onClick={() => setFormData(prev => ({ ...prev, user_type: 'client' }))}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all ${
-                  formData.user_type === 'client'
-                    ? 'bg-white text-primary-600 shadow-lg'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-              >
-                <User className="w-4 h-4 mr-2" />
-                Buscar servicios
-              </button>
-              <button
-                onClick={() => setFormData(prev => ({ ...prev, user_type: 'provider' }))}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all ${
-                  formData.user_type === 'provider'
-                    ? 'bg-white text-primary-600 shadow-lg'
-                    : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-              >
-                <Briefcase className="w-4 h-4 mr-2" />
-                Ofrecer servicios
-              </button>
-            </div>
-          </div>
-
-          <div className="card p-8 lg:p-10">
-            <div className="text-center mb-8">
-              <h1 className="text-2xl font-bold text-gray-900">Crear cuenta</h1>
-              <p className="mt-2 text-gray-600">Solo toma un minuto</p>
-            </div>
-
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" role="alert">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label htmlFor="full_name" className="label">Nombre completo</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="full_name"
-                    name="full_name"
-                    type="text"
-                    autoComplete="name"
-                    required
-                    value={formData.full_name}
-                    onChange={handleChange}
-                    className="input pl-10"
-                    placeholder="Juan Pérez"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="email" className="label">Correo electrónico</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="input pl-10"
-                    placeholder="juan@ejemplo.com"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="phone" className="label">Teléfono (opcional)</label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    autoComplete="tel"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="input pl-10"
-                    placeholder="+53 5 XXX XXXX"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="password" className="label">Contraseña</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    required
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="input pl-10 pr-10"
-                    placeholder="••••••••"
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="confirm_password" className="label">Confirmar contraseña</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="confirm_password"
-                    name="confirm_password"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    required
-                    value={formData.confirm_password}
-                    onChange={handleChange}
-                    className="input pl-10 pr-10"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2">
-                <input
-                  id="terms"
-                  name="terms"
-                  type="checkbox"
-                  required
-                  className="mt-1 w-4 h-4 border-gray-300 rounded focus:ring-primary-500"
-                />
-                <label htmlFor="terms" className="text-sm text-gray-600">
-                  Acepto los <Link to="/terminos" className="text-primary-600 hover:text-primary-500">Términos y Condiciones</Link> y la <Link to="/privacidad" className="text-primary-600 hover:text-primary-500">Política de Privacidad</Link>
+    <AuthShell title="Crea tu cuenta gratis" subtitle={<>¿Ya tienes cuenta? <Link to={loginLink} className="link">Entra aquí</Link></>}>
+      <form onSubmit={submit} className="space-y-5" noValidate>
+        <fieldset>
+          <legend className="label">¿Qué quieres hacer?</legend>
+          <div className="grid grid-cols-2 gap-2.5">
+            {TYPES.map((t) => {
+              const active = type === t.value;
+              return (
+                <label
+                  key={t.value}
+                  className={cn(
+                    'relative flex cursor-pointer flex-col gap-2 rounded-2xl border-2 bg-white p-3.5 transition sm:p-4',
+                    'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500 has-[:focus-visible]:ring-offset-2',
+                    active ? 'border-brand-500 shadow-card' : 'border-sand-200 hover:border-sand-300',
+                  )}
+                >
+                  <input type="radio" name="user_type" value={t.value} checked={active} onChange={() => setType(t.value)} className="sr-only" />
+                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', active ? 'bg-brand-600 text-white' : 'bg-sand-100 text-ink-600')}>{t.icon}</span>
+                  <span className="text-sm font-bold leading-snug text-ink-900">{t.title}</span>
+                  <span className="text-xs leading-snug text-ink-500">{t.text}</span>
+                  {active && <Check className="absolute right-3 top-3 h-5 w-5 text-brand-600" aria-hidden="true" />}
                 </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full btn-primary py-3 text-lg"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Creando cuenta...
-                  </span>
-                ) : (
-                  `Crear cuenta ${formData.user_type === 'provider' ? 'de proveedor' : 'de cliente'}`
-                )}
-              </button>
-            </form>
-
-            <p className="mt-6 text-center text-sm text-gray-600">
-              ¿Ya tienes cuenta?{' '}
-              <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
-                Inicia sesión
-              </Link>
-            </p>
+              );
+            })}
           </div>
-        </div>
-      </div>
-    </div>
+        </fieldset>
+
+        {error && <Alert>{error}</Alert>}
+
+        <Field label={type === 'provider' ? 'Tu nombre (el negocio lo añades después)' : 'Nombre completo'} htmlFor="full_name" error={errors.full_name}>
+          <input id="full_name" value={form.full_name} onChange={(e) => set('full_name')(e.target.value)} autoComplete="name" className={cn('input', errors.full_name && 'input-error')} aria-invalid={!!errors.full_name || undefined} maxLength={80} required />
+        </Field>
+
+        <Field label="Correo electrónico" htmlFor="email" error={errors.email}>
+          <input id="email" type="email" inputMode="email" value={form.email} onChange={(e) => set('email')(e.target.value)} autoComplete="email" className={cn('input', errors.email && 'input-error')} aria-invalid={!!errors.email || undefined} placeholder="tu@correo.com" required />
+        </Field>
+
+        <Field
+          label={type === 'provider' ? 'Teléfono / WhatsApp' : 'Teléfono (opcional)'}
+          htmlFor="phone"
+          error={errors.phone}
+          hint={type === 'provider' ? 'Aparecerá en tu perfil para que te escriban por WhatsApp.' : 'Solo lo verán los profesionales con los que hables.'}
+        >
+          <input id="phone" type="tel" inputMode="tel" value={form.phone} onChange={(e) => set('phone')(e.target.value)} autoComplete="tel" className={cn('input', errors.phone && 'input-error')} aria-invalid={!!errors.phone || undefined} placeholder="+53 5 123 4567" maxLength={20} />
+        </Field>
+
+        <Field label="Contraseña" htmlFor="password" error={errors.password} hint="Mínimo 8 caracteres.">
+          <PasswordInput id="password" value={form.password} onChange={set('password')} autoComplete="new-password" invalid={!!errors.password} />
+        </Field>
+
+        <button type="submit" disabled={loading} className="btn-primary btn-lg w-full">
+          {loading ? <Spinner className="h-4 w-4" /> : <UserPlus className="h-5 w-5" />}
+          {type === 'provider' ? 'Crear cuenta profesional' : 'Crear cuenta'}
+        </button>
+        <p className="text-center text-xs text-ink-400">Publicar y buscar es gratis. Los planes de pago son opcionales.</p>
+      </form>
+    </AuthShell>
   );
 }
-
-import { Search } from 'lucide-react';

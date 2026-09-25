@@ -1,353 +1,364 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { serviceApi, categoryApi, providerApi } from '../../services/api';
-import { useAuth } from '../../hooks/useAuth';
-import type { Service, Category } from '../../types';
-import { Loader2, Save, ArrowLeft, Building2, Tag, DollarSign, Image, Eye, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ImagePlus, Lock, Sparkles, Star, Trash2 } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { apiError, categoryApi, serviceApi, type ServiceInput } from '../../services/api';
+import { uploadImage } from '../../lib/image';
+import { planLabel, priceTypeLabel } from '../../lib/format';
+import type { Category, Plan, PriceType } from '../../types';
+import { PageTitle } from '../../components/DashboardLayout';
+import { Alert, EmptyState, ErrorState, Field, PageLoader, Spinner, cn } from '../../components/ui';
+import { FormSection } from './parts';
 
-const priceTypes = [
-  { value: 'fixed', label: 'Precio fijo' },
-  { value: 'hourly', label: 'Por hora' },
-  { value: 'daily', label: 'Por día' },
-  { value: 'negotiable', label: 'Negociable' },
-];
+const MAX_IMAGES = 6;
+const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
+
+interface FormState {
+  parent_id: string;
+  category_id: string;
+  title: string;
+  description: string;
+  price_type: PriceType;
+  price_min: string;
+  price_max: string;
+  images: string[];
+}
+
+const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', images: [] };
+
+type Errors = Partial<Record<'category' | 'title' | 'price', string>>;
+
+function validate(f: FormState): Errors {
+  const e: Errors = {};
+  if (!f.category_id) e.category = 'Elige la categoría de tu servicio';
+  if (f.title.trim().length < 5) e.title = 'El título debe tener al menos 5 caracteres';
+  if (f.price_type !== 'negotiable') {
+    const min = f.price_min === '' ? null : Number(f.price_min);
+    const max = f.price_max === '' ? null : Number(f.price_max);
+    if (min == null && max == null) e.price = 'Indica al menos un precio o elige “A convenir”';
+    else if ((min != null && (Number.isNaN(min) || min < 0)) || (max != null && (Number.isNaN(max) || max < 0))) e.price = 'Los precios deben ser números positivos';
+    else if (min != null && max != null && max < min) e.price = 'El precio máximo no puede ser menor que el mínimo';
+  }
+  return e;
+}
 
 export default function ServiceForm() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isEditing = !!id;
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [limit, setLimit] = useState<{ plan: Plan; max: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [errors, setErrors] = useState<Errors>({});
+  const [submitError, setSubmitError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(0);
 
-  const [formData, setFormData] = useState({
-    category_id: '',
-    title: '',
-    description: '',
-    price_min: '',
-    price_max: '',
-    price_type: 'negotiable' as 'fixed' | 'hourly' | 'daily' | 'negotiable',
-    images: [] as string[],
-  });
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [cats, extra] = await Promise.all([
+        categoryApi.getAll(),
+        isEdit ? serviceApi.getById(id!) : serviceApi.mine(),
+      ]);
+      const list: Category[] = cats.data.categories;
+      setCategories(list);
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await categoryApi.getFlat();
-        setCategories(res.data.categories.filter(c => c.parent_id));
-      } catch (error) {
-        console.error('Error fetching categories:', error);
+      if (isEdit) {
+        const s = extra.data.service;
+        if (!s.is_owner) throw new Error('not-owner');
+        const parent = list.find((c) => c.id === s.category_id || c.subcategories?.some((sc) => sc.id === s.category_id));
+        setForm({
+          parent_id: parent?.id ?? '',
+          category_id: s.category_id,
+          title: s.title,
+          description: s.description ?? '',
+          price_type: s.price_type,
+          price_min: s.price_min != null ? String(s.price_min) : '',
+          price_max: s.price_max != null ? String(s.price_max) : '',
+          images: s.images ?? [],
+        });
+      } else {
+        const { services, plan, max_services } = extra.data;
+        setLimit(max_services !== null && services.length >= max_services ? { plan, max: max_services } : null);
       }
-    };
-    fetchCategories();
-  }, []);
-
-  useEffect(() => {
-    if (isEditing) {
-      const fetchService = async () => {
-        try {
-          const res = await serviceApi.getById(id!);
-          const service = res.data.service;
-          setFormData({
-            category_id: service.category_id,
-            title: service.title,
-            description: service.description || '',
-            price_min: service.price_min?.toString() || '',
-            price_max: service.price_max?.toString() || '',
-            price_type: service.price_type,
-            images: service.images || [],
-          });
-          setImagePreviews(service.images || []);
-        } catch (error) {
-          console.error('Error fetching service:', error);
-          setError('Error al cargar el servicio');
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchService();
-    } else {
+    } catch (err) {
+      setLoadError(err instanceof Error && err.message === 'not-owner'
+        ? 'Este servicio no es tuyo.'
+        : apiError(err, 'No se pudo cargar el formulario.'));
+    } finally {
       setLoading(false);
     }
-  }, [id, isEditing]);
+  }, [id, isEdit]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  useEffect(() => { load(); }, [load]);
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  const parent = categories.find((c) => c.id === form.parent_id);
+  const subs = parent?.subcategories ?? [];
+
+  const chooseParent = (pid: string) => {
+    const p = categories.find((c) => c.id === pid);
+    // Si la categoría no tiene subcategorías, el servicio se clasifica directamente en ella.
+    setForm((f) => ({ ...f, parent_id: pid, category_id: p && !p.subcategories?.length ? p.id : '' }));
+    setErrors((e) => ({ ...e, category: undefined }));
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    // In a real app, you would upload to a storage service (S3, Cloudinary, etc.)
-    // For now, we'll create object URLs for preview
-    const previews = files.map(file => URL.createObjectURL(file));
-    setImagePreviews(prev => [...prev, ...previews].slice(0, 5));
-    
-    // Convert to base64 or upload - for demo we'll use data URLs
-    for (const file of files) {
-      const base64 = await fileToBase64(file);
-      setFormData(prev => ({ ...prev, images: [...prev.images, base64].slice(0, 5) }));
+  const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    const room = MAX_IMAGES - form.images.length - uploading;
+    if (room <= 0) return;
+    const batch = files.slice(0, room);
+    if (files.length > room) toast(`Solo caben ${MAX_IMAGES} fotos por servicio: se subirán ${room}.`, 'error');
+    setUploading((n) => n + batch.length);
+    for (const file of batch) {
+      try {
+        const url = await uploadImage(file);
+        setForm((f) => ({ ...f, images: [...f.images, url].slice(0, MAX_IMAGES) }));
+      } catch (err) {
+        toast(err instanceof Error && !('isAxiosError' in err) ? err.message : apiError(err, 'No se pudo subir una foto.'), 'error');
+      } finally {
+        setUploading((n) => n - 1);
+      }
     }
   };
 
-  const removeImage = (index: number) => {
-    setImagePreviews(prev => prev.filter((_, i) => i !== index));
-    setFormData(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== index) }));
-  };
+  const removeImage = (url: string) => set('images', form.images.filter((x) => x !== url));
+  const makeCover = (url: string) => set('images', [url, ...form.images.filter((x) => x !== url)]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
+    setSubmitError('');
+    const errs = validate(form);
+    setErrors(errs);
+    if (Object.keys(errs).length) {
+      document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+      return;
+    }
+    const negotiable = form.price_type === 'negotiable';
+    const payload: ServiceInput = {
+      category_id: form.category_id,
+      title: form.title.trim(),
+      description: form.description.trim() || undefined,
+      price_type: form.price_type,
+      price_min: negotiable || form.price_min === '' ? null : Number(form.price_min),
+      price_max: negotiable || form.price_max === '' ? null : Number(form.price_max),
+      images: form.images,
+    };
     setSaving(true);
-
     try {
-      const submitData = {
-        category_id: formData.category_id,
-        title: formData.title,
-        description: formData.description,
-        price_min: formData.price_min ? Number(formData.price_min) : undefined,
-        price_max: formData.price_max ? Number(formData.price_max) : undefined,
-        price_type: formData.price_type,
-        images: formData.images,
-      };
-
-      if (isEditing) {
-        await serviceApi.update(id!, submitData);
+      if (isEdit) {
+        await serviceApi.update(id!, payload);
+        toast('Cambios guardados');
       } else {
-        await serviceApi.create(submitData);
+        await serviceApi.create(payload);
+        toast('¡Servicio publicado!');
       }
-
       navigate('/dashboard/servicios');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Error al guardar el servicio');
+    } catch (err) {
+      setSubmitError(apiError(err, 'No se pudo guardar el servicio.'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
+  const back = (
+    <Link to="/dashboard/servicios" className="link mb-3 inline-flex items-center gap-1 text-sm">
+      <ArrowLeft className="h-4 w-4" /> Mis servicios
+    </Link>
+  );
+
+  if (loading) return <PageLoader />;
+  if (loadError) return <div>{back}<ErrorState message={loadError} onRetry={load} /></div>;
+
+  if (limit) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
+      <div>
+        {back}
+        <EmptyState
+          icon={<Lock className="h-6 w-6" />}
+          title="Llegaste al límite de tu plan"
+          action={
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link to="/dashboard/suscripcion" className="btn-primary"><Sparkles className="h-4 w-4" /> Ver planes</Link>
+              <Link to="/dashboard/servicios" className="btn-secondary">Gestionar mis servicios</Link>
+            </div>
+          }
+        >
+          Tu plan {planLabel[limit.plan]} permite {limit.max} {limit.max === 1 ? 'servicio' : 'servicios'} (contando los pausados).
+          Mejora tu plan para publicar más, o elimina uno que ya no ofrezcas.
+        </EmptyState>
       </div>
     );
   }
 
+  const slots = form.images.length + uploading;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <button
-            onClick={() => navigate('/dashboard/servicios')}
-            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Volver
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">{isEditing ? 'Editar Servicio' : 'Nuevo Servicio'}</h1>
-          <p className="text-gray-600 mt-1">Completa la información para que los clientes te encuentren</p>
-        </div>
+    <div className="max-w-3xl">
+      {back}
+      <PageTitle
+        title={isEdit ? 'Editar servicio' : 'Publicar un servicio'}
+        subtitle={isEdit ? 'Los cambios se ven al instante en tu anuncio.' : 'Un buen título, fotos reales y un precio claro atraen más clientes.'}
+      />
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700" role="alert">
-            {error}
-          </div>
-        )}
+      <form onSubmit={submit} noValidate className="space-y-5">
+        {submitError && <Alert>{submitError}</Alert>}
 
-        <form onSubmit={handleSubmit} className="card overflow-hidden">
-          <div className="p-6 space-y-6">
-            <div>
-              <label htmlFor="category_id" className="label">Categoría <span className="text-red-500">*</span></label>
-              <select
-                id="category_id"
-                name="category_id"
-                value={formData.category_id}
-                onChange={handleChange}
-                required
-                className="input"
-              >
-                <option value="">Selecciona una categoría</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.icon} {cat.name}
-                  </option>
+        <FormSection title="¿Qué ofreces?">
+          <Field label="Categoría" htmlFor="parent" error={!form.category_id && !subs.length ? errors.category : undefined}>
+            <select
+              id="parent"
+              value={form.parent_id}
+              onChange={(e) => chooseParent(e.target.value)}
+              className={cn('input', errors.category && !form.parent_id && 'input-error')}
+              aria-invalid={Boolean(errors.category && !form.parent_id)}
+            >
+              <option value="">Elige una categoría…</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </select>
+          </Field>
+
+          {subs.length > 0 && (
+            <fieldset>
+              <legend className="label">Especialidad</legend>
+              <div className="flex flex-wrap gap-2">
+                {subs.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { set('category_id', s.id); setErrors((er) => ({ ...er, category: undefined })); }}
+                    className={cn('chip', form.category_id === s.id && 'chip-active')}
+                    aria-pressed={form.category_id === s.id}
+                  >
+                    {s.icon} {s.name}
+                  </button>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="title" className="label">Título del servicio <span className="text-red-500">*</span></label>
-              <input
-                id="title"
-                name="title"
-                type="text"
-                value={formData.title}
-                onChange={handleChange}
-                required
-                maxLength={100}
-                className="input"
-                placeholder="Ej: Instalación eléctrica residencial, Reparación de fugas, Pintura interior/exterior..."
-              />
-              <p className="text-sm text-gray-500 mt-1">Sé específico y usa palabras clave que los clientes buscarían</p>
-            </div>
-
-            <div>
-              <label htmlFor="description" className="label">Descripción detallada <span className="text-red-500">*</span></label>
-              <textarea
-                id="description"
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                required
-                className="input min-h-[150px] resize-y"
-                placeholder="Describe qué incluye el servicio, materiales que usas, tiempo estimado, garantías, zona de cobertura..."
-                rows={6}
-              />
-            </div>
-
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-primary-600" />
-                Precio
-              </h3>
-              <div>
-                <label htmlFor="price_type" className="label">Tipo de precio</label>
-                <select
-                  id="price_type"
-                  name="price_type"
-                  value={formData.price_type}
-                  onChange={handleChange}
-                  className="input"
+                <button
+                  type="button"
+                  onClick={() => set('category_id', parent!.id)}
+                  className={cn('chip', form.category_id === parent!.id && 'chip-active')}
+                  aria-pressed={form.category_id === parent!.id}
                 >
-                  {priceTypes.map((pt) => (
-                    <option key={pt.value} value={pt.value}>{pt.label}</option>
-                  ))}
-                </select>
+                  Otro / general
+                </button>
               </div>
+              {errors.category && !form.category_id && <p className="mt-1 text-xs font-medium text-red-600">Elige una especialidad</p>}
+            </fieldset>
+          )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label htmlFor="price_min" className="label">Precio mínimo (USD)</label>
-                  <input
-                    id="price_min"
-                    name="price_min"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price_min}
-                    onChange={handleChange}
-                    className="input"
-                    placeholder="0.00"
-                    disabled={formData.price_type === 'negotiable'}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="price_max" className="label">Precio máximo (USD)</label>
-                  <input
-                    id="price_max"
-                    name="price_max"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price_max}
-                    onChange={handleChange}
-                    className="input"
-                    placeholder="0.00"
-                    disabled={formData.price_type === 'negotiable'}
-                  />
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-1">
-                {formData.price_type === 'negotiable'
-                  ? 'El precio se acordará directamente con el cliente'
-                  : formData.price_type === 'fixed'
-                  ? 'Precio único por el servicio completo'
-                  : formData.price_type === 'hourly'
-                  ? 'Precio por hora de trabajo'
-                  : 'Precio por día de trabajo'}
-              </p>
+          <Field label="Título del anuncio" htmlFor="title" error={errors.title} hint="Ej.: “Reparación de refrigeradores a domicilio”">
+            <input
+              id="title"
+              value={form.title}
+              onChange={(e) => { set('title', e.target.value); setErrors((er) => ({ ...er, title: undefined })); }}
+              maxLength={100}
+              className={cn('input', errors.title && 'input-error')}
+              aria-invalid={Boolean(errors.title)}
+            />
+          </Field>
+
+          <Field label="Descripción" htmlFor="description" hint={`${form.description.length}/3000 · Qué incluye, materiales, horarios, zonas, garantía…`}>
+            <textarea
+              id="description"
+              value={form.description}
+              onChange={(e) => set('description', e.target.value)}
+              maxLength={3000}
+              rows={6}
+              className="input resize-y"
+            />
+          </Field>
+        </FormSection>
+
+        <FormSection title="Precio" description="Orientativo: el precio final lo acuerdas con el cliente.">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Tipo de precio">
+            {PRICE_TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="radio"
+                aria-checked={form.price_type === t}
+                onClick={() => { set('price_type', t); setErrors((er) => ({ ...er, price: undefined })); }}
+                className={cn('chip justify-center', form.price_type === t && 'chip-active')}
+              >
+                {priceTypeLabel[t]}
+              </button>
+            ))}
+          </div>
+          {form.price_type !== 'negotiable' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Desde (USD)" htmlFor="pmin">
+                <input id="pmin" type="number" inputMode="decimal" min={0} step="0.01" value={form.price_min}
+                  onChange={(e) => { set('price_min', e.target.value); setErrors((er) => ({ ...er, price: undefined })); }}
+                  className={cn('input', errors.price && 'input-error')} aria-invalid={Boolean(errors.price)} />
+              </Field>
+              <Field label="Hasta (opcional)" htmlFor="pmax">
+                <input id="pmax" type="number" inputMode="decimal" min={0} step="0.01" value={form.price_max}
+                  onChange={(e) => { set('price_max', e.target.value); setErrors((er) => ({ ...er, price: undefined })); }}
+                  className={cn('input', errors.price && 'input-error')} />
+              </Field>
             </div>
+          )}
+          {errors.price && <p className="text-xs font-medium text-red-600">{errors.price}</p>}
+        </FormSection>
 
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Image className="w-5 h-5 text-primary-600" />
-                Imágenes (máximo 5)
-              </h3>
-              <div className="flex flex-wrap gap-3 mb-4">
-                {imagePreviews.map((preview, index) => (
-                  <div key={index} className="relative w-24 h-24 rounded-lg overflow-hidden">
-                    <img src={preview} alt={`Preview ${index}`} className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(index)}
-                      className="absolute top-1 right-1 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center hover:bg-red-700"
-                    >
-                      <X className="w-4 h-4" />
+        <FormSection title="Fotos" description={`Hasta ${MAX_IMAGES} fotos de trabajos reales. La primera es la portada. Las reducimos antes de subirlas para ahorrar datos.`}>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {form.images.map((url, i) => (
+              <li key={url} className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-sand-100">
+                <img src={url} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
+                {i === 0 && <span className="badge absolute left-2 top-2 bg-ink-900/80 text-white">Portada</span>}
+                <div className="absolute inset-x-2 bottom-2 flex justify-end gap-1.5">
+                  {i > 0 && (
+                    <button type="button" onClick={() => makeCover(url)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-ink-700 shadow-sm hover:text-amber-600" aria-label={`Usar la foto ${i + 1} como portada`}>
+                      <Star className="h-4 w-4" />
                     </button>
-                  </div>
-                ))}
-                {imagePreviews.length < 5 && (
-                  <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      multiple
-                      className="hidden"
-                      id={`images-${Date.now()}`}
-                    />
-                    <span className="text-gray-400">+</span>
-                    <span className="text-xs text-gray-500">Agregar</span>
-                  </label>
-                )}
-              </div>
-              <p className="text-sm text-gray-500">Formatos: JPG, PNG, WebP. Máx 5MB cada una.</p>
-            </div>
-          </div>
+                  )}
+                  <button type="button" onClick={() => removeImage(url)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-red-600 shadow-sm hover:bg-red-50" aria-label={`Quitar la foto ${i + 1}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </li>
+            ))}
+            {Array.from({ length: uploading }).map((_, i) => (
+              <li key={`up-${i}`} className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-sand-100 text-ink-400" role="status" aria-label="Subiendo foto">
+                <Spinner className="h-6 w-6" />
+              </li>
+            ))}
+            {slots < MAX_IMAGES && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-sand-300 text-sm font-semibold text-ink-500 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  <ImagePlus className="h-6 w-6" />
+                  Añadir fotos
+                  <span className="text-xs font-normal text-ink-400">{form.images.length}/{MAX_IMAGES}</span>
+                </button>
+              </li>
+            )}
+          </ul>
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onFiles} className="hidden" />
+        </FormSection>
 
-          <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-4">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard/servicios')}
-              className="btn-secondary"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="btn-primary gap-2"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-5 h-5" />
-                  {isEditing ? 'Actualizar' : 'Publicar'} servicio
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="sticky bottom-20 z-10 flex flex-col-reverse gap-2 rounded-2xl border border-sand-200 bg-white/95 p-3 shadow-lift backdrop-blur sm:flex-row sm:justify-end md:bottom-4">
+          <Link to="/dashboard/servicios" className="btn-secondary">Cancelar</Link>
+          <button type="submit" disabled={saving || uploading > 0} className="btn-primary">
+            {saving && <Spinner className="h-4 w-4" />}
+            {uploading > 0 ? 'Subiendo fotos…' : isEdit ? 'Guardar cambios' : 'Publicar servicio'}
+          </button>
+        </div>
+      </form>
     </div>
   );
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
 }

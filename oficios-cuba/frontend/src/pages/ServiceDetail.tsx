@@ -1,356 +1,355 @@
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { serviceApi } from '../services/api';
-import type { Service, Review } from '../../types';
-import { MapPin, Star, MessageSquare, Phone, Mail, Share2, ArrowLeft, Heart, CheckCircle, Clock, DollarSign, MapPin as MapPinIcon, Building2, User, Shield, Copy } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { ArrowLeft, Briefcase, ChevronLeft, ChevronRight, Clock, EyeOff, MapPin, MessageSquareText, Pencil, SearchX } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { reviewApi, serviceApi, apiError } from '../services/api';
+import { formatPrice, priceTypeLabel, relativeTime } from '../lib/format';
+import type { Review, ServiceDetail as ServiceDetailType, ServiceSummary } from '../types';
+import ContactActions from '../components/ContactActions';
+import { ServiceCard } from '../components/cards';
+import { ReviewForm, ReviewItem } from '../components/ReviewList';
+import { Alert, Avatar, Breadcrumbs, CategoryCover, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, cn } from '../components/ui';
+import axios from 'axios';
 
-export default function ServiceDetail() {
-  const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
-  const [service, setService] = useState<Service | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isFavorite, setIsFavorite] = useState(false);
+function Gallery({ images, title, seed, icon }: { images: string[]; title: string; seed: string; icon: string }) {
+  const [index, setIndex] = useState(0);
+  const track = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!id) return;
-    const fetchService = async () => {
-      try {
-        const res = await serviceApi.getById(id);
-        setService(res.data.service);
-        setReviews(res.data.reviews || []);
-      } catch (error) {
-        console.error('Error fetching service:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchService();
-  }, [id]);
-
-  const formatPrice = (service: Service) => {
-    if (service.price_type === 'negotiable' || (!service.price_min && !service.price_max)) {
-      return 'Precio negociable';
-    }
-    if (service.price_min && service.price_max && service.price_min !== service.price_max) {
-      return `$${service.price_min} - $${service.price_max} ${service.price_type === 'hourly' ? '/hora' : service.price_type === 'daily' ? '/día' : ''}`;
-    }
-    return `$${service.price_min || service.price_max} ${service.price_type === 'hourly' ? '/hora' : service.price_type === 'daily' ? '/día' : ''}`;
+  // En móvil se desliza con el dedo (scroll-snap); el índice se deduce del scroll.
+  const onScroll = () => {
+    const el = track.current;
+    if (el) setIndex(Math.round(el.scrollLeft / el.clientWidth));
   };
 
-  const handleContact = async (type: 'whatsapp' | 'phone' | 'email') => {
-    if (!service) return;
-    
-    if (!user) {
-      alert('Debes iniciar sesión para contactar al proveedor');
-      return;
-    }
-
-    let url = '';
-    if (type === 'whatsapp' && service.whatsapp) {
-      const message = encodeURIComponent(`Hola, vi tu servicio "${service.title}" en Oficios Cuba y me interesa. ¿Podrías darme más información?`);
-      url = `https://wa.me/${service.whatsapp.replace(/\D/g, '')}?text=${message}`;
-    } else if (type === 'phone' && service.telegram) {
-      url = `tel:${service.telegram}`;
-    } else if (type === 'email' && service.email_contact) {
-      url = `mailto:${service.email_contact}?subject=Consulta sobre ${encodeURIComponent(service.title)}`;
-    }
-
-    if (url) {
-      window.open(url, '_blank');
-    } else {
-      alert('Este proveedor no tiene este método de contacto configurado');
-    }
+  const go = (i: number) => {
+    const next = (i + images.length) % images.length;
+    setIndex(next);
+    const el = track.current;
+    if (el) el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
   };
 
-  if (loading) {
+  if (images.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
-  if (!service) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Servicio no encontrado</h2>
-          <Link to="/buscar" className="btn-primary">Volver a buscar</Link>
-        </div>
+      <div className="aspect-[4/3] overflow-hidden rounded-3xl sm:aspect-[16/9]">
+        <CategoryCover seed={seed} icon={icon} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100" aria-label="Breadcrumb">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <ol className="flex items-center gap-2 text-sm text-gray-500">
-            <li><Link to="/" className="hover:text-primary-600">Inicio</Link></li>
-            <li><span className="mx-2">/</span></li>
-            <li><Link to="/buscar" className="hover:text-primary-600">Buscar</Link></li>
-            <li><span className="mx-2">/</span></li>
-            <li className="text-gray-900 font-medium truncate max-w-xs">{service.title}</li>
-          </ol>
+    <div>
+      <div className="relative overflow-hidden rounded-3xl bg-sand-100">
+        <div
+          ref={track}
+          onScroll={onScroll}
+          className="scrollbar-none flex aspect-[4/3] snap-x snap-mandatory overflow-x-auto sm:aspect-[16/9]"
+          aria-roledescription="carrusel"
+          aria-label={`Fotos de ${title}`}
+        >
+          {images.map((src, i) => (
+            <img
+              key={src}
+              src={src}
+              alt={`${title} — foto ${i + 1} de ${images.length}`}
+              loading={i === 0 ? 'eager' : 'lazy'}
+              decoding="async"
+              className="h-full w-full shrink-0 snap-center object-cover"
+            />
+          ))}
         </div>
-      </nav>
+        {images.length > 1 && (
+          <>
+            <button onClick={() => go(index - 1)} className="absolute left-3 top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-ink-800 shadow-card hover:bg-white sm:flex" aria-label="Foto anterior">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button onClick={() => go(index + 1)} className="absolute right-3 top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-ink-800 shadow-card hover:bg-white sm:flex" aria-label="Foto siguiente">
+              <ChevronRight className="h-5 w-5" />
+            </button>
+            <span className="badge absolute bottom-3 right-3 bg-ink-900/70 text-white backdrop-blur" aria-live="polite">
+              {index + 1} / {images.length}
+            </span>
+          </>
+        )}
+      </div>
+      {images.length > 1 && (
+        <div className="scrollbar-none mt-3 flex gap-2 overflow-x-auto">
+          {images.map((src, i) => (
+            <button
+              key={src}
+              onClick={() => go(i)}
+              className={cn('h-16 w-20 shrink-0 overflow-hidden rounded-xl ring-2 ring-offset-2 ring-offset-paper transition', i === index ? 'ring-brand-500' : 'ring-transparent opacity-70 hover:opacity-100')}
+              aria-label={`Ver foto ${i + 1}`}
+              aria-current={i === index}
+            >
+              <img src={src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="card overflow-hidden">
-              <div className="relative h-64 bg-gray-100">
-                {service.images && service.images.length > 0 ? (
-                  <img
-                    src={service.images[0]}
-                    alt={service.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Building2 className="w-20 h-20 text-gray-400" />
-                  </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4 text-white">
-                  <span className="badge bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-                    {service.category_icon} {service.category_name}
-                  </span>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">{service.title}</h1>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <span className="flex items-center gap-1">
-                        <MapPinIcon className="w-4 h-4" />
-                        {service.province_name}
-                        {service.municipality_name && `, ${service.municipality_name}`}
-                      </span>
-                      {service.provider_business_name && (
-                        <span className="flex items-center gap-1">
-                          <Building2 className="w-4 h-4" />
-                          {service.provider_business_name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {service.provider_subscription_plan !== 'free' && (
-                    <span className={`badge ${service.provider_subscription_plan === 'premium' ? 'bg-purple-100 text-purple-800' : service.provider_subscription_plan === 'pro' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
-                      {service.provider_subscription_plan.charAt(0).toUpperCase() + service.provider_subscription_plan.slice(1)}
-                    </span>
-                  )}
-                </div>
+function ReviewsSection({ service, reviews, onCreated }: { service: ServiceDetailType; reviews: Review[]; onCreated: (r: Review) => void }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  const [eligibility, setEligibility] = useState<{ can_review: boolean; reason: string | null } | null>(null);
 
-                <div className="flex items-center gap-6 mb-6 p-4 bg-gray-50 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-6 h-6 text-primary-600" />
-                    <div>
-                      <p className="text-sm text-gray-500">Precio</p>
-                      <p className="text-xl font-bold text-gray-900">{formatPrice(service)}</p>
-                    </div>
-                  </div>
-                  <div className="border-l border-gray-200 pl-4 flex items-center gap-2">
-                    <Star className="w-6 h-6 text-yellow-500 fill-current" />
-                    <div>
-                      <p className="text-sm text-gray-500">Calificación</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {service.provider_rating > 0 ? service.provider_rating.toFixed(1) : 'Sin calificar'}
-                        {service.provider_review_count > 0 && ` (${service.provider_review_count} reseñas)`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="border-l border-gray-200 pl-4 flex items-center gap-2">
-                    <CheckCircle className="w-6 h-6 text-green-500" />
-                    <div>
-                      <p className="text-sm text-gray-500">Experiencia</p>
-                      <p className="text-xl font-bold text-gray-900">{service.years_experience || 0} años</p>
-                    </div>
-                  </div>
-                </div>
+  useEffect(() => {
+    if (user?.user_type !== 'client') return;
+    reviewApi.eligibility(service.id).then((r) => setEligibility(r.data)).catch(() => setEligibility(null));
+  }, [user, service.id]);
 
-                <div className="prose prose-gray max-w-none">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-3">Descripción del servicio</h2>
-                  <p className="text-gray-700 whitespace-pre-wrap">{service.description || 'No hay descripción disponible.'}</p>
-                </div>
-              </div>
-            </div>
+  return (
+    <section aria-labelledby="reviews-title" className="card p-5 sm:p-6">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="reviews-title" className="text-xl font-bold">Reseñas del servicio</h2>
+          <RatingInline rating={service.rating} count={service.review_count} className="mt-1" />
+          {service.review_count > 0 && <span className="ml-1 text-xs text-ink-400">(valoración general del profesional)</span>}
+        </div>
+        {service.review_count > reviews.length && (
+          <Link to={`/proveedor/${service.provider_id}#resenas`} className="link text-sm">Ver todas las reseñas</Link>
+        )}
+      </div>
 
-            <div className="card">
-              <div className="p-6 border-b border-gray-100">
-                <h2 className="text-xl font-semibold text-gray-900">Información del proveedor</h2>
-              </div>
-              <div className="p-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-16 h-16 rounded-xl bg-primary-100 flex items-center justify-center">
-                    {service.avatar_url ? (
-                      <img src={service.avatar_url} alt="" className="w-16 h-16 rounded-xl" />
-                    ) : (
-                      <User className="w-8 h-8 text-primary-600" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{service.owner_name}</h3>
-                    <p className="text-sm text-gray-500">{service.provider_business_name || 'Profesional independiente'}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                      <span className="font-medium">{service.provider_rating.toFixed(1)}</span>
-                      <span className="text-gray-500">({service.provider_review_count} reseñas)</span>
-                    </div>
-                  </div>
-                </div>
+      {eligibility?.can_review && (
+        <div className="mb-6">
+          <ReviewForm
+            serviceId={service.id}
+            onCreated={(r) => {
+              setEligibility({ can_review: false, reason: 'Ya reseñaste este servicio' });
+              onCreated(r);
+            }}
+          />
+        </div>
+      )}
+      {eligibility && !eligibility.can_review && eligibility.reason && (
+        <div className="mb-6"><Alert tone="info">{eligibility.reason}</Alert></div>
+      )}
+      {!user && (
+        <p className="mb-6 text-sm text-ink-500">
+          <Link to={`/login?next=${encodeURIComponent(location.pathname)}`} className="link">Entra con tu cuenta de cliente</Link> para dejar una reseña después de contactar al profesional.
+        </p>
+      )}
 
-                <div className="space-y-3">
-                  {service.whatsapp && (
-                    <button
-                      onClick={() => handleContact('whatsapp')}
-                      className="w-full btn-secondary gap-3 justify-start"
-                    >
-                      <MessageSquare className="w-5 h-5 text-green-600" />
-                      <span>WhatsApp</span>
-                    </button>
-                  )}
-                  {service.telegram && (
-                    <button
-                      onClick={() => handleContact('phone')}
-                      className="w-full btn-secondary gap-3 justify-start"
-                    >
-                      <Phone className="w-5 h-5" />
-                      <span>Llamar</span>
-                    </button>
-                  )}
-                  {service.email_contact && (
-                    <button
-                      onClick={() => handleContact('email')}
-                      className="w-full btn-secondary gap-3 justify-start"
-                    >
-                      <Mail className="w-5 h-5" />
-                      <span>Email</span>
-                    </button>
-                  )}
-                  <Link
-                    to={`/proveedor/${service.provider_id}`}
-                    className="w-full btn-outline gap-3 justify-start"
-                  >
-                    <Building2 className="w-5 h-5" />
-                    <span>Ver perfil completo</span>
-                  </Link>
-                </div>
-              </div>
-            </div>
+      {reviews.length === 0 ? (
+        <p className="py-6 text-center text-sm text-ink-400">Este servicio todavía no tiene reseñas. ¡Sé el primero en contar tu experiencia!</p>
+      ) : (
+        <ul className="divide-y divide-sand-200">
+          {reviews.map((r) => <ReviewItem key={r.id} review={r} />)}
+        </ul>
+      )}
+    </section>
+  );
+}
 
-            {reviews.length > 0 && (
-              <div className="card">
-                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">Reseñas ({reviews.length})</h2>
-                  <Link to="#" className="text-sm text-primary-600 hover:text-primary-700">Ver todas</Link>
-                </div>
-                <div className="p-6 space-y-4">
-                  {reviews.slice(0, 3).map((review) => (
-                    <div key={review.id} className="border-b border-gray-100 pb-4 last:border-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                          <User className="w-5 h-5 text-primary-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{review.client_name}</p>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${i < review.rating ? 'text-yellow-500 fill-current' : 'text-gray-300'}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-gray-700">{review.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+export default function ServiceDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [service, setService] = useState<ServiceDetailType | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [related, setRelated] = useState<ServiceSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState('');
 
-          <div className="lg:col-span-1">
-            <div className="card p-6 sticky top-24 space-y-6">
-              <div className="bg-primary-50 rounded-xl p-4">
-                <h3 className="font-semibold text-gray-900 mb-2">Contactar proveedor</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  {service.provider_business_name || service.owner_name} te responderá lo antes posible.
-                </p>
-                <div className="space-y-2">
-                  {service.whatsapp && (
-                    <button
-                      onClick={() => handleContact('whatsapp')}
-                      className="w-full btn-primary gap-2 justify-center"
-                    >
-                      <MessageSquare className="w-5 h-5" />
-                      Chatear por WhatsApp
-                    </button>
-                  )}
-                  {service.telegram && (
-                    <button
-                      onClick={() => handleContact('phone')}
-                      className="w-full btn-secondary gap-2 justify-center"
-                    >
-                      <Phone className="w-5 h-5" />
-                      Llamar por teléfono
-                    </button>
-                  )}
-                </div>
-              </div>
+  const load = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    setError('');
+    setNotFound(false);
+    try {
+      const res = await serviceApi.getById(id);
+      setService(res.data.service);
+      setReviews(res.data.reviews);
+      setRelated(res.data.related);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) setNotFound(true);
+      else setError(apiError(err, 'No pudimos cargar el servicio.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-              <div className="border-t border-gray-100 pt-4 space-y-3">
-                <h3 className="font-semibold text-gray-900">Detalles del servicio</h3>
-                <dl className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Categoría</dt>
-                    <dd className="font-medium text-gray-900">{service.category_name}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Tipo de precio</dt>
-                    <dd className="font-medium text-gray-900 capitalize">{service.price_type}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500">Provincia</dt>
-                    <dd className="font-medium text-gray-900">{service.province_name}</dd>
-                  </div>
-                  {service.municipality_name && (
-                    <div className="flex justify-between">
-                      <dt className="text-gray-500">Municipio</dt>
-                      <dd className="font-medium text-gray-900">{service.municipality_name}</dd>
-                    </div>
-                  )}
-                  {service.years_experience && (
-                    <div className="flex justify-between">
-                      <dt className="text-gray-500">Años de experiencia</dt>
-                      <dd className="font-medium text-gray-900">{service.years_experience}</dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
+  useEffect(() => {
+    load();
+    window.scrollTo(0, 0);
+  }, [load]);
 
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="font-semibold text-gray-900 mb-3">Compartir</h3>
-                <div className="flex gap-2">
-                  <button className="btn-secondary flex-1 gap-2 justify-center" onClick={() => navigator.share?.({ title: service.title, url: window.location.href })}>
-                    <Share2 className="w-4 h-4" />
-                    Compartir
-                  </button>
-                  <button className="btn-secondary flex-1 gap-2 justify-center" onClick={() => navigator.clipboard.writeText(window.location.href)}>
-                    <Copy className="w-4 h-4" />
-                    Copiar enlace
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+  useEffect(() => {
+    if (service) document.title = `${service.title} · Oficios Cuba`;
+    return () => { document.title = 'Oficios Cuba'; };
+  }, [service]);
+
+  if (loading) return <PageLoader />;
+
+  if (notFound) {
+    return (
+      <div className="container-page py-16">
+        <EmptyState icon={<SearchX className="h-7 w-7" />} title="Este servicio ya no está disponible" action={<Link to="/buscar" className="btn-primary">Buscar otros servicios</Link>}>
+          Puede que el profesional lo haya pausado o eliminado.
+        </EmptyState>
+      </div>
+    );
+  }
+
+  if (error || !service) {
+    return <div className="container-page py-12"><ErrorState message={error || 'No pudimos cargar el servicio.'} onRetry={load} /></div>;
+  }
+
+  const providerName = service.business_name || service.owner_name;
+  const place = [service.municipality_name, service.province_name].filter(Boolean).join(', ');
+  const category = service.parent_category_slug
+    ? { label: service.parent_category_name ?? '', to: `/buscar?category=${service.parent_category_slug}` }
+    : null;
+
+  return (
+    <div className={cn('container-page py-6 sm:py-8', !service.is_owner && 'pb-28 md:pb-8')}>
+      <div className="mb-5 flex items-center gap-3">
+        <Link to="/buscar" className="btn-ghost btn-sm -ml-3 sm:hidden" aria-label="Volver a la búsqueda">
+          <ArrowLeft className="h-4 w-4" /> Buscar
+        </Link>
+        <div className="hidden sm:block">
+          <Breadcrumbs
+            items={[
+              { label: 'Inicio', to: '/' },
+              { label: 'Buscar', to: '/buscar' },
+              ...(category ? [category] : []),
+              { label: service.category_name, to: `/buscar?category=${service.category_slug}` },
+              { label: service.title },
+            ]}
+          />
         </div>
       </div>
+
+      {service.is_owner && (
+        <div className="mb-6">
+          <Alert tone={service.is_active ? 'info' : 'error'}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                {!service.is_active && <EyeOff className="h-4 w-4" />}
+                {service.is_active ? 'Así ven los clientes tu servicio.' : 'Este servicio está pausado: los clientes no pueden verlo.'}
+              </span>
+              <Link to={`/dashboard/servicios/${service.id}/editar`} className="btn-secondary btn-sm">
+                <Pencil className="h-3.5 w-3.5" /> Editar
+              </Link>
+            </div>
+          </Alert>
+        </div>
+      )}
+
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0 space-y-8">
+          <Gallery images={service.images} title={service.title} seed={service.parent_category_slug || service.category_slug} icon={service.category_icon} />
+
+          <header>
+            <Link to={`/buscar?category=${service.category_slug}`} className="badge bg-sand-100 text-ink-700 hover:bg-sand-200">
+              <span aria-hidden="true">{service.category_icon}</span> {service.category_name}
+            </Link>
+            <h1 className="mt-3 text-balance text-3xl font-bold leading-tight sm:text-4xl">{service.title}</h1>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink-500">
+              <RatingInline rating={service.rating} count={service.review_count} />
+              {place && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" aria-hidden="true" /> {place}</span>}
+              <span className="flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" /> Publicado {relativeTime(service.created_at)}</span>
+            </div>
+            <div className="mt-5 rounded-2xl bg-white p-4 shadow-card lg:hidden">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{priceTypeLabel[service.price_type]}</p>
+              <p className="font-display text-2xl font-bold text-ink-900">{formatPrice(service)}</p>
+              {/* Entre md y lg no hay barra inferior ni columna lateral: el contacto va aquí. */}
+              {!service.is_owner && (
+                <div className="mt-4 hidden md:block">
+                  <ContactActions
+                    providerId={service.provider_id}
+                    providerName={providerName}
+                    serviceId={service.id}
+                    serviceTitle={service.title}
+                    whatsapp={service.whatsapp}
+                    phone={service.whatsapp}
+                  />
+                </div>
+              )}
+            </div>
+          </header>
+
+          <section aria-labelledby="desc-title">
+            <h2 id="desc-title" className="mb-3 text-xl font-bold">Sobre este servicio</h2>
+            {service.description ? (
+              <p className="whitespace-pre-line leading-relaxed text-ink-700">{service.description}</p>
+            ) : (
+              <p className="text-ink-400">El profesional no añadió una descripción. Escríbele para conocer los detalles.</p>
+            )}
+          </section>
+
+          <section aria-labelledby="pro-title" className="card p-5 sm:p-6">
+            <h2 id="pro-title" className="sr-only">Sobre el profesional</h2>
+            <div className="flex items-start gap-4">
+              <Avatar src={service.avatar_url} name={providerName} size="lg" square />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link to={`/proveedor/${service.provider_id}`} className="text-lg font-bold text-ink-900 hover:text-brand-700">{providerName}</Link>
+                  <PlanBadge plan={service.subscription_plan} />
+                </div>
+                {service.business_name && <p className="text-sm text-ink-500">{service.owner_name}</p>}
+                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-500">
+                  <RatingInline rating={service.rating} count={service.review_count} />
+                  {service.years_experience > 0 && (
+                    <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" aria-hidden="true" /> {service.years_experience} años de oficio</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            {service.provider_description && (
+              <p className="mt-4 line-clamp-4 whitespace-pre-line text-sm leading-relaxed text-ink-600">{service.provider_description}</p>
+            )}
+            <Link to={`/proveedor/${service.provider_id}`} className="btn-secondary mt-5 w-full sm:w-auto">Ver perfil completo</Link>
+          </section>
+
+          <ReviewsSection service={service} reviews={reviews} onCreated={(r) => setReviews((prev) => [r, ...prev])} />
+        </div>
+
+        <aside className="hidden lg:block">
+          <div className="card sticky top-24 space-y-5 p-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{priceTypeLabel[service.price_type]}</p>
+              <p className="font-display text-3xl font-bold text-ink-900">{formatPrice(service)}</p>
+            </div>
+            {!service.is_owner && (
+              <ContactActions
+                providerId={service.provider_id}
+                providerName={providerName}
+                serviceId={service.id}
+                serviceTitle={service.title}
+                whatsapp={service.whatsapp}
+                phone={service.whatsapp}
+              />
+            )}
+            <p className="flex items-start gap-2 border-t border-sand-200 pt-4 text-xs leading-relaxed text-ink-400">
+              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              Acuerda precio, fecha y lugar por el chat antes de empezar el trabajo. Oficios Cuba no cobra comisión.
+            </p>
+          </div>
+        </aside>
+      </div>
+
+      {related.length > 0 && (
+        <section aria-labelledby="related-title" className="mt-14">
+          <h2 id="related-title" className="mb-5 text-2xl font-bold">Otros profesionales de {service.parent_category_name || service.category_name}</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {related.map((s) => <ServiceCard key={s.id} service={s} />)}
+          </div>
+        </section>
+      )}
+
+      {!service.is_owner && (
+        <ContactActions
+          variant="bar"
+          providerId={service.provider_id}
+          providerName={providerName}
+          serviceId={service.id}
+          serviceTitle={service.title}
+          whatsapp={service.whatsapp}
+        />
+      )}
     </div>
   );
 }

@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import db from '../db/index.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+import { JWT_SECRET } from '../config.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -30,6 +28,19 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   } catch (error) {
     return res.status(401).json({ error: 'Token inválido o expirado' });
   }
+}
+
+// Para rutas públicas que muestran más datos al dueño (p. ej. un servicio desactivado).
+export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      req.user = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as AuthRequest['user'];
+    } catch {
+      // token inválido: se trata como visitante anónimo
+    }
+  }
+  next();
 }
 
 export function requireProvider(req: AuthRequest, res: Response, next: NextFunction) {

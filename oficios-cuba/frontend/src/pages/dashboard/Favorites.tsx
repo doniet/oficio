@@ -1,165 +1,111 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { favoriteApi } from '../../services/api';
-import { useAuth } from '../../hooks/useAuth';
+import { Heart, MapPin } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { apiError, favoriteApi } from '../../services/api';
 import type { Favorite } from '../../types';
-import { Heart, Loader2, Building2, MapPin, Star, MessageSquare, Trash2, Briefcase, Search } from 'lucide-react';
+import { plural } from '../../lib/format';
+import { PageTitle } from '../../components/DashboardLayout';
+import { ProviderCardSkeleton } from '../../components/cards';
+import { Avatar, CoverImage, EmptyState, ErrorState, PlanBadge, RatingInline, Spinner } from '../../components/ui';
 
 export default function Favorites() {
-  const { user } = useAuth();
+  const toast = useToast();
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user?.user_type !== 'client') return;
-
-    const fetchFavorites = async () => {
-      try {
-        const res = await favoriteApi.getAll();
-        setFavorites(res.data.favorites || []);
-      } catch (error) {
-        console.error('Error fetching favorites:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchFavorites();
-  }, [user]);
-
-  const handleRemove = async (providerId: string) => {
-    if (!confirm('¿Quitar de favoritos?')) return;
-    
-    setRemovingId(providerId);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      await favoriteApi.remove(providerId);
-      setFavorites(prev => prev.filter(f => f.provider_id !== providerId));
-    } catch (error) {
-      console.error('Error removing favorite:', error);
-      alert('Error al quitar de favoritos');
+      const res = await favoriteApi.getAll();
+      setFavorites(res.data.favorites);
+    } catch (err) {
+      setError(apiError(err, 'No se pudieron cargar tus favoritos.'));
     } finally {
-      setRemovingId(null);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const remove = async (f: Favorite) => {
+    setRemoving(f.provider_id);
+    try {
+      await favoriteApi.remove(f.provider_id);
+      setFavorites((list) => list.filter((x) => x.provider_id !== f.provider_id));
+      toast(`${f.business_name || f.owner_name} ya no está en tus favoritos`);
+    } catch (err) {
+      toast(apiError(err, 'No se pudo quitar de favoritos.'), 'error');
+    } finally {
+      setRemoving(null);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <Heart className="w-8 h-8 text-red-500" />
-              Mis Favoritos
-            </h1>
-            <p className="text-gray-600 mt-1">Proveedores guardados para contactar después</p>
-          </div>
+    <div>
+      <PageTitle
+        title="Favoritos"
+        subtitle={favorites.length ? `${plural(favorites.length, 'profesional guardado', 'profesionales guardados')}.` : 'Los profesionales que guardes aparecerán aquí.'}
+      />
+
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => <ProviderCardSkeleton key={i} />)}
         </div>
-
-        {favorites.length === 0 ? (
-          <div className="card p-12 text-center">
-            <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">No tienes favoritos aún</h2>
-            <p className="text-gray-500 mb-6 max-w-md mx-auto">
-              Cuando encuentres un proveedor que te interese, haz clic en el corazón para guardarlo aquí.
-            </p>
-            <Link to="/buscar" className="btn-primary inline-flex gap-2">
-              <Search className="w-5 h-5" />
-              Buscar proveedores
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {favorites.map((fav) => {
-              const provider = fav.provider;
-              if (!provider) return null;
-
-              return (
-                <Link
-                  key={provider.id}
-                  to={`/proveedor/${provider.id}`}
-                  className="card overflow-hidden hover:shadow-lg hover:border-primary-200 group relative"
-                >
-                  <div className="absolute top-3 right-3 z-10">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleRemove(provider.id);
-                      }}
-                      disabled={removingId === provider.id}
-                      className="w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      aria-label="Quitar de favoritos"
-                    >
-                      {removingId === provider.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Heart className="w-5 h-5 fill-current" />
-                      )}
-                    </button>
+      ) : error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : favorites.length === 0 ? (
+        <EmptyState
+          icon={<Heart className="h-6 w-6" />}
+          title="Aún no tienes favoritos"
+          action={<Link to="/profesionales" className="btn-primary">Explorar profesionales</Link>}
+        >
+          Toca el corazón en el perfil de un profesional para guardarlo y encontrarlo rápido después.
+        </EmptyState>
+      ) : (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {favorites.map((f) => {
+            const name = f.business_name || f.owner_name;
+            const place = [f.municipality_name, f.province_name].filter(Boolean).join(', ');
+            return (
+              <li key={f.id} className="card relative flex flex-col overflow-hidden">
+                <Link to={`/proveedor/${f.provider_id}`} className="group flex flex-1 flex-col">
+                  <div className="relative h-24 overflow-hidden bg-sand-100">
+                    <CoverImage src={f.cover} seed={name} alt="" className="transition duration-500 group-hover:scale-[1.04]" />
+                    <PlanBadge plan={f.subscription_plan} className="absolute left-3 top-3 shadow-sm" />
                   </div>
-
-                  <div className="p-6">
-                    <div className="flex items-start gap-4 mb-4">
-                      <div className="w-14 h-14 rounded-xl bg-primary-100 flex items-center justify-center flex-shrink-0">
-                        {provider.avatar_url ? (
-                          <img src={provider.avatar_url} alt="" className="w-14 h-14 rounded-xl" />
-                        ) : (
-                          <Building2 className="w-7 h-7 text-primary-600" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 truncate group-hover:text-primary-600 transition-colors">
-                          {provider.business_name || provider.owner_name}
-                        </h3>
-                        <p className="text-sm text-gray-500 truncate">{provider.province_name}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
-                      <span className="flex items-center gap-1">
-                        <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                        {provider.rating.toFixed(1)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MessageSquare className="w-4 h-4" />
-                        {provider.review_count} reseñas
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {provider.service_areas?.slice(0, 3).map((area) => (
-                        <span key={area.municipality_id} className="badge bg-gray-100 text-gray-700">
-                          {area.municipality_name}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
-                      <span className={`badge ${
-                        provider.subscription_plan === 'premium' ? 'bg-purple-100 text-purple-800' :
-                        provider.subscription_plan === 'pro' ? 'bg-blue-100 text-blue-800' :
-                        provider.subscription_plan === 'basic' ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {provider.subscription_plan.charAt(0).toUpperCase() + provider.subscription_plan.slice(1)}
-                      </span>
-                      <span className="text-sm text-primary-600 font-medium">Ver perfil</span>
+                  <div className="flex flex-1 flex-col px-4 pb-4">
+                    <Avatar src={f.avatar_url} name={name} size="lg" square className="-mt-8 border-4 border-white shadow-card" />
+                    <h2 className="mt-2 font-sans text-[1.05rem] font-bold leading-snug group-hover:text-brand-700">{name}</h2>
+                    {place && (
+                      <p className="mt-0.5 flex items-center gap-1 text-sm text-ink-500">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{place}</span>
+                      </p>
+                    )}
+                    <div className="mt-auto flex items-center justify-between pt-4 text-sm">
+                      <RatingInline rating={f.rating} count={f.review_count} />
+                      <span className="text-ink-400">{plural(f.service_count, 'servicio', 'servicios')}</span>
                     </div>
                   </div>
                 </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                <button
+                  type="button"
+                  onClick={() => remove(f)}
+                  disabled={removing === f.provider_id}
+                  className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-brand-600 shadow-sm backdrop-blur transition hover:bg-white disabled:opacity-60"
+                  aria-label={`Quitar a ${name} de favoritos`}
+                >
+                  {removing === f.provider_id ? <Spinner className="h-4 w-4" /> : <Heart className="h-4 w-4 fill-current" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

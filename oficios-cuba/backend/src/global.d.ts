@@ -14,6 +14,7 @@ declare module 'better-sqlite3' {
     exec(sql: string): void;
     pragma(pragma: string, value?: string | number): any;
     close(): void;
+    transaction<T extends (...args: any[]) => any>(fn: T): T;
     inTransaction: boolean;
   }
 

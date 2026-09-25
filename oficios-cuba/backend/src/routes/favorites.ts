@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db/index.js';
+import db, { parseImages } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireClient } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
@@ -22,11 +22,8 @@ router.get('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequ
       m.name as municipality_name,
       u.full_name as owner_name,
       u.avatar_url,
-      (SELECT json_group_array(json_object('id', s.id, 'title', s.title, 'category', c.name, 'category_icon', c.icon))
-       FROM services s
-       JOIN categories c ON s.category_id = c.id
-       WHERE s.provider_id = pp.id AND s.is_active = 1
-       LIMIT 3) as top_services
+      (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) as service_count,
+      (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) as cover_images
     FROM favorites f
     JOIN provider_profiles pp ON f.provider_id = pp.id
     JOIN users u ON pp.user_id = u.id
@@ -36,7 +33,17 @@ router.get('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequ
     ORDER BY f.created_at DESC
   `).all(req.user!.id);
 
-  res.json({ favorites });
+  res.json({
+    favorites: favorites.map((f: any) => {
+      const { cover_images, ...rest } = f;
+      return { ...rest, cover: parseImages(cover_images)[0] ?? null };
+    }),
+  });
+}));
+
+router.get('/ids', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
+  const rows = db.prepare('SELECT provider_id FROM favorites WHERE client_id = ?').all(req.user!.id) as { provider_id: string }[];
+  res.json({ ids: rows.map((r) => r.provider_id) });
 }));
 
 router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
@@ -51,25 +58,15 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
     throw new AppError('Proveedor no encontrado', 404);
   }
 
-  const existing = db.prepare('SELECT id FROM favorites WHERE client_id = ? AND provider_id = ?').get(req.user!.id, provider_id);
-  if (existing) {
-    throw new AppError('Ya está en favoritos', 400);
-  }
+  db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id, created_at) VALUES (?, ?, ?, ?)')
+    .run(uuidv4(), req.user!.id, provider_id, new Date().toISOString());
 
-  const favoriteId = uuidv4();
-  db.prepare('INSERT INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)')
-    .run(favoriteId, req.user!.id, provider_id);
-
-  res.status(201).json({ message: 'Agregado a favoritos', favorite_id: favoriteId });
+  res.status(201).json({ message: 'Agregado a favoritos' });
 }));
 
 router.delete('/:providerId', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const result = db.prepare('DELETE FROM favorites WHERE client_id = ? AND provider_id = ?')
+  db.prepare('DELETE FROM favorites WHERE client_id = ? AND provider_id = ?')
     .run(req.user!.id, req.params.providerId);
-
-  if (result.changes === 0) {
-    throw new AppError('No estaba en favoritos', 404);
-  }
 
   res.json({ message: 'Eliminado de favoritos' });
 }));

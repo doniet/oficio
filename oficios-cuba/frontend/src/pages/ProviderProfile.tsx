@@ -1,398 +1,284 @@
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { providerApi, reviewApi } from '../services/api';
-import type { ProviderProfile, Service, Review } from '../../types';
-import { MapPin, Star, MessageSquare, Phone, Mail, Building2, User, CheckCircle, Clock, Calendar, Shield, Heart, ArrowLeft, Briefcase, MapPin as MapPinIcon } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import axios from 'axios';
+import { ArrowLeft, Briefcase, CalendarDays, Mail, MapPin, Send, UserX, Wrench } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { providerApi, reviewApi, apiError } from '../services/api';
+import { memberSince, priceFrom } from '../lib/format';
+import type { Pagination, ProviderPublic, ProviderServiceItem, Review, ServiceArea } from '../types';
+import ContactActions from '../components/ContactActions';
+import { RatingBreakdown, ReviewItem } from '../components/ReviewList';
+import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, Spinner } from '../components/ui';
+
+function ServiceRow({ service }: { service: ProviderServiceItem }) {
+  const price = priceFrom(service);
+  return (
+    <Link to={`/servicio/${service.id}`} className="group card card-hover flex overflow-hidden">
+      <div className="relative w-28 shrink-0 overflow-hidden bg-sand-100 sm:w-40">
+        <CoverImage src={service.cover} seed={service.category_slug} icon={service.category_icon} alt="" className="absolute inset-0 transition duration-500 group-hover:scale-[1.04] [&>span]:text-4xl" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col p-4">
+        <span className="text-xs font-semibold text-ink-400"><span aria-hidden="true">{service.category_icon}</span> {service.category_name}</span>
+        <h3 className="mt-1 line-clamp-2 font-sans text-base font-bold leading-snug text-ink-900 group-hover:text-brand-700">{service.title}</h3>
+        {service.description && <p className="mt-1 line-clamp-2 hidden text-sm text-ink-500 sm:block">{service.description}</p>}
+        <p className="mt-auto pt-3 leading-none">
+          {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
+          <span className="font-display text-lg font-bold text-ink-900">{price.amount}</span>
+          {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function AreasList({ areas }: { areas: ServiceArea[] }) {
+  const byProvince = areas.reduce<Record<string, string[]>>((acc, a) => {
+    (acc[a.province_name] ??= []).push(a.municipality_name);
+    return acc;
+  }, {});
+  return (
+    <div className="space-y-3">
+      {Object.entries(byProvince).map(([province, munis]) => (
+        <div key={province}>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-400">{province}</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {munis.map((m) => <li key={m} className="badge bg-sand-100 font-medium text-ink-700">{m}</li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProviderProfile() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const [provider, setProvider] = useState<ProviderProfile | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
+  const [provider, setProvider] = useState<ProviderPublic | null>(null);
+  const [services, setServices] = useState<ProviderServiceItem[]>([]);
+  const [areas, setAreas] = useState<ServiceArea[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [distribution, setDistribution] = useState<{ rating: number; count: number }[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState('');
+  const [myProviderId, setMyProviderId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (user?.user_type !== 'provider') return;
+    providerApi.getMyProfile().then((r) => setMyProviderId(r.data.provider.id)).catch(() => {});
+  }, [user]);
+
+  const load = useCallback(async () => {
     if (!id) return;
-    const fetchData = async () => {
-      try {
-        const [providerRes, reviewsRes] = await Promise.all([
-          providerApi.getById(id),
-          reviewApi.getByProvider(id, { limit: 10 }),
-        ]);
-        setProvider(providerRes.data.provider);
-        setServices(providerRes.data.services || []);
-        setReviews(reviewsRes.data.reviews || []);
-      } catch (error) {
-        console.error('Error fetching provider:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    setLoading(true);
+    setError('');
+    setNotFound(false);
+    try {
+      const [res, first] = await Promise.all([providerApi.getById(id), reviewApi.getByProvider(id, 1)]);
+      setProvider(res.data.provider);
+      setServices(res.data.services);
+      setAreas(res.data.serviceAreas);
+      setDistribution(res.data.distribution);
+      setReviews(first.data.reviews);
+      setPagination(first.data.pagination);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) setNotFound(true);
+      else setError(apiError(err, 'No pudimos cargar el perfil.'));
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
-  const handleContact = async (type: 'whatsapp' | 'phone' | 'email') => {
-    if (!provider) return;
-    if (!user) {
-      alert('Debes iniciar sesión para contactar al proveedor');
-      return;
+  useEffect(() => {
+    load();
+    window.scrollTo(0, 0);
+  }, [load]);
+
+  const name = provider ? provider.business_name || provider.owner_name : '';
+
+  useEffect(() => {
+    if (name) document.title = `${name} · Oficios Cuba`;
+    return () => { document.title = 'Oficios Cuba'; };
+  }, [name]);
+
+  const loadMore = async () => {
+    if (!id || !pagination) return;
+    setLoadingMore(true);
+    try {
+      const res = await reviewApi.getByProvider(id, pagination.page + 1);
+      setReviews((prev) => [...prev, ...res.data.reviews]);
+      setPagination(res.data.pagination);
+    } catch {
+      /* el botón sigue disponible para reintentar */
+    } finally {
+      setLoadingMore(false);
     }
-    let url = '';
-    if (type === 'whatsapp' && provider.whatsapp) {
-      const message = encodeURIComponent(`Hola, vi tu perfil en Oficios Cuba y me interesa contratar tus servicios. ¿Podrías darme más información?`);
-      url = `https://wa.me/${provider.whatsapp.replace(/\D/g, '')}?text=${message}`;
-    } else if (type === 'phone' && provider.telegram) {
-      url = `tel:${provider.telegram}`;
-    } else if (type === 'email' && provider.email_contact) {
-      url = `mailto:${provider.email_contact}?subject=Consulta sobre tus servicios`;
-    }
-    if (url) window.open(url, '_blank');
-    else alert('Este proveedor no tiene este método de contacto configurado');
   };
 
-  if (loading) {
+  if (loading) return <PageLoader />;
+
+  if (notFound) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
+      <div className="container-page py-16">
+        <EmptyState icon={<UserX className="h-7 w-7" />} title="Este perfil no está disponible" action={<Link to="/profesionales" className="btn-primary">Ver otros profesionales</Link>}>
+          Puede que el profesional haya desactivado su cuenta.
+        </EmptyState>
       </div>
     );
   }
 
-  if (!provider) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Proveedor no encontrado</h2>
-          <Link to="/buscar" className="btn-primary">Buscar otros proveedores</Link>
-        </div>
-      </div>
-    );
+  if (error || !provider) {
+    return <div className="container-page py-12"><ErrorState message={error || 'No pudimos cargar el perfil.'} onRetry={load} /></div>;
   }
 
-  const getSubscriptionBadge = (plan: string) => {
-    switch (plan) {
-      case 'premium': return { label: 'Premium', className: 'bg-purple-100 text-purple-800' };
-      case 'pro': return { label: 'Profesional', className: 'bg-blue-100 text-blue-800' };
-      case 'basic': return { label: 'Básico', className: 'bg-green-100 text-green-800' };
-      default: return { label: 'Gratuito', className: 'bg-gray-100 text-gray-800' };
-    }
-  };
+  const isOwnProfile = myProviderId === provider.id;
+  const place = [provider.municipality_name, provider.province_name].filter(Boolean).join(', ');
+  const hasMore = pagination ? pagination.page < pagination.totalPages : false;
 
-  const subscriptionBadge = getSubscriptionBadge(provider.subscription_plan);
+  const contactExtras = (provider.telegram || provider.email_contact) && (
+    <ul className="space-y-2 border-t border-sand-200 pt-4 text-sm">
+      {provider.telegram && (
+        <li>
+          <a href={`https://t.me/${provider.telegram.replace(/^@/, '').replace(/^\+/, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-ink-600 hover:text-ink-900">
+            <Send className="h-4 w-4 text-sky-500" aria-hidden="true" /> Telegram <span className="truncate text-ink-400">{provider.telegram}</span>
+          </a>
+        </li>
+      )}
+      {provider.email_contact && (
+        <li>
+          <a href={`mailto:${provider.email_contact}`} className="flex items-center gap-2 text-ink-600 hover:text-ink-900">
+            <Mail className="h-4 w-4 text-ink-400" aria-hidden="true" /> <span className="truncate">{provider.email_contact}</span>
+          </a>
+        </li>
+      )}
+    </ul>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-100" aria-label="Breadcrumb">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <ol className="flex items-center gap-2 text-sm text-gray-500">
-            <li><Link to="/" className="hover:text-primary-600">Inicio</Link></li>
-            <li><span className="mx-2">/</span></li>
-            <li><Link to="/buscar" className="hover:text-primary-600">Buscar</Link></li>
-            <li><span className="mx-2">/</span></li>
-            <li className="text-gray-900 font-medium truncate max-w-xs">{provider.business_name || provider.owner_name}</li>
-          </ol>
-        </div>
-      </nav>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="card overflow-hidden">
-              <div className="relative h-48 bg-gradient-to-br from-primary-600 to-primary-800">
-                <div className="absolute bottom-0 left-0 right-0 p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-20 h-20 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                      {provider.avatar_url ? (
-                        <img src={provider.avatar_url} alt="" className="w-20 h-20 rounded-xl" />
-                      ) : (
-                        <Building2 className="w-10 h-10 text-white" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-bold text-white truncate">
-                          {provider.business_name || provider.owner_name}
-                        </h1>
-                        <span className={`badge ${subscriptionBadge.className}`}>
-                          {subscriptionBadge.label}
-                        </span>
-                      </div>
-                      <p className="text-primary-100 mt-1">{provider.province_name}</p>
-                    </div>
-                    <div className="flex items-center gap-4 text-white">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold">{provider.rating.toFixed(1)}</p>
-                        <p className="text-xs text-primary-200">Calificación</p>
-                      </div>
-                      <div className="border-l border-white/20 px-4 text-center">
-                        <p className="text-2xl font-bold">{provider.review_count}</p>
-                        <p className="text-xs text-primary-200">Reseñas</p>
-                      </div>
-                      <div className="border-l border-white/20 px-4 text-center">
-                        <p className="text-2xl font-bold">{provider.years_experience || 0}+</p>
-                        <p className="text-xs text-primary-200">Años exp.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {provider.whatsapp && (
-                    <button
-                      onClick={() => handleContact('whatsapp')}
-                      className="btn-primary gap-3 justify-start h-auto py-4"
-                    >
-                      <MessageSquare className="w-6 h-6 text-green-600" />
-                      <div>
-                        <p className="text-sm text-gray-500">WhatsApp</p>
-                        <p className="font-medium">{provider.whatsapp}</p>
-                      </div>
-                    </button>
-                  )}
-                  {provider.telegram && (
-                    <button
-                      onClick={() => handleContact('phone')}
-                      className="btn-secondary gap-3 justify-start h-auto py-4"
-                    >
-                      <Phone className="w-6 h-6" />
-                      <div>
-                        <p className="text-sm text-gray-500">Teléfono</p>
-                        <p className="font-medium">{provider.telegram}</p>
-                      </div>
-                    </button>
-                  )}
-                  {provider.email_contact && (
-                    <button
-                      onClick={() => handleContact('email')}
-                      className="btn-secondary gap-3 justify-start h-auto py-4 sm:col-span-2"
-                    >
-                      <Mail className="w-6 h-6" />
-                      <div>
-                        <p className="text-sm text-gray-500">Email</p>
-                        <p className="font-medium">{provider.email_contact}</p>
-                      </div>
-                    </button>
-                  )}
-                  {(!provider.whatsapp && !provider.telegram && !provider.email_contact) && (
-                    <div className="col-span-2 text-center py-4 text-gray-500">
-                      Este proveedor no tiene métodos de contacto públicos configurados.
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-gray-100 pt-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Sobre el proveedor</h2>
-                  <p className="text-gray-700 whitespace-pre-wrap">
-                    {provider.description || 'Este proveedor no ha agregado una descripción aún.'}
-                  </p>
-                </div>
-
-                {provider.address && (
-                  <div className="border-t border-gray-100 pt-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Ubicación</h2>
-                    <div className="flex items-start gap-3">
-                      <MapPinIcon className="w-5 h-5 text-primary-600 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-gray-900">{provider.address}</p>
-                        <p className="text-sm text-gray-500">
-                          {provider.municipality_name}, {provider.province_name}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="border-t border-gray-100 pt-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Información adicional</h2>
-                  <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <dt className="text-gray-500">Experiencia</dt>
-                      <dd className="font-medium">{provider.years_experience || 0} años</dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Calificación promedio</dt>
-                      <dd className="font-medium flex items-center gap-1">
-                        <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                        {provider.rating.toFixed(1)} ({provider.review_count} reseñas)
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Plan de suscripción</dt>
-                      <dd className="font-medium capitalize">{provider.subscription_plan}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Miembro desde</dt>
-                      <dd className="font-medium">
-                        {provider.created_at ? new Date(provider.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long' }) : 'N/A'}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="p-6 border-b border-gray-100">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">Servicios ofrecidos</h2>
-                  <Link to="/buscar" className="text-sm text-primary-600 hover:text-primary-700">Ver todos</Link>
-                </div>
-              </div>
-              <div className="p-6">
-                {services.length > 0 ? (
-                  <div className="space-y-4">
-                    {services.slice(0, 5).map((service) => (
-                      <Link
-                        key={service.id}
-                        to={`/servicio/${service.id}`}
-                        className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group"
-                      >
-                        <div className="w-14 h-14 rounded-xl bg-primary-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-2xl">{service.category_icon}</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-gray-900 truncate group-hover:text-primary-600 transition-colors">
-                            {service.title}
-                          </h3>
-                          <p className="text-sm text-gray-500 truncate">{service.description}</p>
-                        </div>
-                        <span className="font-semibold text-primary-600 whitespace-nowrap">
-                          {service.price_type === 'negotiable' ? 'Negociable' : `$${service.price_min || service.price_max}`}
-                        </span>
-                      </Link>
-                    ))}
-                    {services.length > 5 && (
-                      <Link
-                        to="/buscar"
-                        className="w-full btn-outline"
-                      >
-                        Ver {services.length - 5} servicios más
-                      </Link>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <h3 className="font-medium text-gray-900 mb-1">Sin servicios publicados</h3>
-                    <p className="text-gray-500 text-sm">Este proveedor aún no ha publicado servicios.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {reviews.length > 0 && (
-              <div className="card">
-                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">Reseñas recientes</h2>
-                  <Link to="#" className="text-sm text-primary-600 hover:text-primary-700">Ver todas ({reviews.length})</Link>
-                </div>
-                <div className="p-6 space-y-4">
-                  {reviews.slice(0, 5).map((review) => (
-                    <div key={review.id} className="border-b border-gray-100 pb-4 last:border-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                          <User className="w-5 h-5 text-primary-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{review.client_name}</p>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${i < review.rating ? 'text-yellow-500 fill-current' : 'text-gray-300'}`}
-                              />
-                            ))}
-                            <span className="text-sm text-gray-500 ml-2">
-                              {new Date(review.created_at).toLocaleDateString('es-ES')}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      {review.service_title && (
-                        <p className="text-sm text-gray-500 mb-2">Servicio: {review.service_title}</p>
-                      )}
-                      <p className="text-gray-700">{review.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="lg:col-span-1">
-            <div className="card p-6 sticky top-24 space-y-6">
-              <div className="text-center">
-                <div className="w-24 h-24 mx-auto mb-4 rounded-xl bg-primary-100 flex items-center justify-center">
-                  {provider.avatar_url ? (
-                    <img src={provider.avatar_url} alt="" className="w-24 h-24 rounded-xl" />
-                  ) : (
-                    <Building2 className="w-12 h-12 text-primary-600" />
-                  )}
-                </div>
-                <h2 className="text-xl font-bold text-gray-900">{provider.business_name || provider.owner_name}</h2>
-                <p className="text-gray-500 mt-1">{provider.province_name}</p>
-              </div>
-
-              <div className="border-t border-gray-100 pt-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Calificación</span>
-                  <div className="flex items-center gap-1">
-                    <Star className="w-5 h-5 text-yellow-500 fill-current" />
-                    <span className="font-bold text-lg">{provider.rating.toFixed(1)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Reseñas totales</span>
-                  <span className="font-bold">{provider.review_count}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Experiencia</span>
-                  <span className="font-bold">{provider.years_experience || 0} años</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Plan</span>
-                  <span className={`badge ${subscriptionBadge.className}`}>{subscriptionBadge.label}</span>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-6 space-y-2">
-                {provider.whatsapp && (
-                  <button
-                    onClick={() => handleContact('whatsapp')}
-                    className="w-full btn-primary gap-2 justify-center"
-                  >
-                    <MessageSquare className="w-5 h-5" />
-                    WhatsApp
-                  </button>
-                )}
-                {provider.telegram && (
-                  <button
-                    onClick={() => handleContact('phone')}
-                    className="w-full btn-secondary gap-2 justify-center"
-                  >
-                    <Phone className="w-5 h-5" />
-                    Llamar
-                  </button>
-                )}
-                {provider.email_contact && (
-                  <button
-                    onClick={() => handleContact('email')}
-                    className="w-full btn-secondary gap-2 justify-center"
-                  >
-                    <Mail className="w-5 h-5" />
-                    Email
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+    <div className="pb-28 md:pb-10">
+      <div className="relative h-40 overflow-hidden bg-sand-100 sm:h-56">
+        <CoverImage src={provider.cover} seed={provider.categories[0] ?? name} alt="" eager />
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-950/60 via-ink-950/10 to-transparent" />
+        <div className="container-page relative pt-4">
+          <Link to="/profesionales" className="btn-sm inline-flex items-center gap-1 rounded-xl bg-white/90 px-3 py-1.5 font-semibold text-ink-800 shadow-sm backdrop-blur sm:hidden">
+            <ArrowLeft className="h-4 w-4" /> Profesionales
+          </Link>
         </div>
       </div>
+
+      <div className="container-page">
+        <header className="relative -mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end">
+          <Avatar src={provider.avatar_url} name={name} size="xl" square className="border-4 border-paper shadow-card" />
+          <div className="min-w-0 flex-1 sm:pb-1">
+            <div className="hidden sm:mb-2 sm:block">
+              <Breadcrumbs items={[{ label: 'Inicio', to: '/' }, { label: 'Profesionales', to: '/profesionales' }, { label: name }]} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-balance text-3xl font-bold leading-tight">{name}</h1>
+              <PlanBadge plan={provider.subscription_plan} />
+            </div>
+            {provider.business_name && <p className="text-ink-500">{provider.owner_name}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-ink-500">
+              <RatingInline rating={provider.rating} count={provider.review_count} />
+              {place && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" aria-hidden="true" /> {place}</span>}
+              {provider.years_experience > 0 && <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" aria-hidden="true" /> {provider.years_experience} años de oficio</span>}
+              <span className="flex items-center gap-1"><CalendarDays className="h-4 w-4" aria-hidden="true" /> En Oficios Cuba desde {memberSince(provider.created_at)}</span>
+            </div>
+          </div>
+        </header>
+
+        {isOwnProfile && (
+          <div className="mt-5 rounded-xl border border-sand-300 bg-sand-100 px-4 py-3 text-sm text-ink-700">
+            Así ven los clientes tu perfil. <Link to="/dashboard/perfil" className="link">Editar perfil</Link>
+          </div>
+        )}
+
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-10">
+            <section aria-labelledby="about-title">
+              <h2 id="about-title" className="mb-3 text-xl font-bold">Sobre {provider.business_name ? 'el negocio' : 'mí'}</h2>
+              {provider.description ? (
+                <p className="whitespace-pre-line leading-relaxed text-ink-700">{provider.description}</p>
+              ) : (
+                <p className="text-ink-400">Este profesional aún no ha escrito una presentación.</p>
+              )}
+              {provider.categories.length > 0 && (
+                <ul className="mt-4 flex flex-wrap gap-1.5" aria-label="Especialidades">
+                  {provider.categories.map((c) => <li key={c} className="badge bg-white font-medium text-ink-700 shadow-sm">{c}</li>)}
+                </ul>
+              )}
+            </section>
+
+            <section aria-labelledby="services-title">
+              <h2 id="services-title" className="mb-4 text-xl font-bold">
+                Servicios <span className="font-sans text-base font-semibold text-ink-400">({services.length})</span>
+              </h2>
+              {services.length === 0 ? (
+                <EmptyState icon={<Wrench className="h-6 w-6" />} title="Sin servicios publicados">
+                  Puedes escribirle igualmente para consultar un trabajo.
+                </EmptyState>
+              ) : (
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {services.map((s) => <ServiceRow key={s.id} service={s} />)}
+                </div>
+              )}
+            </section>
+
+            {areas.length > 0 && (
+              <section aria-labelledby="areas-title" className="lg:hidden">
+                <h2 id="areas-title" className="mb-3 text-xl font-bold">Zonas donde trabaja</h2>
+                <AreasList areas={areas} />
+              </section>
+            )}
+
+            <section id="resenas" aria-labelledby="reviews-title" className="card scroll-mt-24 p-5 sm:p-6">
+              <h2 id="reviews-title" className="mb-5 text-xl font-bold">Reseñas</h2>
+              {provider.review_count > 0 && (
+                <div className="mb-6 border-b border-sand-200 pb-6">
+                  <RatingBreakdown rating={provider.rating} count={provider.review_count} distribution={distribution} />
+                </div>
+              )}
+              {reviews.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-400">Todavía no tiene reseñas. Los clientes que lo contacten por el chat podrán valorarlo.</p>
+              ) : (
+                <>
+                  <ul className="divide-y divide-sand-200">
+                    {reviews.map((r) => <ReviewItem key={r.id} review={r} showService />)}
+                  </ul>
+                  {hasMore && (
+                    <button onClick={loadMore} disabled={loadingMore} className="btn-secondary mt-6 w-full">
+                      {loadingMore && <Spinner className="h-4 w-4" />} Ver más reseñas
+                    </button>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+
+          <aside className="space-y-5">
+            <div className="card hidden space-y-4 p-6 md:block lg:sticky lg:top-24">
+              <h2 className="text-lg font-bold">Contactar</h2>
+              {isOwnProfile ? (
+                <Link to="/dashboard/perfil" className="btn-secondary w-full">Editar mi perfil</Link>
+              ) : (
+                <ContactActions providerId={provider.id} providerName={name} whatsapp={provider.whatsapp} phone={provider.whatsapp} />
+              )}
+              {contactExtras}
+            </div>
+            {contactExtras && <div className="card p-5 md:hidden">{contactExtras}</div>}
+            {areas.length > 0 && (
+              <div className="card hidden p-6 lg:block">
+                <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">Zonas donde trabaja</h2>
+                <AreasList areas={areas} />
+              </div>
+            )}
+          </aside>
+        </div>
+      </div>
+
+      {!isOwnProfile && <ContactActions variant="bar" providerId={provider.id} providerName={name} whatsapp={provider.whatsapp} />}
     </div>
   );
 }

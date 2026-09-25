@@ -12,15 +12,15 @@ router.get('/', asyncHandler(async (req, res) => {
     ORDER BY sort_order, name
   `).all();
 
+  const children = db.prepare(`
+    SELECT id, name, slug, icon, description, parent_id, sort_order
+    FROM categories WHERE parent_id IS NOT NULL ORDER BY sort_order, name
+  `).all();
   for (const cat of categories) {
-    cat.subcategories = db.prepare(`
-      SELECT id, name, slug, icon, description, sort_order
-      FROM categories
-      WHERE parent_id = ?
-      ORDER BY sort_order, name
-    `).all(cat.id);
+    cat.subcategories = children.filter((c: any) => c.parent_id === cat.id);
   }
 
+  res.set('Cache-Control', 'public, max-age=300');
   res.json({ categories });
 }));
 

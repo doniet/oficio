@@ -1,229 +1,254 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { provinceApi, categoryApi, providerApi, serviceApi } from '../services/api';
-import type { Province, Category, ProviderProfile } from '../types';
-import { MapPin, Briefcase, Star, Shield, Users, ArrowRight, Search, Building2, Truck, Wrench, Paintbrush, Zap, Droplets, Wind } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, MapPin, MessageCircle, Search, ShieldCheck, Star, UserRoundSearch } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import { providerApi, provinceApi, serviceApi, statsApi } from '../services/api';
+import type { CategoryStat, ProviderCard as ProviderCardType, Province, ServiceSummary, SiteStats } from '../types';
+import { ProviderCard, ProviderCardSkeleton, ServiceCard, ServiceCardSkeleton } from '../components/cards';
+import { SectionHeading, cn } from '../components/ui';
 
-const popularCategories = [
-  { name: 'Electricidad', icon: Zap, slug: 'electricidad', color: 'bg-yellow-100 text-yellow-600' },
-  { name: 'Plomería', icon: Droplets, slug: 'fontaneria-plomeria', color: 'bg-blue-100 text-blue-600' },
-  { name: 'Pintura', icon: Paintbrush, slug: 'pintura', color: 'bg-purple-100 text-purple-600' },
-  { name: 'Carpintería', icon: Wrench, slug: 'carpinteria', color: 'bg-orange-100 text-orange-600' },
-  { name: 'Albañilería', icon: Building2, slug: 'albanileria', color: 'bg-red-100 text-red-600' },
-  { name: 'Aire Acondicionado', icon: Wind, slug: 'aire-acondicionado', color: 'bg-cyan-100 text-cyan-600' },
+const POPULAR = ['Electricista', 'Plomero', 'Mecánico', 'Clases', 'Peluquería', 'Aire acondicionado'];
+
+const HERO_IMAGES = [
+  { src: '/demo/electricidad-1.webp', label: 'Electricidad' },
+  { src: '/demo/reposteria-1.webp', label: 'Repostería' },
+  { src: '/demo/mecanica-1.webp', label: 'Mecánica' },
+  { src: '/demo/salon-1.webp', label: 'Belleza' },
 ];
 
-const features = [
-  { icon: Search, title: 'Búsqueda Inteligente', description: 'Encuentra el servicio que necesitas filtrando por provincia, categoría y precio.' },
-  { icon: MapPin, title: 'Cobertura Nacional', description: 'Servicios disponibles en las 15 provincias y la Isla de la Juventud.' },
-  { icon: Shield, title: 'Profesionales Verificados', description: 'Proveedores con reseñas reales y calificaciones de clientes anteriores.' },
-  { icon: Users, title: 'Chat Directo', description: 'Comunícate directamente con el proveedor para acordar detalles y precios.' },
+function Hero({ provinces }: { provinces: Province[] }) {
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  const [province, setProvince] = useState('');
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('q', q.trim());
+    if (province) params.set('province', province);
+    navigate(`/buscar${params.toString() ? `?${params}` : ''}`);
+  };
+
+  return (
+    <section className="relative overflow-hidden border-b border-sand-200">
+      <div className="pointer-events-none absolute inset-0 opacity-[.35]" aria-hidden="true"
+        style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #DDD0BB 1px, transparent 0)', backgroundSize: '22px 22px' }} />
+      <div className="container-page relative grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[1.15fr_1fr] lg:py-20">
+        <div className="animate-fade-up">
+          <p className="eyebrow mb-4">Directorio de oficios · Toda Cuba</p>
+          <h1 className="text-balance text-[2.4rem] font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl">
+            El que te lo arregla <span className="text-brand-600">vive cerca.</span>
+          </h1>
+          <p className="mt-5 max-w-lg text-lg text-ink-500">
+            Electricistas, mecánicos, costureras, profesores y cientos de oficios más. Mira sus trabajos, lee reseñas reales y escríbeles directo.
+          </p>
+
+          <form onSubmit={submit} role="search" className="mt-8 flex flex-col gap-2 rounded-2xl border border-sand-300 bg-white p-2 shadow-lift sm:flex-row sm:items-center">
+            <label className="relative flex-1">
+              <span className="sr-only">¿Qué necesitas?</span>
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-300" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="¿Qué necesitas? Ej: electricista"
+                className="w-full rounded-xl border-0 bg-transparent py-3 pl-11 pr-3 text-[15px] placeholder:text-ink-300 focus:outline-none focus:ring-0"
+              />
+            </label>
+            <div className="hidden h-8 w-px bg-sand-200 sm:block" aria-hidden="true" />
+            <label className="relative sm:w-52">
+              <span className="sr-only">Provincia</span>
+              <MapPin className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-300" />
+              <select
+                value={province}
+                onChange={(e) => setProvince(e.target.value)}
+                className="w-full appearance-none rounded-xl border-0 bg-sand-100 py-3 pl-11 pr-3 text-[15px] text-ink-700 focus:outline-none focus:ring-2 focus:ring-brand-500/30 sm:bg-transparent"
+              >
+                <option value="">Toda Cuba</option>
+                {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <button type="submit" className="btn-primary btn-lg">Buscar</button>
+          </form>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-ink-400">Lo más buscado:</span>
+            {POPULAR.map((term) => (
+              <Link key={term} to={`/buscar?q=${encodeURIComponent(term)}`} className="chip py-1 text-[13px]">{term}</Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative hidden lg:block" aria-hidden="true">
+          <div className="grid grid-cols-2 gap-4">
+            {HERO_IMAGES.map((img, i) => (
+              <figure
+                key={img.src}
+                className={cn('relative overflow-hidden rounded-3xl border-4 border-white shadow-lift', i % 2 === 1 && 'translate-y-10', i === 0 ? 'rotate-[-2deg]' : i === 3 ? 'rotate-[2deg]' : '')}
+              >
+                <img src={img.src} alt="" className="aspect-[4/5] w-full object-cover" loading={i < 2 ? 'eager' : 'lazy'} decoding="async" />
+                <figcaption className="badge absolute bottom-3 left-3 bg-white/95 text-ink-800 shadow-sm">{img.label}</figcaption>
+              </figure>
+            ))}
+          </div>
+          <div className="absolute -left-6 top-1/2 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-lift">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100"><Star className="h-5 w-5 fill-amber-400 text-amber-400" /></span>
+            <span className="text-sm leading-tight"><b className="block text-ink-900">Reseñas reales</b><span className="text-ink-400">solo de quien contrató</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatsStrip({ stats }: { stats: SiteStats | null }) {
+  const items = [
+    { label: 'profesionales', value: stats?.providers },
+    { label: 'servicios publicados', value: stats?.services },
+    { label: 'provincias con oficios', value: stats?.provinces },
+    { label: 'valoración media', value: stats?.avg_rating != null ? `${stats.avg_rating.toFixed(1)}★` : stats ? '—' : undefined },
+  ];
+  return (
+    <section className="bg-ink-950 text-white">
+      <dl className="container-page grid grid-cols-2 gap-y-6 py-8 sm:grid-cols-4">
+        {items.map((it) => (
+          <div key={it.label} className="flex flex-col-reverse text-center sm:border-l sm:border-white/10 sm:first:border-l-0">
+            <dt className="text-xs text-ink-300 sm:text-sm">{it.label}</dt>
+            <dd className="font-display text-3xl font-bold text-white sm:text-4xl">
+              {it.value ?? <span className="skeleton inline-block h-8 w-12 bg-white/10" />}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function Categories({ categories, loading }: { categories: CategoryStat[]; loading: boolean }) {
+  return (
+    <section className="container-page py-16">
+      <SectionHeading
+        eyebrow="Categorías"
+        title="¿Qué necesitas resolver?"
+        action={<Link to="/buscar" className="link inline-flex items-center gap-1 text-sm">Ver todos los servicios <ArrowRight className="h-4 w-4" /></Link>}
+      />
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {loading
+          ? Array.from({ length: 8 }).map((_, i) => <li key={i} className="skeleton h-24 rounded-2xl" />)
+          : categories.map((c) => (
+            <li key={c.id}>
+              <Link to={`/buscar?category=${c.slug}`} className="card card-hover group flex h-full items-start gap-3 p-4">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-2xl transition group-hover:bg-brand-50" aria-hidden="true">{c.icon}</span>
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-bold leading-snug text-ink-900 group-hover:text-brand-700">{c.name}</span>
+                  <span className="mt-0.5 block text-xs text-ink-400">
+                    {c.service_count ? `${c.service_count} ${c.service_count === 1 ? 'servicio' : 'servicios'}` : 'Sé el primero'}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+      </ul>
+    </section>
+  );
+}
+
+const STEPS = [
+  { icon: UserRoundSearch, title: 'Busca por oficio y lugar', text: 'Filtra por provincia y municipio para encontrar a alguien que llegue rápido.' },
+  { icon: ShieldCheck, title: 'Compara con calma', text: 'Fotos de trabajos, precios orientativos y reseñas de clientes que ya contrataron.' },
+  { icon: MessageCircle, title: 'Habla directo', text: 'Escríbele por el chat o por WhatsApp. Sin intermediarios ni comisiones.' },
 ];
 
 export default function Home() {
+  const { user } = useAuth();
   const [provinces, setProvinces] = useState<Province[]>([]);
-  const [featuredProviders, setFeaturedProviders] = useState<ProviderProfile[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<SiteStats | null>(null);
+  const [categories, setCategories] = useState<CategoryStat[]>([]);
+  const [featured, setFeatured] = useState<ProviderCardType[]>([]);
+  const [services, setServices] = useState<ServiceSummary[]>([]);
+  const [loading, setLoading] = useState({ categories: true, featured: true, services: true });
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [provincesRes, categoriesRes, providersRes] = await Promise.all([
-          provinceApi.getAll(),
-          categoryApi.getAll(),
-          providerApi.getFeatured({ limit: 6 }),
-        ]);
-        setProvinces(provincesRes.data.provinces);
-        setCategories(categoriesRes.data.categories);
-        setFeaturedProviders(providersRes.data.providers);
-      } catch (error) {
-        console.error('Error loading home data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    const done = (k: keyof typeof loading) => setLoading((l) => ({ ...l, [k]: false }));
+    provinceApi.getAll().then((r) => setProvinces(r.data.provinces)).catch(() => {});
+    statsApi.get().then((r) => setStats(r.data.stats)).catch(() => {});
+    statsApi.categories().then((r) => setCategories(r.data.categories)).catch(() => {}).finally(() => done('categories'));
+    providerApi.getFeatured(6).then((r) => setFeatured(r.data.providers)).catch(() => {}).finally(() => done('featured'));
+    serviceApi.getAll({ limit: 8, sort: 'newest' }).then((r) => setServices(r.data.services)).catch(() => {}).finally(() => done('services'));
   }, []);
 
   return (
-    <div className="min-h-screen">
-      <section className="relative bg-gradient-to-br from-primary-600 via-primary-700 to-primary-900 text-white overflow-hidden">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg fill=%22none%22 fill-rule=%22evenodd%22%3E%3Cg fill=%22%23ffffff%22 fill-opacity=%220.03%22%3E%3Cpath d=%22M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-50" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-32">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6 animate-fade-in">
-              Encuentra el <span className="text-yellow-300">profesional</span> que necesitas
-            </h1>
-            <p className="text-lg sm:text-xl text-primary-100 mb-8 animate-slide-up">
-              La plataforma #1 en Cuba para conectar con electricistas, plomeros, pintores, carpinteros y más de 50 oficios. Rápido, seguro y cerca de ti.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 animate-slide-up">
-              <Link to="/buscar" className="btn bg-white text-primary-600 hover:bg-primary-50 w-full sm:w-auto py-3 px-8 text-lg">
-                Buscar servicios
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Link>
-              <Link to="/registro" className="btn border-2 border-white text-white hover:bg-primary-700 w-full sm:w-auto py-3 px-8 text-lg">
-                Ofrecer mis servicios
-              </Link>
+    <>
+      <Hero provinces={provinces} />
+      <StatsStrip stats={stats} />
+      <Categories categories={categories} loading={loading.categories} />
+
+      {(loading.featured || featured.length > 0) && (
+        <section className="border-y border-sand-200 bg-sand-100/60 py-16">
+          <div className="container-page">
+            <SectionHeading
+              eyebrow="Destacados"
+              title="Profesionales con buena mano"
+              subtitle="Los mejor valorados por sus clientes."
+              action={<Link to="/profesionales" className="link inline-flex items-center gap-1 text-sm">Ver todos <ArrowRight className="h-4 w-4" /></Link>}
+            />
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {loading.featured
+                ? Array.from({ length: 3 }).map((_, i) => <ProviderCardSkeleton key={i} />)
+                : featured.map((p) => <ProviderCard key={p.id} provider={p} />)}
             </div>
           </div>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-gray-50 to-transparent" />
-      </section>
+        </section>
+      )}
 
-      <section className="py-16 -mt-16 relative z-10 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.map((feature, index) => (
-            <Link
-              key={feature.title}
-              to="/buscar"
-              className="card p-6 group hover:shadow-lg hover:border-primary-200"
-            >
-              <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-primary-600 group-hover:text-white transition-colors">
-                <feature.icon className="w-6 h-6 text-primary-600 group-hover:text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
-              <p className="text-gray-600">{feature.description}</p>
-            </Link>
+      {(loading.services || services.length > 0) && (
+        <section className="container-page py-16">
+          <SectionHeading
+            eyebrow="Recién publicados"
+            title="Servicios nuevos"
+            action={<Link to="/buscar?sort=newest" className="link inline-flex items-center gap-1 text-sm">Ver más <ArrowRight className="h-4 w-4" /></Link>}
+          />
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {loading.services
+              ? Array.from({ length: 4 }).map((_, i) => <ServiceCardSkeleton key={i} />)
+              : services.map((s) => <ServiceCard key={s.id} service={s} />)}
+          </div>
+        </section>
+      )}
+
+      <section className="container-page pb-4 pt-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          {STEPS.map((s, i) => (
+            <div key={s.title} className="relative rounded-3xl border border-sand-200 bg-white p-6">
+              <span className="absolute right-5 top-4 font-display text-5xl font-extrabold text-sand-200" aria-hidden="true">{i + 1}</span>
+              <s.icon className="h-7 w-7 text-brand-600" aria-hidden="true" />
+              <h3 className="mt-4 font-sans text-lg font-bold">{s.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{s.text}</p>
+            </div>
           ))}
         </div>
       </section>
 
-      <section className="py-16 bg-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900">Categorías populares</h2>
-              <p className="text-gray-600 mt-1">Más de 50 categorías de servicios disponibles</p>
-            </div>
-            <Link to="/buscar" className="btn-outline">
-              Ver todas
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {popularCategories.map((cat) => (
-              <Link
-                key={cat.name}
-                to={`/buscar?category=${cat.slug}`}
-                className="card p-5 text-center group hover:shadow-lg hover:border-primary-200"
-              >
-                <div className={`w-14 h-14 mx-auto mb-3 rounded-xl flex items-center justify-center ${cat.color}`}>
-                  <cat.icon className="w-7 h-7" />
-                </div>
-                <h3 className="font-medium text-gray-900">{cat.name}</h3>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 bg-gray-50 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900">Profesionales destacados</h2>
-              <p className="text-gray-600 mt-1">Proveedores con mejor calificación en tu zona</p>
-            </div>
-            <Link to="/buscar" className="btn-outline">
-              Ver todos
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Link>
-          </div>
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="card p-6 animate-pulse">
-                  <div className="h-10 bg-gray-200 rounded w-3/4 mb-4" />
-                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-2" />
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                </div>
-              ))}
-            </div>
-          ) : featuredProviders.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {featuredProviders.map((provider) => (
-                <Link
-                  key={provider.id}
-                  to={`/proveedor/${provider.id}`}
-                  className="card p-6 hover:shadow-lg hover:border-primary-200 group"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-primary-100 flex items-center justify-center flex-shrink-0">
-                      {provider.avatar_url ? (
-                        <img src={provider.avatar_url} alt="" className="w-14 h-14 rounded-xl" />
-                      ) : (
-                        <Building2 className="w-7 h-7 text-primary-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-gray-900 truncate group-hover:text-primary-600 transition-colors">
-                        {provider.business_name || provider.owner_name}
-                      </h3>
-                      <p className="text-sm text-gray-500 truncate">{provider.province_name}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="flex items-center gap-1 text-sm text-gray-600">
-                          <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                          {provider.rating.toFixed(1)} ({provider.review_count})
-                        </span>
-                        <span className={`badge ${provider.subscription_plan === 'premium' ? 'bg-purple-100 text-purple-800' : provider.subscription_plan === 'pro' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
-                          {provider.subscription_plan.charAt(0).toUpperCase() + provider.subscription_plan.slice(1)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay profesionales destacados</h3>
-              <p className="text-gray-500">Sé el primero en registrarte como proveedor</p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="py-16 bg-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900">Explora por provincia</h2>
-              <p className="text-gray-600 mt-1">Encuentra servicios cerca de ti</p>
+      {user?.user_type !== 'client' && (
+        <section className="container-page pt-12">
+          <div className="relative overflow-hidden rounded-4xl bg-brand-600 px-6 py-10 text-white sm:px-12 sm:py-14">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-brand-500/60" aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-amber-400/30" aria-hidden="true" />
+            <div className="relative max-w-xl">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-100">Para profesionales</p>
+              <h2 className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl">¿Tienes un oficio? Que te encuentren.</h2>
+              <p className="mt-3 text-brand-50/90">Publica tu primer servicio gratis. Los clientes de tu zona te escriben directo, sin comisiones.</p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                {user?.user_type === 'provider' ? (
+                  <Link to="/dashboard/servicios/nuevo" className="btn-lg btn bg-white text-brand-700 hover:bg-brand-50">Publicar un servicio</Link>
+                ) : (
+                  <Link to="/registro?tipo=profesional" className="btn-lg btn bg-white text-brand-700 hover:bg-brand-50">Anunciar mi oficio gratis</Link>
+                )}
+                <Link to="/planes" className="btn-lg btn border border-white/40 text-white hover:bg-white/10">Ver planes</Link>
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-3">
-            {provinces.map((province) => (
-              <Link
-                key={province.id}
-                to={`/buscar?province=${province.id}`}
-                className="card p-4 text-center group hover:shadow-md hover:border-primary-300 hover:bg-primary-50"
-              >
-                <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-primary-100 flex items-center justify-center group-hover:bg-primary-600 group-hover:text-white transition-colors">
-                  <MapPin className="w-5 h-5 text-primary-600 group-hover:text-white" />
-                </div>
-                <p className="text-sm font-medium text-gray-900 truncate">{province.name}</p>
-                <p className="text-xs text-gray-500">{province.capital}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 bg-primary-600 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">¿Eres profesional?</h2>
-          <p className="text-primary-100 text-lg mb-8 max-w-2xl mx-auto">
-            Únete a miles de profesionales que ya usan Oficios Cuba para conseguir más clientes y hacer crecer su negocio.
-          </p>
-          <Link to="/registro" className="btn bg-white text-primary-600 hover:bg-primary-50 px-8 py-3 text-lg">
-            Registrarse como proveedor
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Link>
-        </div>
-      </section>
-    </div>
+        </section>
+      )}
+    </>
   );
 }

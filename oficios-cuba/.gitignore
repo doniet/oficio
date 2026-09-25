@@ -41,3 +41,5 @@ coverage/
 # Misc
 *.pem
 .cache/
+# Datos persistentes (SQLite + fotos subidas)
+/data/

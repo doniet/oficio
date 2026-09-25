@@ -1,347 +1,193 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db from '../db/index.js';
+import db, { parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = Router();
 
+const blankToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+const optionalText = (max: number) => z.preprocess(blankToUndefined, z.string().trim().max(max).optional());
+
 const providerProfileSchema = z.object({
-  business_name: z.string().min(2).optional(),
-  description: z.string().optional(),
-  province_id: z.string().uuid(),
-  municipality_id: z.string().uuid().optional(),
-  address: z.string().optional(),
-  lat: z.number().optional(),
-  lng: z.number().optional(),
-  whatsapp: z.string().optional(),
-  telegram: z.string().optional(),
-  email_contact: z.string().email().optional(),
-  years_experience: z.number().int().min(0).optional(),
-  service_area_ids: z.array(z.string().uuid()).optional(),
+  business_name: z.preprocess(blankToUndefined, z.string().trim().min(2, 'El nombre del negocio es muy corto').max(80).optional()),
+  description: optionalText(2000),
+  province_id: z.string().uuid('Elige una provincia'),
+  municipality_id: z.preprocess(blankToUndefined, z.string().uuid().optional()),
+  address: optionalText(200),
+  lat: z.number().min(19).max(24).optional(),
+  lng: z.number().min(-85.5).max(-73.5).optional(),
+  whatsapp: z.preprocess(blankToUndefined, z.string().trim().regex(/^\+?[\d\s-]{8,20}$/, 'WhatsApp no válido').optional()),
+  telegram: optionalText(40),
+  email_contact: z.preprocess(blankToUndefined, z.string().trim().email('Email de contacto no válido').optional()),
+  years_experience: z.number().int().min(0).max(70).optional(),
+  service_area_ids: z.array(z.string().uuid()).max(60).optional(),
 });
 
+const PUBLIC_COLUMNS = `
+  pp.id, pp.business_name, pp.description, pp.province_id, pp.municipality_id, pp.years_experience,
+  pp.rating, pp.review_count, pp.subscription_plan, pp.created_at,
+  p.name AS province_name, m.name AS municipality_name,
+  u.full_name AS owner_name, u.avatar_url,
+  (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) AS service_count,
+  (SELECT json_group_array(name) FROM (
+     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
+     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3)) AS categories,
+  (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) AS cover_images
+`;
+
+const PUBLIC_JOINS = `
+  FROM provider_profiles pp
+  JOIN users u ON pp.user_id = u.id
+  LEFT JOIN provinces p ON pp.province_id = p.id
+  LEFT JOIN municipalities m ON pp.municipality_id = m.id
+`;
+
+function toCard(row: any) {
+  const { cover_images, categories, ...rest } = row;
+  let cats: string[] = [];
+  try { cats = JSON.parse(categories || '[]'); } catch { cats = []; }
+  return { ...rest, categories: cats, cover: parseImages(cover_images)[0] ?? null };
+}
+
 router.get('/', asyncHandler(async (req, res) => {
-  const { province_id, category_id, municipality_id, q, page = '1', limit = '20', sort = 'rating' } = req.query;
+  const { province_id, category, q, sort = 'relevance' } = req.query as Record<string, string | undefined>;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(48, Math.max(1, Number(req.query.limit) || 12));
 
-  let whereClause = 'WHERE pp.is_active = 1';
-  const params: any[] = [];
-
-  if (province_id) {
-    whereClause += ' AND pp.province_id = ?';
-    params.push(province_id);
+  let where = 'WHERE pp.is_active = 1 AND pp.business_name IS NOT NULL';
+  const params: unknown[] = [];
+  if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
+  if (category) {
+    where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
+      WHERE s.is_active = 1 AND (c.id = ? OR c.slug = ? OR c.parent_id IN (SELECT id FROM categories WHERE id = ? OR slug = ?)))`;
+    params.push(category, category, category, category);
+  }
+  if (q && q.trim()) {
+    where += ' AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)';
+    const term = `%${q.trim()}%`;
+    params.push(term, term, term);
   }
 
-  if (municipality_id) {
-    whereClause += ' AND pp.municipality_id = ?';
-    params.push(municipality_id);
-  }
+  const orders: Record<string, string> = {
+    relevance: `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC`,
+    rating: 'pp.rating DESC, pp.review_count DESC',
+    reviews: 'pp.review_count DESC',
+    newest: 'pp.created_at DESC',
+  };
 
-  if (category_id) {
-    whereClause += ` AND pp.id IN (SELECT DISTINCT provider_id FROM services WHERE category_id = ? AND is_active = 1)`;
-    params.push(category_id);
-  }
+  const total = (db.prepare(`SELECT COUNT(*) AS count ${PUBLIC_JOINS} ${where}`).get(...params) as { count: number }).count;
+  const rows = db.prepare(`SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS} ${where} ORDER BY ${orders[sort] ?? orders.relevance} LIMIT ? OFFSET ?`)
+    .all(...params, limit, (page - 1) * limit);
 
-  if (q) {
-    whereClause += ` AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)`;
-    const searchTerm = `%${q}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
-  }
-
-  let orderBy = 'pp.rating DESC, pp.review_count DESC';
-  if (sort === 'newest') orderBy = 'pp.created_at DESC';
-  else if (sort === 'reviews') orderBy = 'pp.review_count DESC';
-
-  const offset = (Number(page) - 1) * Number(limit);
-  params.push(Number(limit), offset);
-
-  const providers = db.prepare(`
-    SELECT
-      pp.id,
-      pp.business_name,
-      pp.description,
-      pp.province_id,
-      pp.municipality_id,
-      pp.address,
-      pp.lat,
-      pp.lng,
-      pp.whatsapp,
-      pp.telegram,
-      pp.years_experience,
-      pp.rating,
-      pp.review_count,
-      pp.subscription_plan,
-      p.name as province_name,
-      m.name as municipality_name,
-      u.full_name as owner_name,
-      u.avatar_url
-    FROM provider_profiles pp
-    JOIN users u ON pp.user_id = u.id
-    LEFT JOIN provinces p ON pp.province_id = p.id
-    LEFT JOIN municipalities m ON pp.municipality_id = m.id
-    ${whereClause}
-    ORDER BY ${orderBy}
-    LIMIT ? OFFSET ?
-  `).all(...params);
-
-  const total = db.prepare(`
-    SELECT COUNT(*) as count
-    FROM provider_profiles pp
-    JOIN users u ON pp.user_id = u.id
-    ${whereClause}
-  `).get(...params.slice(0, -2)) as { count: number };
-
-  res.json({
-    providers,
-    pagination: {
-      page: Number(page),
-      limit: Number(limit),
-      total: total.count,
-      totalPages: Math.ceil(total.count / Number(limit))
-    }
-  });
+  res.json({ providers: rows.map(toCard), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
 }));
 
 router.get('/featured', asyncHandler(async (req, res) => {
-  const { province_id, limit = '6' } = req.query;
-
-  let whereClause = 'WHERE pp.is_active = 1 AND pp.subscription_plan IN (\'pro\', \'premium\')';
-  const params: any[] = [];
-
-  if (province_id) {
-    whereClause += ' AND pp.province_id = ?';
-    params.push(province_id);
-  }
-
-  params.push(Number(limit));
-
-  const providers = db.prepare(`
-    SELECT
-      pp.id,
-      pp.business_name,
-      pp.description,
-      pp.province_id,
-      pp.municipality_id,
-      pp.rating,
-      pp.review_count,
-      pp.subscription_plan,
-      p.name as province_name,
-      u.full_name as owner_name,
-      u.avatar_url,
-      (SELECT json_group_array(json_object('id', s.id, 'title', s.title, 'category', c.name, 'category_icon', c.icon))
-       FROM services s
-       JOIN categories c ON s.category_id = c.id
-       WHERE s.provider_id = pp.id AND s.is_active = 1
-       LIMIT 3) as top_services
-    FROM provider_profiles pp
-    JOIN users u ON pp.user_id = u.id
-    LEFT JOIN provinces p ON pp.province_id = p.id
-    ${whereClause}
-    ORDER BY pp.rating DESC, pp.review_count DESC
+  const limit = Math.min(12, Math.max(1, Number(req.query.limit) || 6));
+  const rows = db.prepare(`
+    SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS}
+    WHERE pp.is_active = 1 AND pp.business_name IS NOT NULL
+      AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1)
+    ORDER BY ${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC
     LIMIT ?
-  `).all(...params);
-
-  res.json({ providers });
+  `).all(limit);
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ providers: rows.map(toCard) });
 }));
 
-router.get('/:id', asyncHandler(async (req, res) => {
-  const provider = db.prepare(`
-    SELECT
-      pp.*,
-      p.name as province_name,
-      m.name as municipality_name,
-      u.full_name as owner_name,
-      u.email as owner_email,
-      u.phone as owner_phone,
-      u.avatar_url,
-      u.created_at as user_created_at
-    FROM provider_profiles pp
-    JOIN users u ON pp.user_id = u.id
-    LEFT JOIN provinces p ON pp.province_id = p.id
-    LEFT JOIN municipalities m ON pp.municipality_id = m.id
-    WHERE pp.id = ?
-  `).get(req.params.id);
-
-  if (!provider) {
-    return res.status(404).json({ error: 'Proveedor no encontrado' });
-  }
-
-  const services = db.prepare(`
-    SELECT s.*, c.name as category_name, c.icon as category_icon, c.slug as category_slug
-    FROM services s
-    JOIN categories c ON s.category_id = c.id
-    WHERE s.provider_id = ? AND s.is_active = 1
-    ORDER BY c.sort_order, s.title
-  `).all(req.params.id);
-
-  const serviceAreas = db.prepare(`
-    SELECT sa.*, m.name as municipality_name, p.name as province_name
+function serviceAreasOf(providerId: string) {
+  return db.prepare(`
+    SELECT sa.id, sa.municipality_id, m.name AS municipality_name, p.name AS province_name
     FROM service_areas sa
     JOIN municipalities m ON sa.municipality_id = m.id
     JOIN provinces p ON m.province_id = p.id
-    WHERE sa.provider_id = ?
-  `).all(req.params.id);
-
-  const reviews = db.prepare(`
-    SELECT r.*, u.full_name as client_name, u.avatar_url as client_avatar, s.title as service_title
-    FROM reviews r
-    JOIN users u ON r.client_id = u.id
-    JOIN services s ON r.service_id = s.id
-    WHERE r.provider_id = ?
-    ORDER BY r.created_at DESC
-    LIMIT 10
-  `).all(req.params.id);
-
-  res.json({ provider, services, serviceAreas, reviews });
-}));
-
-router.post('/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  const data = providerProfileSchema.parse(req.body);
-
-  const existingProfile = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id);
-
-  if (existingProfile) {
-    const updates = [];
-    const values = [];
-
-    if (data.business_name !== undefined) { updates.push('business_name = ?'); values.push(data.business_name); }
-    if (data.description !== undefined) { updates.push('description = ?'); values.push(data.description); }
-    if (data.province_id) { updates.push('province_id = ?'); values.push(data.province_id); }
-    if (data.municipality_id !== undefined) { updates.push('municipality_id = ?'); values.push(data.municipality_id); }
-    if (data.address !== undefined) { updates.push('address = ?'); values.push(data.address); }
-    if (data.lat !== undefined) { updates.push('lat = ?'); values.push(data.lat); }
-    if (data.lng !== undefined) { updates.push('lng = ?'); values.push(data.lng); }
-    if (data.whatsapp !== undefined) { updates.push('whatsapp = ?'); values.push(data.whatsapp); }
-    if (data.telegram !== undefined) { updates.push('telegram = ?'); values.push(data.telegram); }
-    if (data.email_contact !== undefined) { updates.push('email_contact = ?'); values.push(data.email_contact); }
-    if (data.years_experience !== undefined) { updates.push('years_experience = ?'); values.push(data.years_experience); }
-
-    if (updates.length > 0) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      values.push(existingProfile.id);
-      db.prepare(`UPDATE provider_profiles SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    }
-
-    if (data.service_area_ids) {
-      db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(existingProfile.id);
-      const insertArea = db.prepare('INSERT INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)');
-      for (const muniId of data.service_area_ids) {
-        insertArea.run(uuidv4(), existingProfile.id, muniId);
-      }
-    }
-
-    const updated = db.prepare('SELECT * FROM provider_profiles WHERE id = ?').get(existingProfile.id);
-    return res.json({ provider: updated });
-  }
-
-  const profileId = uuidv4();
-  db.prepare(`
-    INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, whatsapp, telegram, email_contact, years_experience)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(profileId, req.user!.id, data.business_name || null, data.description || null, data.province_id, data.municipality_id || null, data.address || null, data.lat || null, data.lng || null, data.whatsapp || null, data.telegram || null, data.email_contact || null, data.years_experience || 0);
-
-  if (data.service_area_ids) {
-    const insertArea = db.prepare('INSERT INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)');
-    for (const muniId of data.service_area_ids) {
-      insertArea.run(uuidv4(), profileId, muniId);
-    }
-  }
-
-  const newProfile = db.prepare('SELECT * FROM provider_profiles WHERE id = ?').get(profileId);
-  res.status(201).json({ provider: newProfile });
-}));
+    WHERE sa.provider_id = ? ORDER BY m.name
+  `).all(providerId);
+}
 
 router.get('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const provider = db.prepare(`
-    SELECT pp.*, p.name as province_name, m.name as municipality_name
+    SELECT pp.*, p.name AS province_name, m.name AS municipality_name, u.full_name AS owner_name, u.avatar_url
     FROM provider_profiles pp
+    JOIN users u ON pp.user_id = u.id
     LEFT JOIN provinces p ON pp.province_id = p.id
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
     WHERE pp.user_id = ?
   `).get(req.user!.id);
-
-  if (!provider) {
-    return res.status(404).json({ error: 'Perfil de proveedor no encontrado' });
-  }
-
-  const serviceAreas = db.prepare(`
-    SELECT sa.*, m.name as municipality_name, p.name as province_name
-    FROM service_areas sa
-    JOIN municipalities m ON sa.municipality_id = m.id
-    JOIN provinces p ON m.province_id = p.id
-    WHERE sa.provider_id = ?
-  `).all(provider.id);
-
-  res.json({ provider, serviceAreas });
+  if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
+  res.json({ provider, serviceAreas: serviceAreasOf(provider.id) });
 }));
 
 router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const data = providerProfileSchema.parse(req.body);
+  const provider = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string } | undefined;
+  if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
 
-  const provider = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id);
-
-  if (!provider) {
-    throw new AppError('Perfil de proveedor no encontrado', 404);
+  if (data.municipality_id) {
+    const ok = db.prepare('SELECT 1 FROM municipalities WHERE id = ? AND province_id = ?').get(data.municipality_id, data.province_id);
+    if (!ok) throw new AppError('El municipio no pertenece a la provincia elegida', 400);
   }
 
-  const updates = [];
-  const values = [];
+  // Formulario completo: los campos vacíos se guardan como NULL para poder borrarlos.
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
+        lat = COALESCE(?, lat), lng = COALESCE(?, lng), whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
+      data.lat ?? null, data.lng ?? null, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
+      data.years_experience ?? 0, provider.id);
 
-  if (data.business_name !== undefined) { updates.push('business_name = ?'); values.push(data.business_name); }
-  if (data.description !== undefined) { updates.push('description = ?'); values.push(data.description); }
-  if (data.province_id) { updates.push('province_id = ?'); values.push(data.province_id); }
-  if (data.municipality_id !== undefined) { updates.push('municipality_id = ?'); values.push(data.municipality_id); }
-  if (data.address !== undefined) { updates.push('address = ?'); values.push(data.address); }
-  if (data.lat !== undefined) { updates.push('lat = ?'); values.push(data.lat); }
-  if (data.lng !== undefined) { updates.push('lng = ?'); values.push(data.lng); }
-  if (data.whatsapp !== undefined) { updates.push('whatsapp = ?'); values.push(data.whatsapp); }
-  if (data.telegram !== undefined) { updates.push('telegram = ?'); values.push(data.telegram); }
-  if (data.email_contact !== undefined) { updates.push('email_contact = ?'); values.push(data.email_contact); }
-  if (data.years_experience !== undefined) { updates.push('years_experience = ?'); values.push(data.years_experience); }
-
-  if (updates.length > 0) {
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(provider.id);
-    db.prepare(`UPDATE provider_profiles SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-  }
-
-  if (data.service_area_ids) {
-    db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
-    const insertArea = db.prepare('INSERT INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)');
-    for (const muniId of data.service_area_ids) {
-      insertArea.run(uuidv4(), provider.id, muniId);
+    if (data.service_area_ids) {
+      db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
+      const insert = db.prepare('INSERT OR IGNORE INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)');
+      for (const muniId of data.service_area_ids) insert.run(uuidv4(), provider.id, muniId);
     }
-  }
+  });
+  tx();
 
   const updated = db.prepare(`
-    SELECT pp.*, p.name as province_name, m.name as municipality_name
+    SELECT pp.*, p.name AS province_name, m.name AS municipality_name
     FROM provider_profiles pp
     LEFT JOIN provinces p ON pp.province_id = p.id
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
     WHERE pp.id = ?
   `).get(provider.id);
-
-  const serviceAreas = db.prepare(`
-    SELECT sa.*, m.name as municipality_name, p.name as province_name
-    FROM service_areas sa
-    JOIN municipalities m ON sa.municipality_id = m.id
-    JOIN provinces p ON m.province_id = p.id
-    WHERE sa.provider_id = ?
-  `).all(provider.id);
-
-  res.json({ provider: updated, serviceAreas });
+  res.json({ provider: updated, serviceAreas: serviceAreasOf(provider.id) });
 }));
 
-router.delete('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  const provider = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id);
+router.get('/:id', asyncHandler(async (req, res) => {
+  const provider = db.prepare(`
+    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.lat, pp.lng, pp.whatsapp, pp.telegram, pp.email_contact
+    ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
+  `).get(req.params.id);
+  if (!provider) throw new AppError('Proveedor no encontrado', 404);
 
-  if (!provider) {
-    throw new AppError('Perfil de proveedor no encontrado', 404);
-  }
+  const services = db.prepare(`
+    SELECT s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.images, s.created_at,
+      c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug
+    FROM services s JOIN categories c ON s.category_id = c.id
+    WHERE s.provider_id = ? AND s.is_active = 1
+    ORDER BY s.created_at
+  `).all(req.params.id).map((s: any) => {
+    const images = parseImages(s.images);
+    const { images: _i, ...rest } = s;
+    return { ...rest, cover: images[0] ?? null };
+  });
 
-  db.prepare('DELETE FROM provider_profiles WHERE id = ?').run(provider.id);
-  res.json({ message: 'Perfil eliminado correctamente' });
+  const reviews = db.prepare(`
+    SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar, s.title AS service_title
+    FROM reviews r JOIN users u ON r.client_id = u.id JOIN services s ON r.service_id = s.id
+    WHERE r.provider_id = ? ORDER BY r.created_at DESC LIMIT 20
+  `).all(req.params.id);
+
+  const distribution = db.prepare('SELECT rating, COUNT(*) AS count FROM reviews WHERE provider_id = ? GROUP BY rating').all(req.params.id);
+
+  res.json({ provider: toCard(provider), services, serviceAreas: serviceAreasOf(req.params.id), reviews, distribution });
 }));
 
 export default router;

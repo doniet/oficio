@@ -1,103 +1,53 @@
-version: '3.8'
-
+# Oficios Cuba en vps2 — https://oficio.dardoit.com
+# Cloudflare (túnel de la cuenta Doniet) → traefik:80 → oficio_web (nginx) → oficio_api por red interna.
+# oficio_api no está en net_dmz ni publica puertos; su red es interna (sin salida a internet).
+# Deploy: docker compose up -d --build
 services:
-  # ─── BACKEND ───
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: runner
-      # BuildKit features
-      network: host
-    container_name: oficios-cuba-backend
+  oficio_web:
+    build: ./frontend
+    image: oficio-web:latest
+    container_name: oficio_web
     restart: unless-stopped
+    depends_on:
+      oficio_api:
+        condition: service_healthy
+    networks:
+      - net_dmz
+      - oficio_net
+    mem_limit: 128m
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=net_dmz"
+      - "traefik.http.routers.oficio.rule=Host(`oficio.dardoit.com`)"
+      - "traefik.http.routers.oficio.entrypoints=web"
+      - "traefik.http.routers.oficio.service=oficio_svc"
+      - "traefik.http.services.oficio_svc.loadbalancer.server.port=80"
+
+  oficio_api:
+    build: ./backend
+    image: oficio-api:latest
+    container_name: oficio_api
+    restart: unless-stopped
+    env_file: .env
     environment:
       - NODE_ENV=production
       - PORT=3000
       - DATABASE_PATH=/app/data/oficios.db
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-min-32-chars}
-      - JWT_EXPIRES_IN=7d
-      - FRONTEND_URL=http://localhost
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
-      - PLAN_BASIC_PRICE=9.99
-      - PLAN_PRO_PRICE=19.99
-      - PLAN_PREMIUM_PRICE=39.99
+      - TZ=America/Havana
     volumes:
-      - backend_data:/app/data
-      - ./backend/.env:/app/.env:ro
-    ports:
-      - "3000:3000"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - ./data:/app/data
     networks:
-      - oficios-network
-    # DNS for better connectivity
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-      - 223.5.5.5
-
-  # ─── FRONTEND ───
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: runner
-      network: host
-    container_name: oficios-cuba-frontend
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - oficios-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-      - 223.5.5.5
-
-  # ─── DB INIT (runs once) ───
-  db-init:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: builder
-      network: host
-    container_name: oficios-cuba-db-init
-    command: sh -c "npm run db:init && npm run db:seed"
-    environment:
-      - DATABASE_PATH=/app/data/oficios.db
-      - NODE_ENV=production
-    volumes:
-      - backend_data:/app/data
-    networks:
-      - oficios-network
-    profiles:
-      - init
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-      - 223.5.5.5
-
-volumes:
-  backend_data:
-    driver: local
+      - oficio_net
+    mem_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
-  oficios-network:
-    driver: bridge
-    name: oficios-cuba-network
+  net_dmz:
+    external: true
+  oficio_net:
+    name: oficio_net
+    internal: true

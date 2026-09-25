@@ -1,275 +1,285 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { providerApi, serviceApi, subscriptionApi, conversationApi, reviewApi } from '../../services/api';
+import { ArrowRight, Briefcase, CheckCircle2, Circle, Compass, ExternalLink, Heart, MessageCircle, Plus, Star } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import type { ProviderProfile, Service, Subscription } from '../../types';
-import { LayoutDashboard, Briefcase, CreditCard, MessageSquare, Heart, User, Settings, ArrowRight, Star, TrendingUp, Clock, DollarSign, Plus, Building2, MapPin } from 'lucide-react';
+import { conversationApi, favoriteApi, providerApi, serviceApi, apiError } from '../../services/api';
+import type { Conversation, Favorite, MyProviderProfile, Plan, ServiceSummary } from '../../types';
+import { relativeTime } from '../../lib/format';
+import { ServiceThumb } from './parts';
+import { Avatar, EmptyState, ErrorState, PageLoader, PlanPill, RatingInline, cn } from '../../components/ui';
 
-export default function Dashboard() {
-  const { user } = useAuth();
-  const [provider, setProvider] = useState<ProviderProfile | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [conversationsCount, setConversationsCount] = useState(0);
-  const [reviewsStats, setReviewsStats] = useState({ avg_rating: 0, total: 0 });
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+function StatCard({ label, value, icon, to, children }: { label: string; value: React.ReactNode; icon: React.ReactNode; to: string; children?: React.ReactNode }) {
+  return (
+    <Link to={to} className="card card-hover flex flex-col gap-3 p-4 sm:p-5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-ink-500">{label}</span>
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sand-100 text-ink-600">{icon}</span>
+      </div>
+      <div className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">{value}</div>
+      {children}
+    </Link>
+  );
+}
+
+function RecentConversations({ conversations, isProvider }: { conversations: Conversation[]; isProvider: boolean }) {
+  return (
+    <section className="card p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-bold">Mensajes recientes</h2>
+        <Link to="/dashboard/mensajes" className="link text-sm">Ver todos</Link>
+      </div>
+      {conversations.length === 0 ? (
+        <p className="py-6 text-center text-sm text-ink-400">
+          {isProvider ? 'Cuando un cliente te escriba, verás su mensaje aquí.' : 'Aún no has escrito a ningún profesional.'}
+        </p>
+      ) : (
+        <ul className="-mx-2 divide-y divide-sand-200">
+          {conversations.slice(0, 3).map((c) => {
+            const name = isProvider ? c.client_name : c.provider_name;
+            const avatar = isProvider ? c.client_avatar : c.provider_avatar;
+            const unread = (c.unread_count ?? 0) > 0;
+            return (
+              <li key={c.id}>
+                <Link to={`/dashboard/mensajes/${c.id}`} className="flex items-center gap-3 rounded-xl px-2 py-3 hover:bg-sand-100">
+                  <Avatar src={avatar} name={name} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className={cn('truncate text-sm', unread ? 'font-bold' : 'font-semibold')}>{name}</p>
+                      <span className="shrink-0 text-xs text-ink-400">{relativeTime(c.last_message_at)}</span>
+                    </div>
+                    <p className={cn('truncate text-sm', unread ? 'text-ink-800' : 'text-ink-400')}>{c.last_message}</p>
+                  </div>
+                  {unread && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-brand-600" aria-label="Sin leer" />}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ProviderDashboard() {
+  const { user, unread } = useAuth();
+  const [profile, setProfile] = useState<MyProviderProfile | null>(null);
+  const [services, setServices] = useState<ServiceSummary[]>([]);
+  const [plan, setPlan] = useState<Plan>('free');
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [areas, setAreas] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (user?.user_type !== 'provider') return;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [p, s, c] = await Promise.all([providerApi.getMyProfile(), serviceApi.mine(), conversationApi.getAll()]);
+      setProfile(p.data.provider);
+      setAreas(p.data.serviceAreas?.length ?? 0);
+      setServices(s.data.services);
+      setPlan(s.data.plan);
+      setConversations(c.data.conversations);
+    } catch (err) {
+      setError(apiError(err, 'No se pudo cargar tu panel.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    const fetchData = async () => {
-      try {
-        const [providerRes, servicesRes, subRes, convRes, reviewsRes] = await Promise.all([
-          providerApi.getMyProfile(),
-          serviceApi.getAll({ provider_id: '', page: 1, limit: 5 }),
-          subscriptionApi.getMySubscription(),
-          conversationApi.getAll(),
-          reviewApi.getByProvider('').catch(() => ({ data: { reviews: [], stats: {} } })),
-        ]);
+  useEffect(() => { load(); }, [load]);
 
-        setProvider(providerRes.data.provider);
-        setServices(servicesRes.data.services);
-        setSubscription(subRes.data.subscription);
-        setConversationsCount(convRes.data.conversations?.length || 0);
-        setReviewsStats(reviewsRes.data.stats || { avg_rating: 0, total: 0 });
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  if (loading) return <PageLoader />;
+  if (error || !profile) return <ErrorState message={error || 'Perfil no encontrado'} onRetry={load} />;
 
-    fetchData();
-  }, [user]);
-
-  if (user?.user_type === 'client') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center py-16">
-            <LayoutDashboard className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Panel de Cliente</h1>
-            <p className="text-gray-600 mb-8">Desde aquí puedes gestionar tus favoritos, ver tus mensajes y configurar tu cuenta.</p>
-            <div className="flex justify-center gap-4">
-              <Link to="/dashboard/favoritos" className="btn-primary gap-2">
-                <Heart className="w-5 h-5" />
-                Mis Favoritos
-              </Link>
-              <Link to="/dashboard/mensajes" className="btn-secondary gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Mensajes
-              </Link>
-              <Link to="/dashboard/cuenta" className="btn-secondary gap-2">
-                <Settings className="w-5 h-5" />
-                Mi Cuenta
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
-  if (!provider) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="card p-12 text-center">
-            <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Completa tu perfil</h1>
-            <p className="text-gray-600 mb-6">Para acceder al panel de proveedor, primero debes completar tu perfil profesional.</p>
-            <Link to="/dashboard/perfil" className="btn-primary">
-              Completar perfil
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const stats = [
-    {
-      label: 'Servicios publicados',
-      value: services.length,
-      icon: Briefcase,
-      color: 'text-primary-600 bg-primary-100',
-      link: '/dashboard/servicios',
-    },
-    {
-      label: 'Conversaciones activas',
-      value: conversationsCount,
-      icon: MessageSquare,
-      color: 'text-green-600 bg-green-100',
-      link: '/dashboard/mensajes',
-    },
-    {
-      label: 'Calificación promedio',
-      value: provider.rating > 0 ? provider.rating.toFixed(1) : 'Sin calificar',
-      icon: Star,
-      color: 'text-yellow-600 bg-yellow-100',
-      link: '/proveedor/' + provider.id,
-    },
-    {
-      label: 'Suscripción',
-      value: subscription?.plan ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1) : 'Gratuito',
-      icon: CreditCard,
-      color: subscription?.plan === 'premium' ? 'text-purple-600 bg-purple-100' :
-             subscription?.plan === 'pro' ? 'text-blue-600 bg-blue-100' :
-             subscription?.plan === 'basic' ? 'text-green-600 bg-green-100' :
-             'text-gray-600 bg-gray-100',
-      link: '/dashboard/suscripciones',
-    },
+  const active = services.filter((s) => s.is_active).length;
+  const checklist = [
+    { done: Boolean(profile.business_name), label: 'Nombre de tu negocio', to: '/dashboard/perfil' },
+    { done: Boolean(profile.description && profile.description.length >= 30), label: 'Descripción de tu trabajo', to: '/dashboard/perfil' },
+    { done: Boolean(profile.whatsapp), label: 'WhatsApp de contacto', to: '/dashboard/perfil' },
+    { done: Boolean(profile.municipality_id) || areas > 0, label: 'Municipio donde trabajas', to: '/dashboard/perfil' },
+    { done: services.length > 0, label: 'Tu primer servicio publicado', to: '/dashboard/servicios/nuevo' },
+    { done: Boolean(user?.avatar_url), label: 'Foto de perfil', to: '/dashboard/cuenta' },
   ];
-
-  const recentServices = services.slice(0, 4);
+  const doneCount = checklist.filter((c) => c.done).length;
+  const pct = Math.round((doneCount / checklist.length) * 100);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Panel de Proveedor</h1>
-            <p className="text-gray-600 mt-1">Gestiona tu negocio y servicios</p>
-          </div>
-          <Link to="/dashboard/servicios/nuevo" className="btn-primary gap-2">
-            <Plus className="w-5 h-5" />
-            Nuevo servicio
-          </Link>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink-400">{greeting()},</p>
+          <h1 className="text-2xl font-bold sm:text-3xl">{profile.business_name || user?.full_name}</h1>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat) => (
-            <Link key={stat.label} to={stat.link} className="card p-6 hover:shadow-lg hover:border-primary-200 group">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{stat.label}</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                </div>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.color}`}>
-                  <stat.icon className="w-6 h-6" />
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500 group-hover:text-primary-600">
-                <span>Ver detalles</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </Link>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          <Link to={`/proveedor/${profile.id}`} className="btn-secondary"><ExternalLink className="h-4 w-4" /> Ver perfil público</Link>
+          <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Mis Servicios</h2>
-              <Link to="/dashboard/servicios" className="text-sm text-primary-600 hover:text-primary-700">Ver todos</Link>
+      {pct < 100 && (
+        <section className="card overflow-hidden">
+          <div className="p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Completa tu perfil</h2>
+                <p className="text-sm text-ink-500">Los perfiles completos reciben más mensajes.</p>
+              </div>
+              <span className="font-display text-2xl font-bold text-brand-600">{pct}%</span>
             </div>
-            <div className="divide-y divide-gray-100">
-              {recentServices.length > 0 ? (
-                recentServices.map((service) => (
-                  <Link
-                    key={service.id}
-                    to={`/dashboard/servicios/${service.id}/editar`}
-                    className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xl">{service.category_icon}</span>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-sand-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+          <ul className="grid border-t border-sand-200 sm:grid-cols-2">
+            {checklist.map((c) => (
+              <li key={c.label}>
+                <Link to={c.to} className={cn('flex items-center gap-3 px-5 py-3 text-sm hover:bg-sand-100', c.done ? 'text-ink-400' : 'font-semibold text-ink-800')}>
+                  {c.done ? <CheckCircle2 className="h-5 w-5 shrink-0 text-sea-600" /> : <Circle className="h-5 w-5 shrink-0 text-sand-300" />}
+                  <span className={cn('flex-1', c.done && 'line-through')}>{c.label}</span>
+                  {!c.done && <ArrowRight className="h-4 w-4 text-ink-300" />}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <StatCard label="Servicios activos" value={active} icon={<Briefcase className="h-5 w-5" />} to="/dashboard/servicios">
+          <span className="text-xs text-ink-400">{services.length} en total</span>
+        </StatCard>
+        <StatCard label="Sin leer" value={unread} icon={<MessageCircle className="h-5 w-5" />} to="/dashboard/mensajes">
+          <span className="text-xs text-ink-400">{conversations.length} conversaciones</span>
+        </StatCard>
+        <StatCard label="Valoración" value={profile.review_count ? profile.rating.toFixed(1) : '—'} icon={<Star className="h-5 w-5" />} to={`/proveedor/${profile.id}`}>
+          <RatingInline rating={profile.rating} count={profile.review_count} className="text-xs" />
+        </StatCard>
+        <StatCard label="Tu plan" value={<PlanPill plan={plan} />} icon={<Compass className="h-5 w-5" />} to="/dashboard/suscripcion">
+          <span className="text-xs font-semibold text-brand-700">{plan === 'free' ? 'Mejorar plan' : 'Gestionar'}</span>
+        </StatCard>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+        <RecentConversations conversations={conversations} isProvider />
+        <section className="card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Tus servicios</h2>
+            <Link to="/dashboard/servicios" className="link text-sm">Gestionar</Link>
+          </div>
+          {services.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-sm text-ink-400">Todavía no has publicado ningún servicio.</p>
+              <Link to="/dashboard/servicios/nuevo" className="btn-primary mt-4"><Plus className="h-4 w-4" /> Publicar el primero</Link>
+            </div>
+          ) : (
+            <ul className="-mx-2 divide-y divide-sand-200">
+              {services.slice(0, 4).map((s) => (
+                <li key={s.id}>
+                  <Link to={`/dashboard/servicios/${s.id}/editar`} className="flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-sand-100">
+                    <ServiceThumb src={s.cover} icon={s.category_icon} className="h-11 w-14" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{s.title}</p>
+                      <p className="truncate text-xs text-ink-400">{s.category_name}</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 truncate">{service.title}</h3>
-                      <p className="text-sm text-gray-500 truncate">{service.category_name}</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`badge ${service.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {service.is_active ? 'Activo' : 'Inactivo'}
-                      </span>
-                      <span className="font-semibold text-primary-600">
-                        {service.price_type === 'negotiable' ? 'Negociable' : `$${service.price_min || service.price_max}`}
-                      </span>
-                    </div>
+                    <span className={cn('badge', s.is_active ? 'bg-sea-100 text-sea-800' : 'bg-sand-100 text-ink-500')}>{s.is_active ? 'Activo' : 'Pausado'}</span>
                   </Link>
-                ))
-              ) : (
-                <div className="p-8 text-center">
-                  <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <h3 className="font-medium text-gray-900 mb-1">No tienes servicios publicados</h3>
-                  <p className="text-gray-500 text-sm mb-4">Crea tu primer servicio para empezar a recibir clientes</p>
-                  <Link to="/dashboard/servicios/nuevo" className="btn-primary inline-flex gap-2">
-                    <Plus className="w-4 h-4" />
-                    Crear servicio
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Resumen del Perfil</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl bg-primary-100 flex items-center justify-center">
-                  {provider.avatar_url ? (
-                    <img src={provider.avatar_url} alt="" className="w-16 h-16 rounded-xl" />
-                  ) : (
-                    <Building2 className="w-8 h-8 text-primary-600" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">{provider.business_name || provider.owner_name}</h3>
-                  <p className="text-sm text-gray-500">{provider.province_name}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Calificación</p>
-                  <p className="font-bold text-lg flex items-center gap-1">
-                    <Star className="w-5 h-5 text-yellow-500 fill-current" />
-                    {provider.rating.toFixed(1)}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Reseñas</p>
-                  <p className="font-bold text-lg">{provider.review_count}</p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Experiencia</p>
-                  <p className="font-bold text-lg">{provider.years_experience || 0} años</p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Servicios</p>
-                  <p className="font-bold text-lg">{services.length}</p>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-gray-100 space-y-3">
-                <Link to="/dashboard/perfil" className="btn-secondary w-full gap-2 justify-center">
-                  <User className="w-5 h-5" />
-                  Editar perfil
-                </Link>
-                <Link to="/dashboard/suscripciones" className="btn-outline w-full gap-2 justify-center">
-                  <CreditCard className="w-5 h-5" />
-                  Gestionar suscripción
-                </Link>
-                <Link to={`/proveedor/${provider.id}`} target="_blank" className="btn-secondary w-full gap-2 justify-center">
-                  <MapPin className="w-5 h-5" />
-                  Ver perfil público
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </div>
   );
+}
+
+function ClientDashboard() {
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [c, f] = await Promise.all([conversationApi.getAll(), favoriteApi.getAll()]);
+      setConversations(c.data.conversations);
+      setFavorites(f.data.favorites);
+    } catch (err) {
+      setError(apiError(err, 'No se pudo cargar tu panel.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <PageLoader />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-semibold text-ink-400">{greeting()},</p>
+        <h1 className="text-2xl font-bold sm:text-3xl">{user?.full_name.split(' ')[0]}</h1>
+      </div>
+
+      <section className="relative overflow-hidden rounded-3xl bg-ink-900 p-6 text-white sm:p-8">
+        <div className="relative max-w-md">
+          <h2 className="text-2xl font-bold text-white">¿Qué necesitas arreglar hoy?</h2>
+          <p className="mt-2 text-ink-200">Busca por oficio y provincia, compara reseñas y escribe directo al profesional.</p>
+          <Link to="/buscar" className="btn-primary mt-5"><Compass className="h-4 w-4" /> Explorar servicios</Link>
+        </div>
+        <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-brand-600/30 blur-2xl" aria-hidden="true" />
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+        <RecentConversations conversations={conversations} isProvider={false} />
+        <section className="card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">Tus favoritos</h2>
+            <Link to="/dashboard/favoritos" className="link text-sm">Ver todos</Link>
+          </div>
+          {favorites.length === 0 ? (
+            <EmptyState icon={<Heart className="h-6 w-6" />} title="Sin favoritos">
+              Guarda a los profesionales que te gusten para encontrarlos rápido.
+            </EmptyState>
+          ) : (
+            <ul className="-mx-2 divide-y divide-sand-200">
+              {favorites.slice(0, 3).map((f) => {
+                const name = f.business_name || f.owner_name;
+                return (
+                  <li key={f.id}>
+                    <Link to={`/proveedor/${f.provider_id}`} className="flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-sand-100">
+                      <Avatar src={f.avatar_url} name={name} size="sm" square />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{name}</p>
+                        <p className="truncate text-xs text-ink-400">{[f.municipality_name, f.province_name].filter(Boolean).join(', ')}</p>
+                      </div>
+                      <RatingInline rating={f.rating} count={f.review_count} className="text-xs" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  return user?.user_type === 'provider' ? <ProviderDashboard /> : <ClientDashboard />;
 }

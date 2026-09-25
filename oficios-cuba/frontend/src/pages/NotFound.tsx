@@ -1,51 +1,32 @@
-import { Link } from 'react-router-dom';
-import { Home, Search, MapPin, RotateCcw } from 'lucide-react';
+import { useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Search } from 'lucide-react';
 
 export default function NotFound() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const prev = document.title;
+    document.title = 'Página no encontrada · Oficios Cuba';
+    return () => { document.title = prev; };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="text-center">
-        <div className="mb-8">
-          <span className="text-9xl font-bold text-primary-100">404</span>
-        </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Página no encontrada</h1>
-        <p className="text-gray-600 mb-8 max-w-md mx-auto">
-          Lo sentimos, la página que buscas no existe o ha sido movida.
-        </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link to="/" className="btn-primary gap-2">
-            <Home className="w-5 h-5" />
-            Ir al inicio
-          </Link>
-          <Link to="/buscar" className="btn-secondary gap-2">
-            <Search className="w-5 h-5" />
-            Buscar servicios
-          </Link>
-          <button
-            onClick={() => window.history.back()}
-            className="btn-outline gap-2"
-          >
-            <RotateCcw className="w-5 h-5" />
-            Volver atrás
-          </button>
-        </div>
-        <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto">
-          <Link to="/buscar" className="card p-6 hover:border-primary-300 transition-colors">
-            <MapPin className="w-10 h-10 text-primary-600 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-900 mb-1">Explorar por zona</h3>
-            <p className="text-sm text-gray-500">Encuentra servicios en tu provincia</p>
-          </Link>
-          <Link to="/buscar" className="card p-6 hover:border-primary-300 transition-colors">
-            <Search className="w-10 h-10 text-primary-600 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-900 mb-1">Buscar oficios</h3>
-            <p className="text-sm text-gray-500">Electricista, plomero, pintor...</p>
-          </Link>
-          <Link to="/registro" className="card p-6 hover:border-primary-300 transition-colors">
-            <MapPin className="w-10 h-10 text-primary-600 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-900 mb-1">Registrarse</h3>
-            <p className="text-sm text-gray-500">Como cliente o proveedor</p>
-          </Link>
-        </div>
+    <div className="container-page flex min-h-[65vh] flex-col items-center justify-center py-16 text-center">
+      <p className="font-display text-[7rem] font-extrabold leading-none text-sand-300 sm:text-[9rem]" aria-hidden="true">
+        4<span className="text-brand-500">0</span>4
+      </p>
+      <h1 className="mt-2 text-balance text-3xl font-bold sm:text-4xl">Esta página no existe</h1>
+      <p className="mt-3 max-w-md text-ink-500">
+        Puede que el enlace esté mal escrito o que el servicio ya no esté publicado.
+      </p>
+      <div className="mt-8 flex w-full max-w-sm flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
+        <button onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))} className="btn-secondary btn-lg">
+          <ArrowLeft className="h-4 w-4" /> Volver
+        </button>
+        <Link to="/buscar" className="btn-primary btn-lg">
+          <Search className="h-4 w-4" /> Buscar servicios
+        </Link>
       </div>
     </div>
   );

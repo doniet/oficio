@@ -9,15 +9,15 @@ import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 const router = Router();
 
 const registerSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  full_name: z.string().min(2, 'Nombre completo requerido'),
-  phone: z.string().optional(),
+  email: z.string().trim().toLowerCase().email('Email inválido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
+  full_name: z.string().trim().min(2, 'Escribe tu nombre completo').max(80),
+  phone: z.string().trim().max(20).optional(),
   user_type: z.enum(['client', 'provider']),
 });
 
 const loginSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: z.string().trim().toLowerCase().email('Email inválido'),
   password: z.string().min(1, 'Contraseña requerida'),
 });
 
@@ -33,15 +33,15 @@ router.post('/register', asyncHandler(async (req, res) => {
   const userId = uuidv4();
 
   db.prepare(`
-    INSERT INTO users (id, email, password_hash, full_name, phone, user_type)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(userId, data.email, passwordHash, data.full_name, data.phone || null, data.user_type);
+    INSERT INTO users (id, email, password_hash, full_name, phone, user_type, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, data.email, passwordHash, data.full_name, data.phone || null, data.user_type, new Date().toISOString());
 
   if (data.user_type === 'provider') {
     db.prepare(`
-      INSERT INTO provider_profiles (id, user_id, province_id)
-      VALUES (?, ?, (SELECT id FROM provinces LIMIT 1))
-    `).run(uuidv4(), userId);
+      INSERT INTO provider_profiles (id, user_id, province_id, whatsapp, created_at)
+      VALUES (?, ?, COALESCE((SELECT id FROM provinces WHERE name = 'La Habana'), (SELECT id FROM provinces LIMIT 1)), ?, ?)
+    `).run(uuidv4(), userId, data.phone || null, new Date().toISOString());
   }
 
   const token = generateToken({ id: userId, email: data.email, user_type: data.user_type });
@@ -53,7 +53,10 @@ router.post('/register', asyncHandler(async (req, res) => {
       id: userId,
       email: data.email,
       full_name: data.full_name,
-      user_type: data.user_type
+      phone: data.phone || null,
+      avatar_url: null,
+      user_type: data.user_type,
+      is_verified: false
     }
   });
 }));
@@ -83,6 +86,8 @@ router.post('/login', asyncHandler(async (req, res) => {
       id: user.id,
       email: user.email,
       full_name: user.full_name,
+      phone: (user as any).phone ?? null,
+      avatar_url: (user as any).avatar_url ?? null,
       user_type: user.user_type,
       is_verified: Boolean(user.is_verified)
     }
@@ -113,9 +118,9 @@ router.get('/me', authMiddleware, asyncHandler(async (req: AuthRequest, res) => 
 
 router.put('/profile', authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
   const updateSchema = z.object({
-    full_name: z.string().min(2).optional(),
-    phone: z.string().optional(),
-    avatar_url: z.string().url().optional(),
+    full_name: z.string().trim().min(2, 'Escribe tu nombre completo').max(80).optional(),
+    phone: z.string().trim().max(20).optional(),
+    avatar_url: z.union([z.literal(''), z.string().max(500).refine((v) => v.startsWith('/api/uploads/') || v.startsWith('https://'), 'URL de imagen no válida')]).optional(),
   });
 
   const data = updateSchema.parse(req.body);
@@ -131,9 +136,9 @@ router.put('/profile', authMiddleware, asyncHandler(async (req: AuthRequest, res
     updates.push('phone = ?');
     values.push(data.phone);
   }
-  if (data.avatar_url) {
+  if (data.avatar_url !== undefined) {
     updates.push('avatar_url = ?');
-    values.push(data.avatar_url);
+    values.push(data.avatar_url || null);
   }
 
   if (updates.length === 0) {
@@ -154,7 +159,7 @@ router.put('/profile', authMiddleware, asyncHandler(async (req: AuthRequest, res
 router.put('/password', authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
   const schema = z.object({
     current_password: z.string().min(1),
-    new_password: z.string().min(6),
+    new_password: z.string().min(8, 'La nueva contraseña debe tener al menos 8 caracteres').max(128),
   });
 
   const data = schema.parse(req.body);
