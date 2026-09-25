@@ -1,23 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { z } from 'zod';
 import db from '../db/index.js';
 
 export type Canal = 'fcm';
 
-// La versión de zod instalada (bloqueada por package-lock.json) infiere `z.infer<>` con todos
-// los campos opcionales bajo `moduleResolution: "node"`, aunque el esquema exija required+default.
-// Se comparte este tipo entre el schema y `registrarDispositivo` para que ambos lados casen
-// estructuralmente; en tiempo de ejecución `.parse()` sigue exigiendo y rellenando los campos.
-export const nuevoDispositivoSchema = z.object({
-  canal: z.enum(['fcm']),
-  token: z.string().trim().min(1).max(4096),
-  plataforma: z.enum(['android', 'ios']),
-  app_version: z.string().trim().max(20).default(''),
-});
-
-export type NuevoDispositivo = z.infer<typeof nuevoDispositivoSchema>;
-
-export function registrarDispositivo(userId: string, d: NuevoDispositivo) {
+export function registrarDispositivo(userId: string, d: { canal: Canal; token: string; plataforma: 'android' | 'ios'; app_version: string }) {
   const ahora = new Date().toISOString();
   // Si el token era de otra cuenta (teléfono prestado, cambio de sesión), pasa a esta.
   db.prepare(`
