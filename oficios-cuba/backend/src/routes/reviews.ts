@@ -17,14 +17,18 @@ function eligibility(clientId: string, serviceId: string) {
   if (db.prepare('SELECT 1 FROM reviews WHERE client_id = ? AND provider_id = ?').get(clientId, service.provider_id)) {
     return { service, can_review: false, reason: 'Ya reseñaste a este profesional' };
   }
-  // Solo reseña quien de verdad habló con el proveedor: tiene que haberle contestado en el chat.
+  // Solo reseña quien de verdad trató con el proveedor: que le haya contestado en el chat, que
+  // haya tenido una cita confirmada o que lo haya contactado por WhatsApp o llamada con su sesión.
   // Abrir una conversación con un "hola" desde una cuenta nueva no basta.
-  const contesto = db.prepare(`
+  const trato = db.prepare(`
     SELECT 1 FROM conversations c JOIN messages m ON m.conversation_id = c.id
-    WHERE c.client_id = ? AND c.provider_id = ? AND m.sender_type = 'provider' LIMIT 1
-  `).get(clientId, service.provider_id);
-  if (!contesto) {
-    return { service, can_review: false, reason: 'Podrás reseñar cuando el profesional te haya respondido por el chat' };
+      WHERE c.client_id = ? AND c.provider_id = ? AND m.sender_type = 'provider'
+    UNION ALL SELECT 1 FROM appointments WHERE client_id = ? AND provider_id = ? AND status IN ('confirmed', 'done')
+    UNION ALL SELECT 1 FROM contacts WHERE client_id = ? AND provider_id = ?
+    LIMIT 1
+  `).get(clientId, service.provider_id, clientId, service.provider_id, clientId, service.provider_id);
+  if (!trato) {
+    return { service, can_review: false, reason: 'Podrás reseñar cuando hayas contactado a este profesional por WhatsApp, llamada, chat o una cita' };
   }
   return { service, can_review: true, reason: null };
 }

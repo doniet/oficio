@@ -92,6 +92,7 @@ describe('validación de entrada', () => {
 
   it('no acepta fotos de servicio de dominios externos ni subidas ajenas', async () => {
     const pro = await registrar('provider');
+    ponerPlan(pro.providerId!, 'basic');
     const externa = await crearServicio(pro.auth, { images: ['https://evil.example/x.jpg'] });
     expect(externa.status).toBe(400);
     const ajena = await crearServicio(pro.auth, { images: ['/api/uploads/00000000-0000-4000-8000-000000000000.webp'] });

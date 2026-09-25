@@ -5,16 +5,17 @@ import { useAuth } from '../../hooks/useAuth';
 import { apiError } from '../../services/api';
 import { Alert, Spinner } from '../../components/ui';
 import { AuthShell, PasswordInput, safeNext } from './AuthShell';
+import GoogleButton, { OrDivider } from '../../components/GoogleButton';
 
 // Cuentas creadas por backend/src/db/seed-demo.ts cuando DEMO_MODE está activo.
 const DEMO_PASSWORD = 'Demo123!';
 const DEMO_ACCOUNTS = [
   { email: 'cliente@demo.com', label: 'Cliente', detail: 'Laura Méndez · busca y contrata', icon: <User className="h-5 w-5" /> },
-  { email: 'proveedor@demo.com', label: 'Profesional', detail: 'ElectroHogar Vedado · plan Pro', icon: <Briefcase className="h-5 w-5" /> },
+  { email: 'proveedor@demo.com', label: 'Profesional', detail: 'ElectroHogar Vedado · plan Profesional', icon: <Briefcase className="h-5 w-5" /> },
 ];
 
 export default function Login() {
-  const { login, demo } = useAuth();
+  const { login, demo, googleMode } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
@@ -41,6 +42,13 @@ export default function Login() {
     <AuthShell title="Entra a tu cuenta" subtitle={<>¿No tienes cuenta? <Link to={registerLink} className="link">Regístrate gratis</Link></>}>
       {next && (
         <div className="mb-6"><Alert tone="info">Entra para continuar. Te llevaremos de vuelta a donde estabas.</Alert></div>
+      )}
+
+      {googleMode && (
+        <>
+          <GoogleButton next={next} />
+          <OrDivider />
+        </>
       )}
 
       <form

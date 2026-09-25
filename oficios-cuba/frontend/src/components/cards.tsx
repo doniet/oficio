@@ -1,11 +1,21 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Images } from 'lucide-react';
+import { MapPin, Images, Store } from 'lucide-react';
 import type { ProviderCard as ProviderCardType, ServiceSummary } from '../types';
 import { priceFrom } from '../lib/format';
+import { useTasa } from '../hooks/useTasa';
 import { Avatar, CoverImage, PlanBadge, RatingInline, cn } from './ui';
 
+export function NegocioChip({ className = '' }: { className?: string }) {
+  return (
+    <span className={cn('badge bg-sea-100 text-sea-800', className)}>
+      <Store className="h-3.5 w-3.5" aria-hidden="true" /> Negocio
+    </span>
+  );
+}
+
 export function ServiceCard({ service, className = '' }: { service: ServiceSummary; className?: string }) {
-  const price = priceFrom(service);
+  const tasa = useTasa();
+  const price = priceFrom(service, tasa);
   const place = [service.municipality_name, service.province_name].filter(Boolean).join(', ');
   return (
     <Link
@@ -20,10 +30,11 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
           alt={service.title}
           className="transition duration-500 group-hover:scale-[1.04]"
         />
-        <div className="absolute left-3 top-3 flex gap-1.5">
-          <span className="badge bg-white/95 text-ink-800 shadow-sm backdrop-blur">
+        <div className="absolute left-3 right-3 top-3 flex flex-wrap gap-1.5">
+          <span className="badge max-w-full truncate bg-white/95 text-ink-800 shadow-sm backdrop-blur">
             <span aria-hidden="true">{service.category_icon}</span> {service.category_name}
           </span>
+          {service.kind === 'negocio' && <NegocioChip className="shadow-sm" />}
         </div>
         {service.image_count > 1 && (
           <span className="badge absolute bottom-3 right-3 bg-ink-900/70 text-white backdrop-blur">
@@ -48,9 +59,12 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
             </span>
           ) : <span />}
           <span className="shrink-0 text-right leading-none">
-            {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
-            <span className="font-display text-lg font-bold text-ink-900">{price.amount}</span>
-            {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
+            <span className="block whitespace-nowrap">
+              {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
+              <span className="font-display text-lg font-bold text-ink-900">{price.amount}</span>
+              {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
+            </span>
+            {price.alt && <span className="mt-1 block text-xs text-ink-400">{price.alt}</span>}
           </span>
         </div>
       </div>
@@ -91,8 +105,9 @@ export function ProviderCard({ provider }: { provider: ProviderCardType }) {
           <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate">{[provider.municipality_name, provider.province_name].filter(Boolean).join(', ')}</span>
         </p>
-        {provider.categories.length > 0 && (
+        {(provider.categories.length > 0 || provider.kind === 'negocio') && (
           <div className="mt-3 flex flex-wrap gap-1.5">
+            {provider.kind === 'negocio' && <NegocioChip />}
             {provider.categories.slice(0, 2).map((c) => (
               <span key={c} className="badge bg-sand-100 font-medium text-ink-600">{c}</span>
             ))}

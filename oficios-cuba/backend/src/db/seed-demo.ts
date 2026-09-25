@@ -4,7 +4,7 @@ import db, { refreshProviderRating } from './index.js';
 
 export const DEMO_PASSWORD = 'Demo123!';
 
-type Plan = 'free' | 'basic' | 'pro' | 'premium';
+type Plan = 'free' | 'basic' | 'pro';
 type PriceType = 'fixed' | 'hourly' | 'daily' | 'negotiable';
 
 interface DemoService {
@@ -14,6 +14,7 @@ interface DemoService {
   price_min?: number;
   price_max?: number;
   price_type: PriceType;
+  price_currency?: 'CUP' | 'USD';
   images?: string[];
 }
 
@@ -29,6 +30,8 @@ interface DemoProvider {
   whatsapp: string;
   years: number;
   plan: Plan;
+  contact_mode?: 'whatsapp' | 'call' | 'both';
+  negocio?: { horario: string };
   services: DemoService[];
 }
 
@@ -44,9 +47,9 @@ const providers: DemoProvider[] = [
     province: 'La Habana', municipality: 'Plaza de la Revolución',
     address: 'Calle 23 e/ 10 y 12, Vedado', whatsapp: '+5352000002', years: 8, plan: 'pro',
     services: [
-      { category: 'electricidad', title: 'Instalación eléctrica residencial', description: 'Cableado nuevo, cambio de tomacorrientes e interruptores, breakers y tierra física. Reviso la instalación completa antes de empezar y te entrego todo probado.', price_min: 35, price_max: 90, price_type: 'fixed', images: [img('electricidad-1'), img('electricidad-2')] },
-      { category: 'fontaneria-plomeria', title: 'Reparación de plomería y salideros', description: 'Salideros, tupiciones, cambio de llaves y mezcladoras, instalación de tanques y bombas de agua. Atención el mismo día en Plaza, Centro Habana y Vedado.', price_min: 20, price_max: 70, price_type: 'fixed', images: [img('plomeria-1'), img('plomeria-2')] },
-      { category: 'electricidad', title: 'Instalación de ventiladores y lámparas', description: 'Montaje de ventiladores de techo, lámparas LED y reflectores. Incluye revisión de la línea y fijación segura.', price_min: 10, price_max: 25, price_type: 'fixed' },
+      { category: 'electricidad', title: 'Instalación eléctrica residencial', description: 'Cableado nuevo, cambio de tomacorrientes e interruptores, breakers y tierra física. Reviso la instalación completa antes de empezar y te entrego todo probado.', price_min: 15000, price_max: 60000, price_type: 'fixed', images: [img('electricidad-1'), img('electricidad-2')] },
+      { category: 'fontaneria-plomeria', title: 'Reparación de plomería y salideros', description: 'Salideros, tupiciones, cambio de llaves y mezcladoras, instalación de tanques y bombas de agua. Atención el mismo día en Plaza, Centro Habana y Vedado.', price_min: 3000, price_max: 12000, price_type: 'fixed', images: [img('plomeria-1'), img('plomeria-2')] },
+      { category: 'electricidad', title: 'Instalación de ventiladores y lámparas', description: 'Montaje de ventiladores de techo, lámparas LED y reflectores. Incluye revisión de la línea y fijación segura.', price_min: 2500, price_max: 6000, price_type: 'fixed' },
     ],
   },
   {
@@ -56,9 +59,9 @@ const providers: DemoProvider[] = [
     business_name: 'Carpintería Hermanos Díaz',
     description: 'Taller familiar con tres generaciones de carpinteros. Muebles a medida en maderas preciosas, restauración de piezas antiguas y carpintería de obra (puertas, ventanas y closets).',
     province: 'Santiago de Cuba', municipality: 'Santiago de Cuba',
-    address: 'Calle Heredia #412, Centro histórico', whatsapp: '+5352000011', years: 22, plan: 'premium',
+    address: 'Calle Heredia #412, Centro histórico', whatsapp: '+5352000011', years: 22, plan: 'pro', negocio: { horario: 'Lunes a sábado, 8:00 a. m. – 5:00 p. m.' }, contact_mode: 'both',
     services: [
-      { category: 'carpinteria', title: 'Muebles a medida en madera preciosa', description: 'Closets, cocinas, libreros y camas diseñados para tu espacio. Te acompañamos desde el boceto hasta la instalación.', price_min: 150, price_max: 900, price_type: 'fixed', images: [img('carpinteria-1'), img('carpinteria-2')] },
+      { category: 'carpinteria', title: 'Muebles a medida en madera preciosa', description: 'Closets, cocinas, libreros y camas diseñados para tu espacio. Te acompañamos desde el boceto hasta la instalación.', price_min: 150, price_max: 700, price_currency: 'USD', price_type: 'fixed', images: [img('carpinteria-1'), img('carpinteria-2')] },
       { category: 'carpinteria', title: 'Restauración de muebles antiguos', description: 'Recuperamos sillones, cómodas y puertas coloniales: desarme, tratamiento contra comején, barniz y tapicería.', price_type: 'negotiable', images: [img('carpinteria-2')] },
     ],
   },
@@ -69,11 +72,11 @@ const providers: DemoProvider[] = [
     business_name: 'Clima Frío Express',
     description: 'Técnico en refrigeración y climatización. Instalo, limpio y reparo splits, neveras y aires de ventana. Carga de gas con equipo de medición y garantía de 3 meses.',
     province: 'La Habana', municipality: 'Playa',
-    address: '5ta Avenida y 42, Miramar', whatsapp: '+5352000012', years: 11, plan: 'premium',
+    address: '5ta Avenida y 42, Miramar', whatsapp: '+5352000012', years: 11, plan: 'pro', negocio: { horario: 'Todos los días, 8:00 a. m. – 8:00 p. m.' },
     services: [
-      { category: 'aire-acondicionado', title: 'Instalación de split con garantía', description: 'Instalación completa de split de 1 a 2 toneladas: soporte, tubería, desagüe y puesta en marcha con prueba de presión.', price_min: 60, price_max: 120, price_type: 'fixed' },
-      { category: 'aire-acondicionado', title: 'Mantenimiento y limpieza de aire acondicionado', description: 'Limpieza profunda de evaporador y condensador, revisión de gas y ajuste eléctrico. Tu equipo enfría más y gasta menos.', price_min: 20, price_max: 35, price_type: 'fixed' },
-      { category: 'refrigeracion', title: 'Reparación de neveras y freezers', description: 'Diagnóstico a domicilio, cambio de termostato, relé y compresor. Carga de gas R134a y R600.', price_min: 25, price_max: 110, price_type: 'fixed' },
+      { category: 'aire-acondicionado', title: 'Instalación de split con garantía', description: 'Instalación completa de split de 1 a 2 toneladas: soporte, tubería, desagüe y puesta en marcha con prueba de presión.', price_min: 40, price_max: 80, price_currency: 'USD', price_type: 'fixed' },
+      { category: 'aire-acondicionado', title: 'Mantenimiento y limpieza de aire acondicionado', description: 'Limpieza profunda de evaporador y condensador, revisión de gas y ajuste eléctrico. Tu equipo enfría más y gasta menos.', price_min: 6000, price_max: 12000, price_type: 'fixed' },
+      { category: 'refrigeracion', title: 'Reparación de neveras y freezers', description: 'Diagnóstico a domicilio, cambio de termostato, relé y compresor. Carga de gas R134a y R600.', price_min: 5000, price_max: 40000, price_type: 'fixed' },
     ],
   },
   {
@@ -85,8 +88,8 @@ const providers: DemoProvider[] = [
     province: 'Villa Clara', municipality: 'Santa Clara',
     address: 'Calle Independencia #58', whatsapp: '+5352000013', years: 9, plan: 'basic',
     services: [
-      { category: 'peluqueria-barberia', title: 'Corte, color y peinado', description: 'Corte a la moda, tinte o mechas y secado con peinado. Uso productos profesionales y te asesoro según tu tipo de pelo.', price_min: 8, price_max: 40, price_type: 'fixed', images: [img('salon-1')] },
-      { category: 'maquillaje', title: 'Maquillaje para bodas y quinces', description: 'Prueba previa incluida, maquillaje de larga duración y retoque. Paquetes para la novia o quinceañera y acompañantes.', price_min: 25, price_max: 60, price_type: 'fixed', images: [img('maquillaje-1')] },
+      { category: 'peluqueria-barberia', title: 'Corte, color y peinado', description: 'Corte a la moda, tinte o mechas y secado con peinado. Uso productos profesionales y te asesoro según tu tipo de pelo.', price_min: 1500, price_max: 10000, price_type: 'fixed', images: [img('salon-1')] },
+      { category: 'maquillaje', title: 'Maquillaje para bodas y quinces', description: 'Prueba previa incluida, maquillaje de larga duración y retoque. Paquetes para la novia o quinceañera y acompañantes.', price_min: 8000, price_max: 20000, price_type: 'fixed', images: [img('maquillaje-1')] },
     ],
   },
   {
@@ -98,7 +101,7 @@ const providers: DemoProvider[] = [
     address: 'Carretera Central km 3', whatsapp: '+5352000014', years: 17, plan: 'pro',
     services: [
       { category: 'mecanica-general', title: 'Reparación de motor y ajuste', description: 'Ajuste de motor, cambio de juntas, puesta a punto y adaptación de motores diésel. Te muestro las piezas cambiadas.', price_type: 'negotiable', images: [img('mecanica-1'), img('mecanica-3')] },
-      { category: 'mecanica-general', title: 'Cambio de aceite y revisión general', description: 'Cambio de aceite y filtros, revisión de frenos, luces y suspensión con informe por escrito.', price_min: 15, price_max: 30, price_type: 'fixed', images: [img('mecanica-2')] },
+      { category: 'mecanica-general', title: 'Cambio de aceite y revisión general', description: 'Cambio de aceite y filtros, revisión de frenos, luces y suspensión con informe por escrito.', price_min: 4000, price_max: 8000, price_type: 'fixed', images: [img('mecanica-2')] },
     ],
   },
   {
@@ -107,9 +110,9 @@ const providers: DemoProvider[] = [
     business_name: 'TecnoFix Holguín',
     description: 'Reparación de celulares, tablets y laptops. Cambio de pantallas y baterías, software, recuperación de datos y liberaciones.',
     province: 'Holguín', municipality: 'Holguín',
-    address: 'Calle Maceo, frente al parque Calixto García', whatsapp: '+5352000015', years: 6, plan: 'free',
+    address: 'Calle Maceo, frente al parque Calixto García', whatsapp: '+5352000015', years: 6, plan: 'free', contact_mode: 'both',
     services: [
-      { category: 'celulares-tablets', title: 'Cambio de pantalla y batería de celular', description: 'Pantallas y baterías para Samsung, Xiaomi, Motorola e iPhone. La mayoría de los arreglos quedan listos en el día.', price_min: 15, price_max: 85, price_type: 'fixed', images: [img('celulares-1'), img('electronica-1')] },
+      { category: 'celulares-tablets', title: 'Cambio de pantalla y batería de celular', description: 'Pantallas y baterías para Samsung, Xiaomi, Motorola e iPhone. La mayoría de los arreglos quedan listos en el día.', price_min: 8000, price_max: 45000, price_type: 'fixed', images: [img('celulares-1'), img('electronica-1')] },
     ],
   },
   {
@@ -121,8 +124,8 @@ const providers: DemoProvider[] = [
     province: 'Matanzas', municipality: 'Matanzas',
     address: 'Reparto Versalles', whatsapp: '+5352000016', years: 14, plan: 'basic',
     services: [
-      { category: 'reposteria', title: 'Cakes de cumpleaños por encargo', description: 'Cakes decorados de 1 a 5 libras con merengue o chocolate. Encarga con 48 horas; entrega a domicilio en la ciudad.', price_min: 12, price_max: 45, price_type: 'fixed', images: [img('reposteria-1')] },
-      { category: 'comida-eventos', title: 'Buffet de dulces para fiestas', description: 'Mesa de dulces completa: bocaditos, pastelitos, gaceñiga y señoritas. Precio por invitado.', price_min: 2, price_max: 4, price_type: 'fixed', images: [img('cocina-1')] },
+      { category: 'reposteria', title: 'Cakes de cumpleaños por encargo', description: 'Cakes decorados de 1 a 5 libras con merengue o chocolate. Encarga con 48 horas; entrega a domicilio en la ciudad.', price_min: 4000, price_max: 18000, price_type: 'fixed', images: [img('reposteria-1')] },
+      { category: 'comida-eventos', title: 'Buffet de dulces para fiestas', description: 'Mesa de dulces completa: bocaditos, pastelitos, gaceñiga y señoritas. Precio por invitado.', price_min: 350, price_max: 700, price_type: 'fixed', images: [img('cocina-1')] },
     ],
   },
   {
@@ -132,9 +135,9 @@ const providers: DemoProvider[] = [
     business_name: 'Profe Ana — Repasos',
     description: 'Licenciada en Educación, especialidad Matemática. Repasos para pruebas de ingreso, secundaria y preuniversitario. Grupos pequeños o clases individuales.',
     province: 'Cienfuegos', municipality: 'Cienfuegos',
-    address: 'Punta Gorda', whatsapp: '+5352000017', years: 12, plan: 'free',
+    address: 'Punta Gorda', whatsapp: '+5352000017', years: 12, plan: 'free', contact_mode: 'call',
     services: [
-      { category: 'matematicas-fisica', title: 'Repaso de Matemática para pruebas de ingreso', description: 'Temario completo de las pruebas de ingreso, exámenes resueltos y simulacros cronometrados cada semana.', price_min: 5, price_max: 8, price_type: 'hourly', images: [img('clases-1'), img('clases-2')] },
+      { category: 'matematicas-fisica', title: 'Repaso de Matemática para pruebas de ingreso', description: 'Temario completo de las pruebas de ingreso, exámenes resueltos y simulacros cronometrados cada semana.', price_min: 800, price_max: 1500, price_type: 'hourly', images: [img('clases-1'), img('clases-2')] },
     ],
   },
   {
@@ -145,7 +148,7 @@ const providers: DemoProvider[] = [
     province: 'Sancti Spíritus', municipality: 'Trinidad',
     address: 'Calle Simón Bolívar', whatsapp: '+5352000018', years: 15, plan: 'pro',
     services: [
-      { category: 'pintura', title: 'Pintura de fachadas e interiores', description: 'Preparación de superficie, resane, sellador y dos manos de pintura. Cotizo por metro cuadrado tras visitar la casa.', price_min: 2, price_max: 5, price_type: 'fixed', images: [img('pintura-1')] },
+      { category: 'pintura', title: 'Pintura de fachadas e interiores', description: 'Preparación de superficie, resane, sellador y dos manos de pintura. Cotizo por metro cuadrado tras visitar la casa.', price_min: 600, price_max: 1200, price_type: 'fixed', images: [img('pintura-1')] },
       { category: 'soldadura', title: 'Rejas y portones a medida', description: 'Fabricación, soldadura y pintura anticorrosiva de rejas, portones y barandas.', price_type: 'negotiable', images: [img('soldadura-1')] },
     ],
   },
@@ -157,8 +160,8 @@ const providers: DemoProvider[] = [
     province: 'Pinar del Río', municipality: 'Pinar del Río',
     address: 'Calle Martí final', whatsapp: '+5352000019', years: 7, plan: 'basic',
     services: [
-      { category: 'mudanzas', title: 'Mudanza completa con embalaje', description: 'Camión cerrado, dos cargadores, mantas y embalaje de lo frágil. Precio cerrado según volumen y distancia.', price_min: 40, price_max: 180, price_type: 'fixed', images: [img('mudanzas-1')] },
-      { category: 'fletes-carga', title: 'Flete por día', description: 'Camión con chofer para cargas de materiales, mercancía o equipos.', price_min: 60, price_max: 60, price_type: 'daily' },
+      { category: 'mudanzas', title: 'Mudanza completa con embalaje', description: 'Camión cerrado, dos cargadores, mantas y embalaje de lo frágil. Precio cerrado según volumen y distancia.', price_min: 15000, price_max: 70000, price_type: 'fixed', images: [img('mudanzas-1')] },
+      { category: 'fletes-carga', title: 'Flete por día', description: 'Camión con chofer para cargas de materiales, mercancía o equipos.', price_min: 35000, price_max: 35000, price_type: 'daily' },
     ],
   },
   {
@@ -169,7 +172,7 @@ const providers: DemoProvider[] = [
     province: 'La Habana', municipality: 'Habana Vieja',
     address: 'Calle Obispo', whatsapp: '+5352000020', years: 5, plan: 'free',
     services: [
-      { category: 'limpieza-hogar', title: 'Limpieza profunda de vivienda', description: 'Cocina, baños, cristales y pisos. Ideal para rentas entre huéspedes. Llevamos los productos.', price_min: 15, price_max: 40, price_type: 'fixed', images: [img('limpieza-1')] },
+      { category: 'limpieza-hogar', title: 'Limpieza profunda de vivienda', description: 'Cocina, baños, cristales y pisos. Ideal para rentas entre huéspedes. Llevamos los productos.', price_min: 4000, price_max: 12000, price_type: 'fixed', images: [img('limpieza-1')] },
     ],
   },
   {
@@ -180,7 +183,7 @@ const providers: DemoProvider[] = [
     province: 'Granma', municipality: 'Bayamo',
     address: 'Calle General García', whatsapp: '+5352000021', years: 25, plan: 'free',
     services: [
-      { category: 'costura-arreglos', title: 'Arreglos y confección a medida', description: 'Dobladillos, zipper, ajustes de talla y confección de ropa a medida. Arreglos sencillos en 24 horas.', price_min: 2, price_max: 30, price_type: 'fixed', images: [img('costura-1')] },
+      { category: 'costura-arreglos', title: 'Arreglos y confección a medida', description: 'Dobladillos, zipper, ajustes de talla y confección de ropa a medida. Arreglos sencillos en 24 horas.', price_min: 500, price_max: 8000, price_type: 'fixed', images: [img('costura-1')] },
     ],
   },
 ];
@@ -241,15 +244,20 @@ export async function seedDemo() {
       const province = db.prepare('SELECT id, lat, lng FROM provinces WHERE name = ?').get(p.province) as { id: string; lat: number; lng: number };
       const muni = db.prepare('SELECT id, lat, lng FROM municipalities WHERE province_id = ? AND name = ?').get(province.id, p.municipality) as { id: string; lat: number; lng: number } | undefined;
       const expires = p.plan === 'free' ? null : new Date(Date.now() + 365 * 86400_000).toISOString();
+      // Galería del negocio (planes con fotos): las fotos de sus servicios.
+      const gallery = p.plan === 'free' ? [] : [...new Set(p.services.flatMap((s) => s.images ?? []))].slice(0, 10);
+      const paid = p.plan !== 'free';
       db.prepare(`INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng,
-          whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan, subscription_expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+          whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan, subscription_expires_at, created_at,
+          contact_mode, kind, horario, gallery, show_on_map)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)`)
         .run(profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
-          muni?.lat ?? province.lat, muni?.lng ?? province.lng, p.whatsapp, p.whatsapp, p.email, p.years, p.plan, expires, created);
+          muni?.lat ?? province.lat, muni?.lng ?? province.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
+          p.contact_mode ?? 'whatsapp', p.negocio ? 'negocio' : 'oficio', p.negocio?.horario ?? null, JSON.stringify(gallery));
 
       if (p.plan !== 'free') {
         const subId = uuidv4();
-        const price = { basic: 9.99, pro: 19.99, premium: 39.99 }[p.plan];
+        const price = { basic: 1, pro: 10 }[p.plan];
         db.prepare(`INSERT INTO subscriptions (id, provider_id, plan, amount, status, current_period_start, current_period_end)
           VALUES (?, ?, ?, ?, 'active', ?, ?)`).run(subId, profileId, p.plan, price, daysAgo(20), expires);
         db.prepare(`INSERT INTO payments (id, subscription_id, provider_id, amount, status, metadata, created_at)
@@ -258,10 +266,10 @@ export async function seedDemo() {
 
       const serviceIds = p.services.map((s, j) => {
         const sid = uuidv4();
-        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, images, is_active, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
           .run(sid, profileId, categoryId(s.category), s.title, s.description, s.price_min ?? null, s.price_max ?? null,
-            s.price_type, JSON.stringify(s.images ?? []), daysAgo(300 - i * 20 - j * 7));
+            s.price_type, s.price_currency ?? 'CUP', JSON.stringify(s.images ?? []), daysAgo(300 - i * 20 - j * 7));
         return sid;
       });
 
@@ -303,7 +311,7 @@ export async function seedDemo() {
       ['client', 'Hola Yoandry, se me botó el agua por la llave del fregadero y además el breaker de la cocina se dispara. ¿Puedes venir esta semana?', 50],
       ['provider', '¡Hola Laura! Sí, puedo pasar el jueves por la mañana. ¿Me dices la dirección exacta?', 49],
       ['client', 'Calle 17 #254 e/ H e I, Vedado. Segundo piso.', 48],
-      ['provider', 'Perfecto. Llevo la llave de repuesto y reviso el breaker. La visita más la llave sale en unos 35 USD.', 47],
+      ['provider', 'Perfecto. Llevo la llave de repuesto y reviso el breaker. La visita más la llave sale en unos 9 000 CUP.', 47],
       ['client', 'Dale, te espero el jueves. ¡Gracias!', 2],
     ];
     const last = thread[thread.length - 1];
@@ -314,6 +322,21 @@ export async function seedDemo() {
       const readAt = hoursAgo > 2 ? daysAgo(0, hoursAgo - 1) : null;
       db.prepare('INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(uuidv4(), convId, sender, who, content, readAt, daysAgo(0, hoursAgo));
+    }
+
+    // Citas en la agenda de ElectroHogar (plan Profesional): mañana confirmada y pasado mañana pendiente.
+    const aLas = (dias: number, hora: number) => {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate() + dias, hora).toISOString();
+    };
+    const citas: [string, number, number, string, string][] = [
+      [laura, 1, 10, 'confirmed', 'Revisar el breaker de la cocina.'],
+      [clientIds[1], 2, 14, 'pending', 'Instalar dos ventiladores de techo.'],
+      [clientIds[2], -3, 9, 'done', 'Cambio de tomacorrientes.'],
+    ];
+    for (const [cliente, dias, hora, status, note] of citas) {
+      db.prepare(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, duration_min, note, status, created_at)
+        VALUES (?, ?, ?, ?, ?, 60, ?, ?, ?)`).run(uuidv4(), electro.profileId, cliente, electro.services[0], aLas(dias, hora), note, status, daysAgo(4));
     }
 
     for (const idx of [0, 2, 3]) {

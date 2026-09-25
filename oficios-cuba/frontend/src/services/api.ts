@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { PriceType, UserType } from '../types';
+import type { Agenda, AppointmentStatus, Currency, PriceType, Tasa, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -51,19 +51,39 @@ export interface ServiceInput {
   price_min?: number | null;
   price_max?: number | null;
   price_type: PriceType;
+  price_currency: Currency;
   images: string[];
 }
+
+export type GoogleLogin =
+  | { mode: 'demo'; email: string; full_name: string; user_type?: UserType }
+  | { mode: 'google'; id_token: string; nonce: string; user_type?: UserType };
 
 export const authApi = {
   register: (data: { email: string; password: string; full_name: string; phone?: string; user_type: UserType }) => api.post('/auth/register', data),
   login: (data: { email: string; password: string }) => api.post('/auth/login', data),
+  /** 200 {token,user} | 201 {token,user,is_new} | 200 {needs_user_type,email,full_name} */
+  google: (data: GoogleLogin) => api.post('/auth/google', data),
   me: () => api.get('/auth/me'),
   updateProfile: (data: { full_name?: string; phone?: string; avatar_url?: string }) => api.put('/auth/profile', data),
   updatePassword: (data: { current_password: string; new_password: string }) => api.put('/auth/password', data),
 };
 
 export const configApi = {
-  get: () => api.get<{ demo: boolean }>('/config'),
+  get: () => api.get<{ demo: boolean; google: 'real' | 'demo' | null; google_client_id: string | null }>('/config'),
+};
+
+export const tasaApi = {
+  get: () => api.get<Tasa>('/tasas'),
+};
+
+export const appointmentApi = {
+  slots: (providerId: string) => api.get<{ duracion: number; days: { date: string; slots: string[] }[] }>(`/appointments/provider/${providerId}/slots`),
+  mine: () => api.get('/appointments/mine'),
+  create: (data: { provider_id: string; service_id?: string; starts_at: string; note?: string }) => api.post('/appointments', data),
+  setStatus: (id: string, status: Exclude<AppointmentStatus, 'pending'>) => api.patch(`/appointments/${id}`, { status }),
+  getConfig: () => api.get<{ agenda: Agenda; enabled: boolean }>('/appointments/config'),
+  saveConfig: (agenda: Agenda) => api.put('/appointments/config', agenda),
 };
 
 export const statsApi = {
@@ -86,6 +106,8 @@ export const providerApi = {
   getById: (id: string) => api.get(`/providers/${id}`),
   getMyProfile: () => api.get('/providers/me/profile'),
   updateMyProfile: (data: Record<string, unknown>) => api.put('/providers/me/profile', data),
+  /** Deja constancia (si hay sesión de cliente) de que se pulsó WhatsApp o Llamar: habilita reseñar. */
+  contact: (id: string, via: 'whatsapp' | 'call') => api.post(`/providers/${id}/contact`, { via }).catch(() => {}),
 };
 
 export const serviceApi = {
@@ -105,7 +127,7 @@ export const uploadApi = {
 export const subscriptionApi = {
   getPlans: () => api.get('/subscriptions/plans'),
   getMine: () => api.get('/subscriptions/me'),
-  checkout: (plan: 'basic' | 'pro' | 'premium', payment_method?: 'transfer' | 'cash') => api.post('/subscriptions/checkout', { plan, payment_method }),
+  checkout: (plan: 'basic' | 'pro', payment_method?: 'transfer' | 'cash') => api.post('/subscriptions/checkout', { plan, payment_method }),
   confirmManual: (data: { subscription_id: string; transaction_id: string }) => api.post('/subscriptions/confirm-manual', data),
   cancel: () => api.post('/subscriptions/cancel'),
 };

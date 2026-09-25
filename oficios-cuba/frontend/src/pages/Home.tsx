@@ -37,7 +37,7 @@ function Hero({ provinces }: { provinces: Province[] }) {
         <div className="animate-fade-up">
           <p className="eyebrow mb-4">Directorio de oficios · Toda Cuba</p>
           <h1 className="text-balance text-[2.4rem] font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl">
-            El que te lo arregla <span className="text-brand-600">vive cerca.</span>
+            El que te lo soluciona <span className="text-brand-600">vive cerca.</span>
           </h1>
           <p className="mt-5 max-w-lg text-lg text-ink-500">
             Electricistas, mecánicos, costureras, profesores y cientos de oficios más. Mira sus trabajos, lee reseñas reales y escríbeles directo.
@@ -155,7 +155,7 @@ function Categories({ categories, loading }: { categories: CategoryStat[]; loadi
 const STEPS = [
   { icon: UserRoundSearch, title: 'Busca por oficio y lugar', text: 'Filtra por provincia y municipio para encontrar a alguien que llegue rápido.' },
   { icon: ShieldCheck, title: 'Compara con calma', text: 'Fotos de trabajos, precios orientativos y reseñas de clientes que ya contrataron.' },
-  { icon: MessageCircle, title: 'Habla directo', text: 'Escríbele por el chat o por WhatsApp. Sin intermediarios ni comisiones.' },
+  { icon: MessageCircle, title: 'Habla directo', text: 'Escríbele por WhatsApp, llámalo o pide cita. Sin intermediarios ni comisiones.' },
 ];
 
 export default function Home() {
@@ -236,7 +236,7 @@ export default function Home() {
             <div className="relative max-w-xl">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-100">Para profesionales</p>
               <h2 className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl">¿Tienes un oficio? Que te encuentren.</h2>
-              <p className="mt-3 text-brand-50/90">Publica tu primer servicio gratis. Los clientes de tu zona te escriben directo, sin comisiones.</p>
+              <p className="mt-3 text-brand-50/90">Anúnciate gratis entrando con tu cuenta de Google: tu nombre, tu logo, tu oficio y tu teléfono. Con el plan Básico ($1 USD/mes) sumas fotos y hasta 5 oficios; con el Profesional ($10 USD/mes), citas, chat y punto de venta.</p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 {user?.user_type === 'provider' ? (
                   <Link to="/dashboard/servicios/nuevo" className="btn-lg btn bg-white text-brand-700 hover:bg-brand-50">Publicar un servicio</Link>

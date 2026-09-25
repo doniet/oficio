@@ -58,3 +58,18 @@
 - Security: sin cambios de red/Traefik/túnel. Único error de consola: la CSP bloquea el beacon de CF Web Analytics (pendiente de decidir, ver entrada 06:10).
 - Next: queda en `data/uploads/` un PNG de prueba de 72 bytes de la verificación (del proveedor demo, sin usar). Pendientes menores en la entrada de las 07:00.
 - Blockers: ninguno.
+
+## 2026-09-25 21:50 UTC — claude-code (vps2) — Planes nuevos, precios CUP/USD, Google simulado y agenda de citas
+- Changes:
+  - **Portada:** "El que te lo soluciona vive cerca."
+  - **Planes** (`config.ts`): Gratis (1 oficio, sin fotos, WhatsApp/llamada) · Básico $1 USD/mes (5 oficios, 10 fotos de galería) · Profesional $10 USD/mes (negocio + horario, agenda de citas, chat, enlace a DardoVentas, oficios ilimitados, 30 fotos). Premium eliminado (migración 3 → `pro`); tarjeta "Contáctanos" → dardoit.com.
+  - **Precios:** `services.price_currency` (CUP por defecto / USD); el frontend muestra la otra moneda con la tasa de `dardoventas.com/tasas.json`, que sirve nginx en `/api/tasas` con caché y respaldo en la API (`TASA_CUP_USD`, 730). Demo con precios cubanos aproximados. El filtro de precio convierte los USD.
+  - **Google:** `POST /auth/google`. Simulado con `DEMO_MODE` (selector de cuentas ficticias); flujo real (redirección + verificación del `id_token` con `jose`) escrito y apagado hasta tener `GOOGLE_CLIENT_ID` y salida de la API a Google. Email/contraseña se mantienen.
+  - **Perfil Gratis:** nombre, logo, descripción, dirección opcional + punto en el mapa (`show_on_map`; lat/lng públicos solo si lo marca), teléfono y modo de contacto WhatsApp / llamada / ambos.
+  - **Chat solo Profesional**; las conversaciones viejas se leen pero no admiten mensajes nuevos. Reseñas: además del chat, valen una cita confirmada/hecha o un contacto por WhatsApp/llamada con sesión (tabla `contacts`).
+  - **Agenda** (`routes/appointments.ts`, páginas `/dashboard/agenda` y `/dashboard/citas`, `BookingModal`): horario configurable, huecos de 14 días, confirmar/cancelar/hecha.
+  - Migración 3 (users.google_sub; provider_profiles contact_mode/kind/horario/gallery/agenda/show_on_map; services.price_currency; tablas appointments y contacts).
+- Tests: pass — backend 42 (18 nuevos: planes, fotos, negocio, chat, reseñas por contacto, agenda, Google simulado y verificación real del id_token con claves locales, filtro de precio, migración v0→v3). Migración probada sobre copia de la base de prod (`integrity_check` ok, FK limpias). `tsc` backend/frontend y `vite build` OK. E2E Playwright en local (demo) a 390 y 1280 px: portada, planes, búsqueda, perfiles (negocio con mapa, gratis solo llamada), pedir cita como cliente, alta con Google simulado como profesional, panel/agenda/DardoVentas: 0 errores de consola, 0 desbordes. nginx `/api/tasas` probado en contenedor contra dardoventas.com.
+- Security: nuevo tráfico saliente de `oficio_web` a `dardoventas.com` (URL fija, sin cookies ni IP del visitante). Sin cambios de Traefik, túnel, puertos ni CSP. Google real pendiente de decisión (Client ID + salida de la API).
+- Next: desplegar en vps2 (backup → build → up); en prod la base demo conserva sus precios viejos en USD salvo que se re-siembre. Google real: crear OAuth Client y decidir la salida de red de `oficio_api`.
+- Blockers: ninguno.

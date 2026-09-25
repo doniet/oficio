@@ -1,6 +1,9 @@
 export type UserType = 'client' | 'provider';
-export type Plan = 'free' | 'basic' | 'pro' | 'premium';
+export type Plan = 'free' | 'basic' | 'pro';
 export type PriceType = 'fixed' | 'hourly' | 'daily' | 'negotiable';
+export type Currency = 'CUP' | 'USD';
+export type ContactMode = 'whatsapp' | 'call' | 'both';
+export type ProviderKind = 'oficio' | 'negocio';
 
 export interface User {
   id: string;
@@ -10,6 +13,9 @@ export interface User {
   user_type: UserType;
   avatar_url?: string | null;
   is_verified: boolean;
+  /** Entró con Google (o con el Google simulado de la demo). */
+  google?: boolean;
+  has_password?: boolean;
   created_at?: string;
 }
 
@@ -65,6 +71,7 @@ export interface ServiceSummary {
   price_min?: number | null;
   price_max?: number | null;
   price_type: PriceType;
+  price_currency: Currency;
   cover: string | null;
   image_count: number;
   is_active: boolean;
@@ -82,6 +89,10 @@ export interface ServiceSummary {
   rating: number;
   review_count: number;
   subscription_plan: Plan;
+  kind: ProviderKind;
+  contact_mode: ContactMode;
+  has_chat: boolean;
+  has_agenda: boolean;
   province_name?: string | null;
   municipality_name?: string | null;
 }
@@ -98,6 +109,7 @@ export interface ServiceDetail extends Omit<ServiceSummary, 'cover' | 'image_cou
   telegram?: string | null;
   email_contact?: string | null;
   years_experience: number;
+  horario?: string | null;
   is_owner: boolean;
 }
 
@@ -119,12 +131,19 @@ export interface ProviderCard {
   service_count: number;
   categories: string[];
   cover: string | null;
+  kind: ProviderKind;
+  contact_mode: ContactMode;
+  has_chat: boolean;
+  has_agenda: boolean;
 }
 
 export interface ProviderPublic extends ProviderCard {
   address?: string | null;
+  /** Solo si el profesional eligió mostrar su punto en el mapa. */
   lat?: number | null;
   lng?: number | null;
+  gallery: string[];
+  horario?: string | null;
   whatsapp?: string | null;
   telegram?: string | null;
   email_contact?: string | null;
@@ -137,6 +156,7 @@ export interface ProviderServiceItem {
   price_min?: number | null;
   price_max?: number | null;
   price_type: PriceType;
+  price_currency: Currency;
   cover: string | null;
   category_name: string;
   category_icon: string;
@@ -166,6 +186,58 @@ export interface MyProviderProfile {
   municipality_name?: string | null;
   owner_name?: string;
   avatar_url?: string | null;
+  contact_mode: ContactMode;
+  kind: ProviderKind;
+  horario?: string | null;
+  gallery: string[];
+  show_on_map: number;
+}
+
+/** Límites y ventajas del plan (config.ts del backend). */
+export interface PlanLimits {
+  name: string;
+  price: number;
+  maxServices: number | null;
+  maxPhotos: number;
+  chat: boolean;
+  agenda: boolean;
+  negocio: boolean;
+  pos: boolean;
+  features: string[];
+}
+
+export interface Agenda {
+  dias: number[];
+  desde: string;
+  hasta: string;
+  duracion: number;
+}
+
+export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'done';
+
+export interface Appointment {
+  id: string;
+  provider_id: string;
+  client_id: string;
+  service_id?: string | null;
+  starts_at: string;
+  duration_min: number;
+  note?: string | null;
+  status: AppointmentStatus;
+  created_at: string;
+  provider_name: string;
+  provider_avatar?: string | null;
+  client_name: string;
+  client_avatar?: string | null;
+  /** Solo lo recibe el profesional. */
+  client_phone?: string | null;
+  service_title?: string | null;
+}
+
+export interface Tasa {
+  usd: number;
+  updated_at: string | null;
+  fuente: string;
 }
 
 export interface ServiceArea {
@@ -210,12 +282,7 @@ export interface Message {
   created_at: string;
 }
 
-export interface PlanInfo {
-  name: string;
-  price: number;
-  maxServices: number | null;
-  features: string[];
-}
+export type PlanInfo = PlanLimits;
 
 export interface Subscription {
   id: string;

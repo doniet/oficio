@@ -13,8 +13,8 @@ vieja.exec(`
   INSERT INTO categories (id, name, slug) VALUES ('cat', 'Oficios', 'oficios');
   INSERT INTO users (id, email, password_hash, full_name, user_type) VALUES
     ('u-pro', 'p@x.cu', 'h', 'Pro', 'provider'), ('u-cli', 'c@x.cu', 'h', 'Cli', 'client');
-  INSERT INTO provider_profiles (id, user_id, province_id) VALUES ('pp', 'u-pro', 'prov');
-  INSERT INTO services (id, provider_id, category_id, title) VALUES ('s1', 'pp', 'cat', 'Uno');
+  INSERT INTO provider_profiles (id, user_id, province_id, subscription_plan) VALUES ('pp', 'u-pro', 'prov', 'premium');
+  INSERT INTO services (id, provider_id, category_id, title, price_min) VALUES ('s1', 'pp', 'cat', 'Uno', 35);
   INSERT INTO reviews (id, service_id, client_id, provider_id, rating) VALUES ('r1', 's1', 'u-cli', 'pp', 4);
 `);
 vieja.close();
@@ -27,6 +27,11 @@ describe('migraciones sobre una base existente', () => {
     expect(db.pragma('user_version', { simple: true })).toBe(ESQUEMA_VERSION);
     expect(db.prepare('SELECT rating FROM reviews WHERE id = ?').get('r1')).toEqual({ rating: 4 });
     expect(db.pragma('foreign_key_check')).toEqual([]);
+
+    // v3: premium pasa a Profesional y los precios que había (en USD) conservan su moneda.
+    expect(db.prepare('SELECT subscription_plan, contact_mode, kind FROM provider_profiles WHERE id = ?').get('pp'))
+      .toEqual({ subscription_plan: 'pro', contact_mode: 'whatsapp', kind: 'oficio' });
+    expect(db.prepare('SELECT price_currency FROM services WHERE id = ?').get('s1')).toEqual({ price_currency: 'USD' });
 
     db.prepare('DELETE FROM services WHERE id = ?').run('s1');
     expect(db.prepare('SELECT service_id FROM reviews WHERE id = ?').get('r1')).toEqual({ service_id: null });

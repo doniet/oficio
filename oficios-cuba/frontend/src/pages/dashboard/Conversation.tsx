@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, CheckCheck, Send } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, Lock, Send } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
 import { apiError, conversationApi } from '../../services/api';
@@ -27,6 +28,7 @@ export default function Conversation() {
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [closed, setClosed] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastAt = useRef<string | undefined>(undefined);
@@ -101,7 +103,8 @@ export default function Conversation() {
       setText('');
       inputRef.current?.focus();
     } catch (err) {
-      toast(apiError(err, 'No se pudo enviar el mensaje.'), 'error');
+      if (axios.isAxiosError(err) && err.response?.status === 403) setClosed(apiError(err));
+      else toast(apiError(err, 'No se pudo enviar el mensaje.'), 'error');
     } finally {
       setSending(false);
     }
@@ -197,6 +200,18 @@ export default function Conversation() {
         </div>
       </div>
 
+      {closed ? (
+        <div className="pb-safe border-t border-sand-200 bg-white">
+          <div className="mx-auto flex max-w-3xl items-start gap-3 px-4 py-3 text-sm text-ink-600">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" aria-hidden="true" />
+            <p className="flex-1">
+              {closed}
+              {isProvider && <> <Link to="/dashboard/suscripcion" className="link">Ver planes</Link></>}
+              {!isProvider && <> <Link to={`/proveedor/${conversation.provider_id}`} className="link">Ver su contacto</Link></>}
+            </p>
+          </div>
+        </div>
+      ) : (
       <form onSubmit={send} className="pb-safe border-t border-sand-200 bg-white">
         <div className="mx-auto flex max-w-3xl items-end gap-2 px-3 py-2.5 sm:px-4">
           <label htmlFor="msg" className="sr-only">Escribe un mensaje</label>
@@ -216,6 +231,7 @@ export default function Conversation() {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

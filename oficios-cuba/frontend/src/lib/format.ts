@@ -1,4 +1,4 @@
-import type { Plan, PriceType } from '../types';
+import type { Currency, Plan, PriceType } from '../types';
 
 // SQLite guarda algunas fechas como "YYYY-MM-DD HH:MM:SS" (UTC, sin zona): se normalizan a ISO.
 export function parseDate(value: string | null | undefined): Date {
@@ -9,22 +9,67 @@ export function parseDate(value: string | null | undefined): Date {
 
 const money = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 export const usd = (n: number) => `$${money.format(n)}`;
+// Miles con espacio fino (no separable) siempre: es-ES pone "5000" pero "15.000", y en Cuba se lee "15 000".
+export const cup = (n: number) => `${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f')} CUP`;
+
+/** Tasa de respaldo (CUP por 1 USD) mientras no llega la de dardoventas.com. */
+export const TASA_RESPALDO = 730;
+
+// Conversión aproximada: redondeo "de calle" (CUP a la decena/centena, USD a enteros o medio dólar).
+function redondeoCup(n: number) {
+  if (n < 1000) return Math.round(n / 10) * 10;
+  return Math.round(n / 100) * 100;
+}
+function redondeoUsd(n: number) {
+  return n < 10 ? Math.max(0.5, Math.round(n * 2) / 2) : Math.round(n);
+}
 
 const unit: Record<PriceType, string> = { fixed: '', hourly: ' / hora', daily: ' / día', negotiable: '' };
 
-export function formatPrice(s: { price_min?: number | null; price_max?: number | null; price_type: PriceType }): string {
+type Priced = { price_min?: number | null; price_max?: number | null; price_type: PriceType; price_currency?: Currency | null };
+
+/** Precio en ambas monedas. `main` va en la moneda en que lo puso el profesional; `alt` es la conversión (≈). */
+export function priceParts(s: Priced, tasa: number = TASA_RESPALDO) {
   const { price_min: min, price_max: max, price_type } = s;
-  if (price_type === 'negotiable' || (min == null && max == null)) return 'A convenir';
-  if (min != null && max != null && min !== max) return `${usd(min)} – ${usd(max)}${unit[price_type]}`;
-  return `${usd((min ?? max) as number)}${unit[price_type]}`;
+  const currency: Currency = s.price_currency ?? 'CUP';
+  if (price_type === 'negotiable' || (min == null && max == null)) {
+    return { negotiable: true, main: 'A convenir', alt: null as string | null, suffix: '', currency, hasRange: false, from: '', fromAlt: null as string | null };
+  }
+  const lo = (min ?? max) as number;
+  const hi = max ?? min;
+  const hasRange = min != null && max != null && min !== max;
+  const fmt = currency === 'CUP' ? cup : (n: number) => `${usd(n)} USD`;
+  const conv = currency === 'CUP' ? (n: number) => `${usd(redondeoUsd(n / tasa))} USD` : (n: number) => cup(redondeoCup(n * tasa));
+  const rango = (f: (n: number) => string) => (hasRange ? `${f(lo).replace(/ (CUP|USD)$/, '')} – ${f(hi as number)}` : f(lo));
+  return {
+    negotiable: false,
+    main: rango(fmt),
+    alt: `≈ ${rango(conv)}`,
+    suffix: unit[price_type].trim(),
+    currency,
+    hasRange,
+    from: fmt(lo),
+    fromAlt: `≈ ${conv(lo)}`,
+  };
 }
 
-/** Precio corto para tarjetas: "desde $35". */
-export function priceFrom(s: { price_min?: number | null; price_max?: number | null; price_type: PriceType }) {
-  const { price_min: min, price_max: max, price_type } = s;
-  if (price_type === 'negotiable' || (min == null && max == null)) return { prefix: '', amount: 'A convenir', suffix: '' };
-  const hasRange = min != null && max != null && min !== max;
-  return { prefix: hasRange ? 'desde' : '', amount: usd((min ?? max) as number), suffix: unit[price_type].trim() };
+/** Texto de una línea: "15 000 – 60 000 CUP (≈ $21 – $82 USD) / hora". */
+export function formatPrice(s: Priced, tasa?: number): string {
+  const p = priceParts(s, tasa);
+  if (p.negotiable) return p.main;
+  return `${p.main} (${p.alt})${p.suffix ? ` / ${p.suffix.replace(/^\/ /, '')}` : ''}`;
+}
+
+/** Precio corto para tarjetas: "desde 3 000 CUP" + "≈ $4 USD". */
+export function priceFrom(s: Priced, tasa?: number) {
+  const p = priceParts(s, tasa);
+  if (p.negotiable) return { prefix: '', amount: 'A convenir', suffix: '', alt: null as string | null };
+  return { prefix: p.hasRange ? 'desde' : '', amount: p.from, suffix: p.suffix, alt: p.fromAlt };
+}
+
+/** Precio de un plan (en USD) con su equivalente en CUP. */
+export function planPrice(usdAmount: number, tasa: number = TASA_RESPALDO) {
+  return { usd: usdAmount === 0 ? 'Gratis' : `${usd(usdAmount)} USD`, cup: usdAmount === 0 ? null : `≈ ${cup(redondeoCup(usdAmount * tasa))}` };
 }
 
 export const priceTypeLabel: Record<PriceType, string> = {
@@ -35,11 +80,17 @@ export const priceTypeLabel: Record<PriceType, string> = {
 };
 
 export const planLabel: Record<Plan, string> = {
-  free: 'Gratuito',
+  free: 'Gratis',
   basic: 'Básico',
-  pro: 'Pro',
-  premium: 'Premium',
+  pro: 'Profesional',
 };
+
+export const DARDOIT_URL = 'https://www.dardoit.com';
+export const DARDOVENTAS_URL = 'https://dardoventas.com';
+
+export function telLink(phone: string) {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
 
 export function relativeTime(value: string): string {
   const date = parseDate(value);

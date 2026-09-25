@@ -4,7 +4,7 @@ import { z } from 'zod';
 import db, { enforcePlanLimit } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { DEMO_MODE, PLANS } from '../config.js';
+import { DEMO_MODE, PLANS, planDe } from '../config.js';
 
 const router = Router();
 
@@ -15,7 +15,8 @@ router.get('/plans', (_req, res) => {
 function providerFor(userId: string) {
   const provider = db.prepare('SELECT id, subscription_plan, subscription_expires_at FROM provider_profiles WHERE user_id = ?').get(userId);
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
-  return provider as { id: string; subscription_plan: keyof typeof PLANS; subscription_expires_at: string | null };
+  const p = provider as { id: string; subscription_plan: string; subscription_expires_at: string | null };
+  return { ...p, subscription_plan: p.subscription_plan === 'premium' ? 'pro' : p.subscription_plan };
 }
 
 router.get('/me', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
@@ -30,7 +31,7 @@ router.get('/me', authMiddleware, requireProvider, asyncHandler(async (req: Auth
     WHERE p.provider_id = ? ORDER BY p.created_at DESC LIMIT 12
   `).all(provider.id);
   const { count } = db.prepare('SELECT COUNT(*) AS count FROM services WHERE provider_id = ?').get(provider.id) as { count: number };
-  res.json({ provider, subscription, payments, service_count: count });
+  res.json({ provider, subscription, payments, service_count: count, limits: planDe(provider.subscription_plan) });
 }));
 
 // Sin pasarela de pago integrada: en modo demo el pago se simula y el plan se activa al
@@ -38,7 +39,7 @@ router.get('/me', authMiddleware, requireProvider, asyncHandler(async (req: Auth
 // la transferencia o el pago en efectivo con `npm run pagos` (src/scripts/pagos.ts).
 router.post('/checkout', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const { plan, payment_method } = z.object({
-    plan: z.enum(['basic', 'pro', 'premium']),
+    plan: z.enum(['basic', 'pro']),
     payment_method: z.enum(['transfer', 'cash', 'demo']).default(DEMO_MODE ? 'demo' : 'transfer'),
   }).parse(req.body);
 

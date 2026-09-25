@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Briefcase, CheckCircle2, Circle, Compass, ExternalLink, Heart, MessageCircle, Plus, Star } from 'lucide-react';
+import { ArrowRight, Briefcase, CalendarDays, CheckCircle2, Circle, Compass, ExternalLink, Heart, Lock, MessageCircle, Plus, Star, Store } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { conversationApi, favoriteApi, providerApi, serviceApi, apiError } from '../../services/api';
-import type { Conversation, Favorite, MyProviderProfile, Plan, ServiceSummary } from '../../types';
-import { relativeTime } from '../../lib/format';
+import { appointmentApi, conversationApi, favoriteApi, providerApi, serviceApi, apiError } from '../../services/api';
+import type { Appointment, Conversation, Favorite, MyProviderProfile, Plan, PlanLimits, ServiceSummary } from '../../types';
+import { DARDOVENTAS_URL, parseDate, relativeTime } from '../../lib/format';
 import { ServiceThumb } from './parts';
 import { Avatar, EmptyState, ErrorState, PageLoader, PlanPill, RatingInline, cn } from '../../components/ui';
 
@@ -74,6 +74,8 @@ function ProviderDashboard() {
   const [plan, setPlan] = useState<Plan>('free');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [areas, setAreas] = useState(0);
+  const [limits, setLimits] = useState<PlanLimits | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -81,8 +83,13 @@ function ProviderDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [p, s, c] = await Promise.all([providerApi.getMyProfile(), serviceApi.mine(), conversationApi.getAll()]);
+      const [p, s, c, a] = await Promise.all([
+        providerApi.getMyProfile(), serviceApi.mine(), conversationApi.getAll(),
+        appointmentApi.mine().catch(() => ({ data: { appointments: [] } })),
+      ]);
       setProfile(p.data.provider);
+      setLimits(p.data.limits);
+      setAppointments(a.data.appointments);
       setAreas(p.data.serviceAreas?.length ?? 0);
       setServices(s.data.services);
       setPlan(s.data.plan);
@@ -103,11 +110,15 @@ function ProviderDashboard() {
   const checklist = [
     { done: Boolean(profile.business_name), label: 'Nombre de tu negocio', to: '/dashboard/perfil' },
     { done: Boolean(profile.description && profile.description.length >= 30), label: 'Descripción de tu trabajo', to: '/dashboard/perfil' },
-    { done: Boolean(profile.whatsapp), label: 'WhatsApp de contacto', to: '/dashboard/perfil' },
+    { done: Boolean(profile.whatsapp), label: 'Teléfono de contacto', to: '/dashboard/perfil' },
     { done: Boolean(profile.municipality_id) || areas > 0, label: 'Municipio donde trabajas', to: '/dashboard/perfil' },
-    { done: services.length > 0, label: 'Tu primer servicio publicado', to: '/dashboard/servicios/nuevo' },
-    { done: Boolean(user?.avatar_url), label: 'Foto de perfil', to: '/dashboard/cuenta' },
+    { done: services.length > 0, label: 'Tu primer oficio publicado', to: '/dashboard/servicios/nuevo' },
+    { done: Boolean(user?.avatar_url), label: 'Logo de tu negocio', to: '/dashboard/perfil' },
   ];
+  const now = Date.now();
+  const upcoming = appointments.filter((a) => (a.status === 'pending' || a.status === 'confirmed') && parseDate(a.starts_at).getTime() >= now);
+  const pendingCount = upcoming.filter((a) => a.status === 'pending').length;
+  const next = [...upcoming].sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0];
   const doneCount = checklist.filter((c) => c.done).length;
   const pct = Math.round((doneCount / checklist.length) * 100);
 
@@ -120,7 +131,7 @@ function ProviderDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to={`/proveedor/${profile.id}`} className="btn-secondary"><ExternalLink className="h-4 w-4" /> Ver perfil público</Link>
-          <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>
+          <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar oficio</Link>
         </div>
       </div>
 
@@ -153,7 +164,7 @@ function ProviderDashboard() {
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <StatCard label="Servicios activos" value={active} icon={<Briefcase className="h-5 w-5" />} to="/dashboard/servicios">
+        <StatCard label="Oficios activos" value={active} icon={<Briefcase className="h-5 w-5" />} to="/dashboard/servicios">
           <span className="text-xs text-ink-400">{services.length} en total</span>
         </StatCard>
         <StatCard label="Sin leer" value={unread} icon={<MessageCircle className="h-5 w-5" />} to="/dashboard/mensajes">
@@ -167,16 +178,56 @@ function ProviderDashboard() {
         </StatCard>
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2 [&>*]:min-w-0">
+        <section className="card flex flex-col p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sea-100 text-sea-800"><CalendarDays className="h-5 w-5" /></span>
+            <h2 className="text-lg font-bold">Agenda de citas</h2>
+          </div>
+          {limits?.agenda ? (
+            <>
+              <p className="mt-3 flex-1 text-sm text-ink-600">
+                {upcoming.length === 0 ? 'No tienes citas próximas.' : <>
+                  <strong>{upcoming.length}</strong> {upcoming.length === 1 ? 'cita próxima' : 'citas próximas'}
+                  {pendingCount > 0 && <> · <strong className="text-amber-700">{pendingCount} por confirmar</strong></>}
+                  {next && <span className="block text-ink-400">Siguiente: {parseDate(next.starts_at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {next.client_name}</span>}
+                </>}
+              </p>
+              <Link to="/dashboard/agenda" className="btn-secondary mt-4 self-start">Abrir agenda <ArrowRight className="h-4 w-4" /></Link>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 flex-1 text-sm text-ink-500">Deja que tus clientes pidan cita en los horarios que tú elijas.</p>
+              <Link to="/dashboard/suscripcion" className="btn-ghost mt-4 self-start"><Lock className="h-4 w-4" /> Plan Profesional</Link>
+            </>
+          )}
+        </section>
+        <section className="card flex flex-col p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-800"><Store className="h-5 w-5" /></span>
+            <h2 className="text-lg font-bold">Punto de venta DardoVentas</h2>
+          </div>
+          <p className="mt-3 flex-1 text-sm text-ink-500">Vende desde tu teléfono Android: inventario, cobros y cuadre del día, incluso sin internet.</p>
+          {limits?.pos ? (
+            <a href={DARDOVENTAS_URL} target="_blank" rel="noopener noreferrer" className="btn-primary mt-4 self-start">
+              Abrir DardoVentas <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : (
+            <Link to="/dashboard/suscripcion" className="btn-ghost mt-4 self-start"><Lock className="h-4 w-4" /> Plan Profesional</Link>
+          )}
+        </section>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         <RecentConversations conversations={conversations} isProvider />
         <section className="card p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold">Tus servicios</h2>
+            <h2 className="text-lg font-bold">Tus oficios</h2>
             <Link to="/dashboard/servicios" className="link text-sm">Gestionar</Link>
           </div>
           {services.length === 0 ? (
             <div className="py-6 text-center">
-              <p className="text-sm text-ink-400">Todavía no has publicado ningún servicio.</p>
+              <p className="text-sm text-ink-400">Todavía no has publicado ningún oficio.</p>
               <Link to="/dashboard/servicios/nuevo" className="btn-primary mt-4"><Plus className="h-4 w-4" /> Publicar el primero</Link>
             </div>
           ) : (
@@ -205,6 +256,7 @@ function ClientDashboard() {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -212,8 +264,12 @@ function ClientDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [c, f] = await Promise.all([conversationApi.getAll(), favoriteApi.getAll()]);
+      const [c, f, a] = await Promise.all([
+        conversationApi.getAll(), favoriteApi.getAll(),
+        appointmentApi.mine().catch(() => ({ data: { appointments: [] } })),
+      ]);
       setConversations(c.data.conversations);
+      setAppointments(a.data.appointments);
       setFavorites(f.data.favorites);
     } catch (err) {
       setError(apiError(err, 'No se pudo cargar tu panel.'));
@@ -227,6 +283,8 @@ function ClientDashboard() {
   if (loading) return <PageLoader />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
+  const upcoming = appointments.filter((a) => (a.status === 'pending' || a.status === 'confirmed') && parseDate(a.starts_at).getTime() >= Date.now());
+
   return (
     <div className="space-y-6">
       <div>
@@ -236,12 +294,23 @@ function ClientDashboard() {
 
       <section className="relative overflow-hidden rounded-3xl bg-ink-900 p-6 text-white sm:p-8">
         <div className="relative max-w-md">
-          <h2 className="text-2xl font-bold text-white">¿Qué necesitas arreglar hoy?</h2>
+          <h2 className="text-2xl font-bold text-white">¿Qué necesitas solucionar hoy?</h2>
           <p className="mt-2 text-ink-200">Busca por oficio y provincia, compara reseñas y escribe directo al profesional.</p>
           <Link to="/buscar" className="btn-primary mt-5"><Compass className="h-4 w-4" /> Explorar servicios</Link>
         </div>
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-brand-600/30 blur-2xl" aria-hidden="true" />
       </section>
+
+      <Link to="/dashboard/citas" className="card card-hover flex items-center gap-4 p-4 sm:p-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sea-100 text-sea-800"><CalendarDays className="h-5 w-5" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold">Mis citas</p>
+          <p className="truncate text-sm text-ink-500">
+            {upcoming.length === 0 ? 'No tienes citas próximas.' : `${upcoming.length} ${upcoming.length === 1 ? 'cita próxima' : 'citas próximas'}`}
+          </p>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-ink-300" />
+      </Link>
 
       <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         <RecentConversations conversations={conversations} isProvider={false} />

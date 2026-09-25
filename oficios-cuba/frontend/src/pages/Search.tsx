@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Map as MapIcon, Search as SearchIcon, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { categoryApi, provinceApi, serviceApi, apiError } from '../services/api';
 import type { Category, Municipality, Pagination, PriceType, Province, ServiceSummary } from '../types';
-import { plural, priceTypeLabel } from '../lib/format';
+import { cup, plural, priceTypeLabel } from '../lib/format';
 import { ServiceCard, ServiceCardSkeleton } from '../components/cards';
 import { EmptyState, ErrorState, Modal, PageLoader, cn } from '../components/ui';
 
@@ -18,7 +18,7 @@ const SORTS = [
   { value: 'newest', label: 'Más recientes' },
 ];
 
-const PRICE_CAPS = [25, 50, 100, 250, 500];
+const PRICE_CAPS = [2000, 5000, 10000, 25000, 50000];
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
 const FILTER_KEYS = ['category', 'province', 'municipality', 'price_max', 'price_type'] as const;
 const PAGE_SIZE = 12;
@@ -84,12 +84,12 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
         </div>
       </FilterBlock>
 
-      <FilterBlock title="Precio máximo">
+      <FilterBlock title="Precio máximo (CUP)">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => update({ price_max: null })} className={cn('chip', !get('price_max') && 'chip-active')}>Cualquiera</button>
           {PRICE_CAPS.map((n) => (
             <button key={n} type="button" onClick={() => update({ price_max: String(n) })} className={cn('chip', get('price_max') === String(n) && 'chip-active')}>
-              ${n}
+              {cup(n).replace(' CUP', '')}
             </button>
           ))}
         </div>
@@ -259,7 +259,7 @@ export default function Search() {
   if (get('category')) chips.push({ key: 'category', label: categoryLabel, clear: { category: null } });
   if (province) chips.push({ key: 'province', label: provinces.find((p) => p.id === province)?.name ?? 'Provincia', clear: { province: null } });
   if (get('municipality')) chips.push({ key: 'municipality', label: municipalities.find((m) => m.id === get('municipality'))?.name ?? 'Municipio', clear: { municipality: null } });
-  if (get('price_max')) chips.push({ key: 'price_max', label: `Hasta $${get('price_max')}`, clear: { price_max: null } });
+  if (get('price_max')) chips.push({ key: 'price_max', label: `Hasta ${cup(Number(get('price_max')))}`, clear: { price_max: null } });
   if (get('price_type')) chips.push({ key: 'price_type', label: priceTypeLabel[get('price_type') as PriceType] ?? get('price_type'), clear: { price_type: null } });
 
   const activeFilters = FILTER_KEYS.filter((k) => get(k)).length;

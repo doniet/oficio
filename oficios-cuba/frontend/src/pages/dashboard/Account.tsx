@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Eye, EyeOff, LogOut, Trash2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { GoogleMark } from '../../components/GoogleButton';
 import { useToast } from '../../hooks/useToast';
 import { apiError, authApi, tokenStore } from '../../services/api';
 import { uploadImage } from '../../lib/image';
@@ -197,15 +198,26 @@ function PasswordForm() {
 }
 
 export default function Account() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const soloGoogle = user?.has_password === false;
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <div className="max-w-2xl space-y-5">
       <PageTitle title="Cuenta" subtitle="Tus datos de acceso y seguridad." />
       <ProfileForm />
-      <PasswordForm />
+      {soloGoogle ? (
+        <section className="card flex items-center gap-3 p-5 sm:p-6">
+          <GoogleMark className="h-9 w-9 text-base" />
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold">Acceso</h2>
+            <p className="truncate text-sm text-ink-500">Entras con Google ({user?.email})</p>
+          </div>
+        </section>
+      ) : (
+        <PasswordForm />
+      )}
       <section className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <h2 className="text-lg font-bold">Cerrar sesión</h2>
@@ -221,7 +233,7 @@ export default function Account() {
         onConfirm={() => { logout(); navigate('/', { replace: true }); }}
         onClose={() => setConfirmOpen(false)}
       >
-        Tendrás que volver a entrar con tu email y contraseña.
+        {soloGoogle ? 'Tendrás que volver a entrar con Google.' : 'Tendrás que volver a entrar con tu email y contraseña.'}
       </ConfirmDialog>
     </div>
   );

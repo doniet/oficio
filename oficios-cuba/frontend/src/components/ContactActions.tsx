@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Heart, MessageCircle, Phone, Send } from 'lucide-react';
+import { CalendarPlus, Heart, MessageCircle, Phone, Send } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
-import { apiError, conversationApi, favoriteApi } from '../services/api';
-import { whatsappLink } from '../lib/format';
+import { apiError, conversationApi, favoriteApi, providerApi } from '../services/api';
+import { telLink, whatsappLink } from '../lib/format';
+import type { ContactMode } from '../types';
+import BookingModal from './BookingModal';
 import { Alert, Modal, Spinner, cn } from './ui';
 
 function WhatsAppIcon({ className = 'h-4 w-4' }: { className?: string }) {
@@ -53,23 +55,33 @@ interface Props {
   providerName: string;
   serviceId?: string;
   serviceTitle?: string;
-  whatsapp?: string | null;
+  /** Teléfono de contacto del profesional (se usa para WhatsApp y para llamar). */
   phone?: string | null;
+  contactMode?: ContactMode;
+  hasChat?: boolean;
+  hasAgenda?: boolean;
   /** panel: bloque vertical en la barra lateral; bar: barra fija inferior en móvil. */
   variant?: 'panel' | 'bar';
   hideFavorite?: boolean;
 }
 
-export default function ContactActions({ providerId, providerName, serviceId, serviceTitle, whatsapp, phone, variant = 'panel', hideFavorite }: Props) {
+export default function ContactActions({
+  providerId, providerName, serviceId, serviceTitle, phone, contactMode = 'whatsapp', hasChat = false, hasAgenda = false,
+  variant = 'panel', hideFavorite,
+}: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
   const fav = useFavorite(providerId);
   const [open, setOpen] = useState(false);
+  const [booking, setBooking] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+
+  const showWhatsapp = Boolean(phone) && contactMode !== 'call';
+  const showCall = Boolean(phone) && contactMode !== 'whatsapp';
 
   const openMessage = () => {
     if (!user) {
@@ -101,6 +113,8 @@ export default function ContactActions({ providerId, providerName, serviceId, se
     ? `Hola, vi tu servicio "${serviceTitle}" en Oficios Cuba y me interesa.`
     : 'Hola, vi tu perfil en Oficios Cuba y me gustaría consultarte un trabajo.';
 
+  const record = (via: 'whatsapp' | 'call') => { providerApi.contact(providerId, via); };
+
   const favButton = !hideFavorite && fav.enabled && (
     <button
       onClick={fav.toggle}
@@ -114,15 +128,15 @@ export default function ContactActions({ providerId, providerName, serviceId, se
     </button>
   );
 
-  const modal = (
+  const modal = hasChat && (
     <Modal open={open} onClose={() => setOpen(false)} title={`Escribir a ${providerName}`}>
       {user?.user_type === 'provider' ? (
         <div className="space-y-4">
           <Alert tone="info">
             Estás usando una cuenta profesional. Para contratar a otros profesionales necesitas una cuenta de cliente.
           </Alert>
-          {whatsapp && (
-            <a href={whatsappLink(whatsapp, waText)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp w-full">
+          {showWhatsapp && phone && (
+            <a href={whatsappLink(phone, waText)} onClick={() => record('whatsapp')} target="_blank" rel="noopener noreferrer" className="btn-whatsapp w-full">
               <WhatsAppIcon /> Escribir por WhatsApp
             </a>
           )}
@@ -152,51 +166,89 @@ export default function ContactActions({ providerId, providerName, serviceId, se
     </Modal>
   );
 
+  const bookingModal = hasAgenda && (
+    <BookingModal open={booking} onClose={() => setBooking(false)} providerId={providerId} providerName={providerName} serviceId={serviceId} />
+  );
+
   if (variant === 'bar') {
+    const primary = hasAgenda ? (
+      <button onClick={() => setBooking(true)} className="btn-primary flex-1"><CalendarPlus className="h-4 w-4" /> Pedir cita</button>
+    ) : hasChat ? (
+      <button onClick={openMessage} className="btn-primary flex-1"><MessageCircle className="h-4 w-4" /> Enviar mensaje</button>
+    ) : showWhatsapp && phone ? (
+      <a href={whatsappLink(phone, waText)} onClick={() => record('whatsapp')} target="_blank" rel="noopener noreferrer" className="btn-whatsapp flex-1">
+        <WhatsAppIcon className="h-5 w-5" /> WhatsApp
+      </a>
+    ) : showCall && phone ? (
+      <a href={telLink(phone)} onClick={() => record('call')} className="btn-primary flex-1"><Phone className="h-4 w-4" /> Llamar</a>
+    ) : null;
+    const usedWhatsapp = !hasAgenda && !hasChat && showWhatsapp;
+    const usedCall = !hasAgenda && !hasChat && !showWhatsapp && showCall;
+    if (!primary && !favButton) return null;
     return (
       <>
         <div className="fixed inset-x-0 bottom-[64px] z-30 border-t border-sand-200 bg-white/95 px-4 py-3 backdrop-blur md:hidden">
           <div className="flex gap-2">
             {favButton}
-            {whatsapp && (
-              <a href={whatsappLink(whatsapp, waText)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp px-3" aria-label="WhatsApp">
+            {showCall && !usedCall && phone && (
+              <a href={telLink(phone)} onClick={() => record('call')} className="btn-secondary px-3" aria-label="Llamar">
+                <Phone className="h-5 w-5" />
+              </a>
+            )}
+            {showWhatsapp && !usedWhatsapp && phone && (
+              <a href={whatsappLink(phone, waText)} onClick={() => record('whatsapp')} target="_blank" rel="noopener noreferrer" className="btn-whatsapp px-3" aria-label="WhatsApp">
                 <WhatsAppIcon className="h-5 w-5" />
               </a>
             )}
-            <button onClick={openMessage} className="btn-primary flex-1">
-              <MessageCircle className="h-4 w-4" /> Enviar mensaje
-            </button>
+            {hasAgenda && hasChat && (
+              <button onClick={openMessage} className="btn-secondary px-3" aria-label="Enviar mensaje">
+                <MessageCircle className="h-5 w-5" />
+              </button>
+            )}
+            {primary}
           </div>
         </div>
         {modal}
+        {bookingModal}
       </>
     );
   }
 
   return (
     <div className="space-y-2.5">
-      <button onClick={openMessage} className="btn-primary btn-lg w-full">
-        <MessageCircle className="h-5 w-5" /> Enviar mensaje
-      </button>
-      {whatsapp && (
-        <a href={whatsappLink(whatsapp, waText)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp w-full">
+      {hasAgenda && (
+        <button onClick={() => setBooking(true)} className="btn-primary btn-lg w-full">
+          <CalendarPlus className="h-5 w-5" /> Pedir cita
+        </button>
+      )}
+      {hasChat && (
+        <button onClick={openMessage} className={cn('w-full', hasAgenda ? 'btn-secondary' : 'btn-primary btn-lg')}>
+          <MessageCircle className="h-5 w-5" /> Enviar mensaje
+        </button>
+      )}
+      {showWhatsapp && phone && (
+        <a href={whatsappLink(phone, waText)} onClick={() => record('whatsapp')} target="_blank" rel="noopener noreferrer" className="btn-whatsapp w-full">
           <WhatsAppIcon /> WhatsApp
         </a>
       )}
       <div className="flex gap-2.5">
-        {phone && (
-          <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="btn-secondary flex-1">
+        {showCall && phone && (
+          <a href={telLink(phone)} onClick={() => record('call')} className="btn-secondary flex-1">
             <Phone className="h-4 w-4" /> Llamar
           </a>
         )}
-        {favButton && <div className={phone ? '' : 'flex-1 [&>button]:w-full'}>{favButton}</div>}
+        {favButton && <div className={showCall ? '' : 'flex-1 [&>button]:w-full'}>{favButton}</div>}
       </div>
-      {!user && (
+      {!phone && !hasChat && !hasAgenda && (
+        <p className="text-center text-sm text-ink-400">Este profesional todavía no ha puesto un teléfono de contacto.</p>
+      )}
+      {!user && (hasChat || hasAgenda) && (
         <p className="pt-1 text-center text-xs text-ink-400">
-          <Link to={`/login?next=${encodeURIComponent(location.pathname)}`} className="link">Entra</Link> para escribir por el chat y guardar favoritos.
+          <Link to={`/login?next=${encodeURIComponent(location.pathname)}`} className="link">Entra</Link> para {hasAgenda ? 'pedir cita, ' : ''}{hasChat ? 'escribir por el chat y ' : ''}guardar favoritos.
         </p>
       )}
       {modal}
+      {bookingModal}
     </div>
   );
 }

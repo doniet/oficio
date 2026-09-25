@@ -13,11 +13,31 @@ function resolveJwtSecret() {
 
 export const JWT_SECRET = resolveJwtSecret();
 
+// maxServices = oficios publicados; maxPhotos = fotos del negocio (galería del perfil).
+// null = sin límite. `premium` ya no se vende: las bases viejas lo migran a `pro`.
 export const PLANS = {
-  free: { name: 'Gratuito', price: 0, maxServices: 1, features: ['1 servicio publicado', 'Perfil básico', 'Chat con clientes'] },
-  basic: { name: 'Básico', price: Number(process.env.PLAN_BASIC_PRICE) || 9.99, maxServices: 5, features: ['Hasta 5 servicios', 'Aparece antes que los gratuitos', 'Soporte por email'] },
-  pro: { name: 'Profesional', price: Number(process.env.PLAN_PRO_PRICE) || 19.99, maxServices: null, features: ['Servicios ilimitados', 'Destacado en la portada', 'Insignia Pro', 'Soporte prioritario'] },
-  premium: { name: 'Premium', price: Number(process.env.PLAN_PREMIUM_PRICE) || 39.99, maxServices: null, features: ['Todo lo de Pro', 'Primero en las búsquedas', 'Insignia Premium', 'Soporte 24/7'] },
+  free: {
+    name: 'Gratis', price: 0, maxServices: 1, maxPhotos: 0, chat: false, agenda: false, negocio: false, pos: false,
+    features: ['Nombre, logo y descripción de tu oficio', 'Dirección y ubicación en el mapa', 'Contacto por WhatsApp o llamada'],
+  },
+  basic: {
+    name: 'Básico', price: Number(process.env.PLAN_BASICO_USD) || 1, maxServices: 5, maxPhotos: 10, chat: false, agenda: false, negocio: false, pos: false,
+    features: ['Todo lo del plan Gratis', 'Hasta 10 fotos de tu negocio', 'Hasta 5 oficios diferentes', 'Apareces antes que los gratuitos'],
+  },
+  pro: {
+    name: 'Profesional', price: Number(process.env.PLAN_PROFESIONAL_USD) || 10, maxServices: null, maxPhotos: 30, chat: true, agenda: true, negocio: true, pos: true,
+    features: ['Todo lo del plan Básico', 'Registra tu negocio, no solo tu oficio', 'Agenda de citas con tus clientes', 'Chat interno con los clientes', 'Punto de venta con DardoVentas', 'Oficios ilimitados y hasta 30 fotos'],
+  },
 } as const;
 
 export type PlanId = keyof typeof PLANS;
+
+export function planDe(plan: string | null | undefined) {
+  return PLANS[(plan === 'premium' ? 'pro' : plan) as PlanId] ?? PLANS.free;
+}
+
+// Tasa de respaldo (CUP por 1 USD) si no se puede leer dardoventas.com/tasas.json.
+export const TASA_CUP_USD = Number(process.env.TASA_CUP_USD) || 730;
+
+// Login con Google real: solo si hay Client ID. En demo, sin él, se simula.
+export const googleClientId = () => process.env.GOOGLE_CLIENT_ID || '';

@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Briefcase, CreditCard, Heart, LayoutDashboard, MessageCircle, Settings, UserRound } from 'lucide-react';
+import { Briefcase, CalendarDays, CreditCard, Heart, LayoutDashboard, MessageCircle, Settings, UserRound } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Avatar, cn } from './ui';
 
@@ -12,11 +12,15 @@ export default function DashboardLayout() {
     { to: '/dashboard', label: 'Resumen', icon: LayoutDashboard, end: true },
     ...(isProvider
       ? [
-          { to: '/dashboard/servicios', label: 'Mis servicios', icon: Briefcase },
+          { to: '/dashboard/servicios', label: 'Mis oficios', icon: Briefcase },
           { to: '/dashboard/perfil', label: 'Perfil profesional', icon: UserRound },
+          { to: '/dashboard/agenda', label: 'Agenda', icon: CalendarDays },
           { to: '/dashboard/suscripcion', label: 'Mi plan', icon: CreditCard },
         ]
-      : [{ to: '/dashboard/favoritos', label: 'Favoritos', icon: Heart }]),
+      : [
+          { to: '/dashboard/citas', label: 'Mis citas', icon: CalendarDays },
+          { to: '/dashboard/favoritos', label: 'Favoritos', icon: Heart },
+        ]),
     { to: '/dashboard/mensajes', label: 'Mensajes', icon: MessageCircle, badge: unread },
     { to: '/dashboard/cuenta', label: 'Cuenta', icon: Settings },
   ];

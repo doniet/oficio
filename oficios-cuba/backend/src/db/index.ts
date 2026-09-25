@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
-import { PLANS, PlanId } from '../config.js';
+import { planDe } from '../config.js';
 
 const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   is_verified INTEGER DEFAULT 0,
   password_changed_at DATETIME,
+  google_sub TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,6 +83,12 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'basic', 'pro', 'premium')),
   subscription_expires_at DATETIME,
   stripe_customer_id TEXT,
+  contact_mode TEXT DEFAULT 'whatsapp' CHECK (contact_mode IN ('whatsapp', 'call', 'both')),
+  kind TEXT DEFAULT 'oficio' CHECK (kind IN ('oficio', 'negocio')),
+  horario TEXT,
+  gallery TEXT, -- JSON: fotos del negocio
+  agenda TEXT, -- JSON: días y horas en que acepta citas
+  show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -99,6 +106,7 @@ CREATE TABLE IF NOT EXISTS services (
   price_min REAL,
   price_max REAL,
   price_type TEXT DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'hourly', 'daily', 'negotiable')),
+  price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
   images TEXT, -- JSON array of image URLs
   is_active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -210,7 +218,38 @@ CREATE TABLE IF NOT EXISTS uploads (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Citas agendadas (plan Profesional). provider_id = id del PERFIL.
+CREATE TABLE IF NOT EXISTS appointments (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  service_id TEXT,
+  starts_at TEXT NOT NULL, -- ISO UTC
+  duration_min INTEGER NOT NULL,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL
+);
+
+-- Clientes con sesión que pulsaron WhatsApp o Llamar: sin chat, es la prueba de contacto para reseñar.
+CREATE TABLE IF NOT EXISTS contacts (
+  client_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  via TEXT NOT NULL CHECK (via IN ('whatsapp', 'call')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (client_id, provider_id, via),
+  FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
+);
+
 -- Indexes
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
+CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
 CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
@@ -261,6 +300,23 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   (d) => {
     d.exec('ALTER TABLE users ADD COLUMN password_changed_at DATETIME');
   },
+  // 3 — planes nuevos (Gratis / Básico / Profesional), login con Google, contacto por WhatsApp o
+  //     llamada, negocio, galería, agenda y moneda del precio. Los precios anteriores eran en USD.
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN google_sub TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN contact_mode TEXT DEFAULT 'whatsapp' CHECK (contact_mode IN ('whatsapp', 'call', 'both'));
+      ALTER TABLE provider_profiles ADD COLUMN kind TEXT DEFAULT 'oficio' CHECK (kind IN ('oficio', 'negocio'));
+      ALTER TABLE provider_profiles ADD COLUMN horario TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN gallery TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN agenda TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN show_on_map INTEGER DEFAULT 0;
+      ALTER TABLE services ADD COLUMN price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD'));
+      UPDATE services SET price_currency = 'USD';
+      UPDATE provider_profiles SET subscription_plan = 'pro' WHERE subscription_plan = 'premium';
+      UPDATE subscriptions SET plan = 'pro' WHERE plan = 'premium';
+    `);
+  },
 ];
 
 export const ESQUEMA_VERSION = MIGRACIONES.length;
@@ -297,7 +353,12 @@ export function initDatabase() {
   return db;
 }
 
-export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 3 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
+export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 2 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
+
+export function planDelPerfil(providerId: string) {
+  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
+  return planDe(row?.subscription_plan);
+}
 
 export function parseImages(raw: unknown): string[] {
   if (!raw || typeof raw !== 'string') return [];
@@ -324,9 +385,9 @@ export function refreshProviderRating(providerId: string) {
 // Deja activos como máximo los servicios que permite el plan actual: se conservan los más
 // antiguos y el resto se pausa (el proveedor puede elegir cuáles pausando y reactivando).
 export function enforcePlanLimit(providerId: string) {
-  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: PlanId } | undefined;
+  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   if (!row) return;
-  const max = PLANS[row.subscription_plan].maxServices;
+  const max = planDe(row.subscription_plan).maxServices;
   if (max === null) return;
   db.prepare(`
     UPDATE services SET is_active = 0, updated_at = CURRENT_TIMESTAMP

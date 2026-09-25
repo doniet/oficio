@@ -24,6 +24,9 @@ const Messages = lazy(() => import('./pages/dashboard/Messages'));
 const Conversation = lazy(() => import('./pages/dashboard/Conversation'));
 const Favorites = lazy(() => import('./pages/dashboard/Favorites'));
 const Account = lazy(() => import('./pages/dashboard/Account'));
+const Agenda = lazy(() => import('./pages/dashboard/Agenda'));
+const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
+const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function RequireAuth({ children, only }: { children: ReactNode; only?: UserType }) {
@@ -59,6 +62,7 @@ export default function App() {
           <Route path="proveedor/:id" element={<ProviderProfile />} />
           <Route path="login" element={<GuestOnly><Login /></GuestOnly>} />
           <Route path="registro" element={<GuestOnly><Register /></GuestOnly>} />
+          <Route path="auth/google" element={<GoogleCallback />} />
 
           <Route path="dashboard/mensajes/:id" element={<RequireAuth><Conversation /></RequireAuth>} />
           <Route path="dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
@@ -71,6 +75,8 @@ export default function App() {
             <Route path="servicios/nuevo" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="servicios/:id/editar" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="suscripcion" element={<RequireAuth only="provider"><MySubscription /></RequireAuth>} />
+            <Route path="agenda" element={<RequireAuth only="provider"><Agenda /></RequireAuth>} />
+            <Route path="citas" element={<RequireAuth only="client"><MisCitas /></RequireAuth>} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>

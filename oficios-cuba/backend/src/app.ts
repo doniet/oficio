@@ -12,9 +12,10 @@ import conversationRoutes from './routes/conversations.js';
 import reviewRoutes from './routes/reviews.js';
 import favoriteRoutes from './routes/favorites.js';
 import statsRoutes from './routes/stats.js';
+import appointmentRoutes from './routes/appointments.js';
 import uploadRoutes, { UPLOAD_DIR } from './routes/uploads.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { DEMO_MODE } from './config.js';
+import { DEMO_MODE, googleClientId, TASA_CUP_USD } from './config.js';
 
 const app = express();
 
@@ -68,11 +69,19 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/config', (_req, res) => {
-  res.json({ demo: DEMO_MODE });
+  const clientId = googleClientId();
+  res.json({ demo: DEMO_MODE, google: clientId ? 'real' : DEMO_MODE ? 'demo' : null, google_client_id: clientId || null });
+});
+
+// En producción nginx sirve /api/tasas desde dardoventas.com/tasas.json (la API no tiene salida
+// a internet). Esta respuesta es el respaldo: en dev y cuando dardoventas no responde.
+app.get('/api/tasas', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({ ok: true, fuente: 'respaldo', usd: TASA_CUP_USD, updated_at: null });
 });
 
 app.use('/api/', apiLimiter);
-app.use(['/api/auth/login', '/api/auth/register'], authLimiter);
+app.use(['/api/auth/login', '/api/auth/register', '/api/auth/google'], authLimiter);
 app.use('/api/auth/login', loginAccountLimiter);
 
 app.use('/api/uploads', express.static(UPLOAD_DIR, { immutable: true, maxAge: '365d', index: false }));
@@ -87,6 +96,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);

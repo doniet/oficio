@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { providerProfileIdFor } from '../db/index.js';
+import db, { planDelPerfil, providerProfileIdFor } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = Router();
 router.use(authMiddleware);
+
+const SIN_CHAT = 'El chat es del plan Profesional. Contacta a este profesional por WhatsApp o llamada.';
 
 // conversations.provider_id es el id del PERFIL de proveedor, no el del usuario.
 function participantFilter(req: AuthRequest): { column: 'client_id' | 'provider_id'; value: string } {
@@ -83,6 +85,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
   if (!db.prepare('SELECT 1 FROM provider_profiles WHERE id = ? AND is_active = 1').get(data.provider_id)) {
     throw new AppError('Proveedor no encontrado', 404);
   }
+  if (!planDelPerfil(data.provider_id).chat) throw new AppError(SIN_CHAT, 403);
   if (data.service_id && !db.prepare('SELECT 1 FROM services WHERE id = ? AND provider_id = ?').get(data.service_id, data.provider_id)) {
     throw new AppError('Servicio no encontrado', 404);
   }
@@ -122,6 +125,8 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res) => {
 router.post('/:id/messages', asyncHandler(async (req: AuthRequest, res) => {
   const { content } = z.object({ content: z.string().trim().min(1).max(2000) }).parse(req.body);
   const conversation = loadConversation(req);
+  // Las conversaciones viejas se pueden leer, pero seguir escribiendo exige el plan Profesional.
+  if (!planDelPerfil(conversation.provider_id).chat) throw new AppError(SIN_CHAT, 403);
   const now = new Date().toISOString();
   const id = uuidv4();
   db.prepare('INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, created_at) VALUES (?, ?, ?, ?, ?, ?)')
