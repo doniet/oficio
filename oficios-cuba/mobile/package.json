@@ -6,6 +6,7 @@
     "@expo-google-fonts/bricolage-grotesque": "^0.4.1",
     "@expo-google-fonts/figtree": "^0.4.1",
     "@expo/ui": "~57.0.20",
+    "@expo/vector-icons": "^15.0.2",
     "@oficio/shared": "file:../shared",
     "@tanstack/react-query": "^5.103.2",
     "expo": "~57.0.25",

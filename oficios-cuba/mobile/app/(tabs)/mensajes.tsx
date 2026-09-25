@@ -1,14 +1,16 @@
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { relativeTime } from '@oficio/shared';
 import { Pantalla } from '../../src/componentes/Pantalla';
 import { Boton } from '../../src/componentes/Boton';
+import { BannerSinRed } from '../../src/componentes/BannerSinRed';
 import { requiereSesion, useSesion } from '../../src/lib/contexto';
+import { estadoSesion } from '../../src/lib/estadoSesion';
 import { colores, espacio, fuentes } from '../../src/lib/tema';
 
 export default function Mensajes() {
-  const { usuario, api } = useSesion();
+  const { usuario, api, cargando, sinRed, reintentar } = useSesion();
   // El hook se llama siempre (regla de hooks): sin sesión se deshabilita la consulta, no se omite.
   const consulta = useQuery({
     queryKey: ['conversaciones'],
@@ -16,10 +18,21 @@ export default function Mensajes() {
     enabled: !!usuario,
     refetchOnWindowFocus: true,
   });
+  const estado = estadoSesion({ cargando, sinRed, usuario });
+
+  // Mientras se comprueba el token guardado, no se flashea "Entra para ver tus mensajes".
+  if (estado === 'cargando') {
+    return (
+      <Pantalla titulo="Mensajes">
+        <ActivityIndicator color={colores.acento} />
+      </Pantalla>
+    );
+  }
 
   if (!usuario) {
     return (
       <Pantalla titulo="Mensajes">
+        {estado === 'sinRed' ? <BannerSinRed onReintentar={reintentar} /> : null}
         <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>Entra para ver tus mensajes</Text>
         <Boton titulo="Entrar" onPress={() => requiereSesion(router, null, '/mensajes')} />
       </Pantalla>
