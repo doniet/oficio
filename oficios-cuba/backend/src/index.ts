@@ -4,6 +4,8 @@ import { initDatabase, expireSubscriptions } from './db/index.js';
 import { seedBase } from './db/seed.js';
 import { seedDemo } from './db/seed-demo.js';
 import { DEMO_MODE } from './config.js';
+import { cargarCuentaFcm, crearCanalFcm } from './push/fcm.js';
+import { usarCanal } from './push/avisos.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -15,6 +17,14 @@ async function start() {
   }
   expireSubscriptions();
   setInterval(expireSubscriptions, 60 * 60 * 1000).unref();
+
+  const cuentaFcm = cargarCuentaFcm();
+  if (cuentaFcm) {
+    usarCanal('fcm', crearCanalFcm(cuentaFcm));
+    console.log(`Push FCM activo (proyecto ${cuentaFcm.project_id})`);
+  } else {
+    console.log('Push FCM desactivado: falta FCM_SERVICE_ACCOUNT_FILE');
+  }
 
   app.listen(PORT, () => {
     console.log(`API escuchando en :${PORT} (demo=${DEMO_MODE})`);
