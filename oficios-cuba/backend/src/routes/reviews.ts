@@ -8,14 +8,23 @@ import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 const router = Router();
 
 function eligibility(clientId: string, serviceId: string) {
-  const service = db.prepare('SELECT id, provider_id FROM services WHERE id = ?').get(serviceId) as { id: string; provider_id: string } | undefined;
+  const service = db.prepare(`
+    SELECT s.id, s.provider_id FROM services s JOIN provider_profiles pp ON s.provider_id = pp.id
+    WHERE s.id = ? AND s.is_active = 1 AND pp.is_active = 1
+  `).get(serviceId) as { id: string; provider_id: string } | undefined;
   if (!service) return { service: null, can_review: false, reason: 'Servicio no encontrado' };
-  if (db.prepare('SELECT 1 FROM reviews WHERE service_id = ? AND client_id = ?').get(serviceId, clientId)) {
-    return { service, can_review: false, reason: 'Ya reseñaste este servicio' };
+  // Una reseña por cliente y proveedor: si no, un mismo cliente multiplica su voto con cada servicio.
+  if (db.prepare('SELECT 1 FROM reviews WHERE client_id = ? AND provider_id = ?').get(clientId, service.provider_id)) {
+    return { service, can_review: false, reason: 'Ya reseñaste a este profesional' };
   }
-  // Solo reseña quien contactó al proveedor por el chat de la plataforma.
-  if (!db.prepare('SELECT 1 FROM conversations WHERE client_id = ? AND provider_id = ?').get(clientId, service.provider_id)) {
-    return { service, can_review: false, reason: 'Contacta al proveedor por el chat antes de dejar una reseña' };
+  // Solo reseña quien de verdad habló con el proveedor: tiene que haberle contestado en el chat.
+  // Abrir una conversación con un "hola" desde una cuenta nueva no basta.
+  const contesto = db.prepare(`
+    SELECT 1 FROM conversations c JOIN messages m ON m.conversation_id = c.id
+    WHERE c.client_id = ? AND c.provider_id = ? AND m.sender_type = 'provider' LIMIT 1
+  `).get(clientId, service.provider_id);
+  if (!contesto) {
+    return { service, can_review: false, reason: 'Podrás reseñar cuando el profesional te haya respondido por el chat' };
   }
   return { service, can_review: true, reason: null };
 }
@@ -53,7 +62,7 @@ router.get('/provider/:providerId', asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
   const reviews = db.prepare(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar, s.title AS service_title
-    FROM reviews r JOIN users u ON r.client_id = u.id JOIN services s ON r.service_id = s.id
+    FROM reviews r JOIN users u ON r.client_id = u.id LEFT JOIN services s ON r.service_id = s.id
     WHERE r.provider_id = ? ORDER BY r.created_at DESC LIMIT ? OFFSET ?
   `).all(req.params.providerId, limit, (page - 1) * limit);
   const { count } = db.prepare('SELECT COUNT(*) AS count FROM reviews WHERE provider_id = ?').get(req.params.providerId) as { count: number };

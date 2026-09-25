@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config.js';
+import db from '../db/index.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -16,29 +17,33 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     return res.status(401).json({ error: 'Token de autorización requerido' });
   }
 
-  const token = authHeader.split(' ')[1];
+  const user = userFromToken(authHeader.split(' ')[1]);
+  if (!user) return res.status(401).json({ error: 'Token inválido o expirado' });
+  req.user = user;
+  next();
+}
+
+// Un token deja de valer si el usuario ya no existe o si cambió la contraseña después de emitirlo.
+function userFromToken(token: string): AuthRequest['user'] | null {
+  let decoded: { id: string; email: string; user_type: 'client' | 'provider'; iat?: number };
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      id: string;
-      email: string;
-      user_type: 'client' | 'provider';
-    };
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Token inválido o expirado' });
+    decoded = jwt.verify(token, JWT_SECRET) as typeof decoded;
+  } catch {
+    return null;
   }
+  const row = db.prepare('SELECT password_changed_at FROM users WHERE id = ?').get(decoded.id) as { password_changed_at: string | null } | undefined;
+  if (!row) return null;
+  // iat va en segundos: se compara al segundo para no rechazar el token emitido justo tras el cambio.
+  if (row.password_changed_at && (decoded.iat ?? 0) < Math.floor(Date.parse(row.password_changed_at) / 1000)) return null;
+  return { id: decoded.id, email: decoded.email, user_type: decoded.user_type };
 }
 
 // Para rutas públicas que muestran más datos al dueño (p. ej. un servicio desactivado).
 export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    try {
-      req.user = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as AuthRequest['user'];
-    } catch {
-      // token inválido: se trata como visitante anónimo
-    }
+    // token inválido: se trata como visitante anónimo
+    req.user = userFromToken(authHeader.split(' ')[1]) ?? undefined;
   }
   next();
 }

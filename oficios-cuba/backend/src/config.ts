@@ -17,7 +17,7 @@ export const PLANS = {
   free: { name: 'Gratuito', price: 0, maxServices: 1, features: ['1 servicio publicado', 'Perfil básico', 'Chat con clientes'] },
   basic: { name: 'Básico', price: Number(process.env.PLAN_BASIC_PRICE) || 9.99, maxServices: 5, features: ['Hasta 5 servicios', 'Aparece antes que los gratuitos', 'Soporte por email'] },
   pro: { name: 'Profesional', price: Number(process.env.PLAN_PRO_PRICE) || 19.99, maxServices: null, features: ['Servicios ilimitados', 'Destacado en la portada', 'Insignia Pro', 'Soporte prioritario'] },
-  premium: { name: 'Premium', price: Number(process.env.PLAN_PREMIUM_PRICE) || 39.99, maxServices: null, features: ['Todo lo de Pro', 'Primero en las búsquedas', 'Insignia verificado', 'Soporte 24/7'] },
+  premium: { name: 'Premium', price: Number(process.env.PLAN_PREMIUM_PRICE) || 39.99, maxServices: null, features: ['Todo lo de Pro', 'Primero en las búsquedas', 'Insignia Premium', 'Soporte 24/7'] },
 } as const;
 
 export type PlanId = keyof typeof PLANS;

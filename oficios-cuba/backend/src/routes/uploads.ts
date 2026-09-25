@@ -5,12 +5,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import db from '../db/index.js';
 
 const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 export const UPLOAD_DIR = join(dirname(dbPath), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MAX_BYTES = 1.5 * 1024 * 1024;
+// Suficiente para un perfil y seis servicios con fotos, y a la vez impide llenar el disco.
+const MAX_POR_DIA = 60;
 
 // El tipo se decide por la firma del archivo, no por lo que declare el cliente.
 function detectType(buf: Buffer): 'jpg' | 'png' | 'webp' | null {
@@ -23,6 +26,10 @@ function detectType(buf: Buffer): 'jpg' | 'png' | 'webp' | null {
 const router = Router();
 
 router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
+  const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE user_id = ? AND created_at > ?').get(req.user!.id, desde) as { n: number };
+  if (n >= MAX_POR_DIA) throw new AppError('Has subido demasiadas fotos hoy. Inténtalo mañana.', 429);
+
   const { data } = z.object({ data: z.string().min(20) }).parse(req.body);
   const base64 = data.replace(/^data:image\/[a-z]+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
@@ -32,6 +39,7 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 
   const name = `${uuidv4()}.${ext}`;
   writeFileSync(join(UPLOAD_DIR, name), buf);
+  db.prepare('INSERT INTO uploads (name, user_id, created_at) VALUES (?, ?, ?)').run(name, req.user!.id, new Date().toISOString());
   res.status(201).json({ url: `/api/uploads/${name}` });
 }));
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db from '../db/index.js';
+import db, { enforcePlanLimit } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { DEMO_MODE, PLANS } from '../config.js';
@@ -35,7 +35,7 @@ router.get('/me', authMiddleware, requireProvider, asyncHandler(async (req: Auth
 
 // Sin pasarela de pago integrada: en modo demo el pago se simula y el plan se activa al
 // momento; en producción la suscripción queda pendiente hasta que un administrador confirme
-// la transferencia o el pago en efectivo.
+// la transferencia o el pago en efectivo con `npm run pagos` (src/scripts/pagos.ts).
 router.post('/checkout', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const { plan, payment_method } = z.object({
     plan: z.enum(['basic', 'pro', 'premium']),
@@ -58,6 +58,7 @@ router.post('/checkout', authMiddleware, requireProvider, asyncHandler(async (re
         VALUES (?, ?, ?, ?, 'succeeded', ?, ?)`).run(uuidv4(), subscriptionId, provider.id, info.price, JSON.stringify({ demo: true }), now.toISOString());
       db.prepare('UPDATE provider_profiles SET subscription_plan = ?, subscription_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
         .run(plan, end.toISOString(), provider.id);
+      enforcePlanLimit(provider.id);
     });
     tx();
     return res.json({ status: 'active', message: `Plan ${info.name} activado (pago simulado de demostración)` });
@@ -92,8 +93,11 @@ router.post('/cancel', authMiddleware, requireProvider, asyncHandler(async (req:
   const result = db.prepare("UPDATE subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE provider_id = ? AND status IN ('active', 'pending', 'past_due')")
     .run(provider.id);
   if (result.changes === 0 && provider.subscription_plan === 'free') throw new AppError('No tienes un plan de pago activo', 404);
-  db.prepare("UPDATE provider_profiles SET subscription_plan = 'free', subscription_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(provider.id);
-  res.json({ message: 'Suscripción cancelada. Tu cuenta pasó al plan Gratuito.' });
+  db.transaction(() => {
+    db.prepare("UPDATE provider_profiles SET subscription_plan = 'free', subscription_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(provider.id);
+    enforcePlanLimit(provider.id);
+  })();
+  res.json({ message: 'Suscripción cancelada. Tu cuenta pasó al plan Gratuito; si tenías más servicios de los que permite, los más nuevos quedaron pausados.' });
 }));
 
 export default router;

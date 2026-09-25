@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Loader2, Star, X } from 'lucide-react';
+import { Crown, Loader2, Star, X } from 'lucide-react';
 import { initials, planLabel } from '../lib/format';
 import type { Plan } from '../types';
 
@@ -80,9 +80,10 @@ export function RatingInline({ rating, count, className = '' }: { rating: number
   );
 }
 
+// Es la insignia del plan, no una verificación de identidad: no puede decir "Verificado".
 export function PlanBadge({ plan, className = '' }: { plan: Plan; className?: string }) {
   if (plan === 'premium') {
-    return <span className={cn('badge bg-ink-900 text-amber-300', className)}><BadgeCheck className="h-3.5 w-3.5" /> Verificado</span>;
+    return <span className={cn('badge bg-ink-900 text-amber-300', className)}><Crown className="h-3.5 w-3.5" aria-hidden="true" /> Premium</span>;
   }
   if (plan === 'pro') return <span className={cn('badge bg-sea-100 text-sea-800', className)}>Pro</span>;
   return null;

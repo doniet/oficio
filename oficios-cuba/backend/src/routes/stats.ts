@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { textoQuery } from '../lib/entrada.js';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.get('/', asyncHandler(async (_req, res) => {
 
 // Conteo por categoría principal (incluye los servicios de sus subcategorías).
 router.get('/categories', asyncHandler(async (req, res) => {
-  const { province_id } = req.query;
+  const province_id = textoQuery(req.query.province_id);
   const params: unknown[] = [];
   let provinceFilter = '';
   if (province_id) {

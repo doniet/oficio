@@ -22,8 +22,11 @@ oficios-cuba/
 ├── backend/src/
 │   ├── index.ts          # arranque: esquema → seedBase() → seedDemo() si DEMO_MODE
 │   ├── config.ts         # DEMO_MODE, JWT_SECRET (falla en prod si es débil), PLANS y límites
-│   ├── db/               # index.ts = esquema SQLite; seed.ts = provincias/municipios/categorías; seed-demo.ts
-│   ├── middleware/       # auth (JWT), errorHandler
+│   ├── app.ts            # la app Express (sin listen): la importan index.ts y los tests
+│   ├── db/               # index.ts = esquema + MIGRACIONES + reglas (límite de plan, caducidad); pagos.ts; seeds
+│   ├── lib/entrada.ts    # parámetros de query y validación de imágenes (demo / subida propia)
+│   ├── middleware/       # auth (JWT revocable), errorHandler
+│   ├── scripts/pagos.ts  # CLI de admin: listar / confirmar / rechazar pagos manuales
 │   └── routes/           # auth, categories, conversations, favorites, providers, provinces,
 │                         # reviews, services, stats, subscriptions, uploads
 ├── frontend/src/
@@ -31,6 +34,7 @@ oficios-cuba/
 │   ├── pages/            # públicas + auth/ + dashboard/
 │   ├── services/api.ts   # cliente axios, baseURL `/api`
 │   └── types/index.ts
+├── backend/test/        # vitest + supertest; cada archivo con su base temporal
 ├── frontend/nginx.conf   # SPA, proxy /api, cabeceras, client_max_body_size
 └── docker-compose.yml    # compose de PRODUCCIÓN (vps2)
 ```
@@ -58,11 +62,19 @@ oficios-cuba/
 
 Públicas: `/`, `/buscar`, `/profesionales`, `/planes`, `/servicio/:id`, `/proveedor/:id`, `/login`, `/registro`. Panel `/dashboard`: `mensajes`, `cuenta` (todos); `favoritos` (cliente); `perfil`, `servicios`, `servicios/nuevo`, `servicios/:id/editar`, `suscripcion` (proveedor). `/dashboard/mensajes/:id` va fuera del layout del panel.
 
+## Reglas de negocio (con test)
+
+- **Plan:** el máximo de servicios se aplica al crear, al reactivar (`toggle`) y al bajar de plan (caducidad, cancelación): se pausan los más nuevos.
+- **Reseñas:** una por cliente y proveedor; solo si el proveedor ya le respondió por el chat; nunca sobre un servicio pausado. Borrar un servicio conserva sus reseñas (`service_id` → NULL).
+- **Sesiones:** cambiar la contraseña invalida los tokens anteriores (`users.password_changed_at`); el endpoint devuelve uno nuevo.
+- **Imágenes:** solo `/demo/*.webp` o subidas propias (tabla `uploads`), máx. 60 subidas / 24 h por usuario.
+- **Login:** además del límite por IP, 10 fallos / 15 min por cuenta.
+
 ## Gotchas
 
-- **nginx: una `location` por regex gana a un prefijo sin `^~`.** La regex de extensiones de `nginx.conf` captura `/api/uploads/*.webp` antes que `location /api/` → las fotos subidas dan 404 en prod (confirmado 25-sep). Cualquier prefijo que deba ganar lleva `^~`.
+- **nginx: una `location` por regex gana a un prefijo sin `^~`.** Por eso `/api/`, `/assets/` y `/demo/` llevan `^~`; sin él las fotos subidas daban 404 en prod.
 - **`DEMO_MODE=true` = cuentas con contraseña pública + planes de pago gratis.** Solo para dev/staging.
-- **Sin migraciones:** una columna nueva no llega a una DB existente.
+- `CF-Connecting-IP` es fiable solo porque Traefik en vps2 no publica puertos (todo entra por el túnel). Si eso cambia, el rate limit por IP se puede falsificar.
 - El backend compila con `strict:false` y `global.d.ts` tipa better-sqlite3 como `any`: el tipado protege poco; verificar en ejecución.
 
 `DOCKER.md` y buena parte del `README.md` son del commit `init` y están **desactualizados** (mencionan `docker-compose.override.yml`, scripts `.ps1`, Stripe, perfil `db-init` — ya no existen). Fuente de verdad: el código y este archivo.
@@ -83,12 +95,20 @@ npx vite --port 5176 --strictPort            # /api se reenvía a BACKEND_URL (d
 ```
 
 - Cuentas demo (con `DEMO_MODE=true`): contraseña `Demo123!` — ver `backend/src/db/seed-demo.ts`.
-- Para empezar de cero: parar el backend y mover `backend/data/` a otro sitio (no hay migraciones: el esquema se crea con `CREATE TABLE IF NOT EXISTS`).
-- Verificación mínima: `npm run typecheck` (backend) y `npx tsc --noEmit && npm run build` (frontend). **No hay tests automatizados.**
+- Para empezar de cero: parar el backend y mover `backend/data/` a otro sitio.
+- Verificación: `npm test` y `npm run typecheck` (backend); `npx tsc --noEmit && npm run build` (frontend).
+- Pagos manuales en local: `npm run pagos -- listar | confirmar <id> | rechazar <id>`.
+
+## Esquema y migraciones
+
+- Base nueva: se crea con `schema` y se marca `PRAGMA user_version = ESQUEMA_VERSION`.
+- Base existente: `initDatabase()` aplica las migraciones pendientes de `MIGRACIONES` (en `db/index.ts`), una transacción cada una, con `foreign_key_check` antes de subir la versión.
+- **Cambio de esquema = tocar DOS sitios:** `schema` (bases nuevas) y una migración nueva al final de `MIGRACIONES` (bases existentes). Nunca editar una migración ya publicada.
+- Probar cada migración contra una copia de la base de producción antes de desplegar (`test/fixtures/esquema-v0.sql` = esquema con el que nació prod).
 
 ## Producción (vps2)
 
-- Deploy: en `~/docker/oficio/oficios-cuba`, `git pull` + `docker compose up -d --build`. El compose y el `.env` (chmod 600) viven allí.
+- Deploy y pagos manuales: ver `DOCKER.md`. El compose y el `.env` (chmod 600) viven en vps2.
 - La base de datos real está en `~/docker/oficio/oficios-cuba/data/` (bind mount). **Copia de seguridad antes de cualquier deploy que cambie el esquema.**
 - Cambios en red/exposición (Traefik, túnel, puertos, CORS, auth, reglas de subida): **consultar con Dariel antes**.
 - `DEMO_MODE=true` en producción siembra datos falsos y **simula los pagos de planes**: no ponerlo a `false` sin datos de pago reales definidos.

@@ -1,17 +1,15 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { parseImages, PLAN_WEIGHT_SQL, providerProfileIdFor } from '../db/index.js';
+import db, { parseImages, PLAN_WEIGHT_SQL, providerProfileIdFor, refreshProviderRating } from '../db/index.js';
+import { imagenPermitida, queryTextos } from '../lib/entrada.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { PLANS, PlanId } from '../config.js';
 
 const router = Router();
 
-const imageUrl = z.string().max(500).refine(
-  (v) => v.startsWith('/api/uploads/') || v.startsWith('/demo/') || /^https:\/\/[^\s]+$/.test(v),
-  'URL de imagen no válida',
-);
+const imageUrl = z.string().max(500);
 
 const optionalNumber = z.preprocess((v) => (v === '' || v === null ? undefined : v), z.number().min(0).max(1_000_000).optional());
 
@@ -52,7 +50,8 @@ function toListItem(row: any) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const { provider_id, category, category_id, province_id, municipality_id, q, price_max, price_type, sort = 'relevance' } = req.query as Record<string, string | undefined>;
+  const { provider_id, category, category_id, province_id, municipality_id, q, price_max, price_type, sort = 'relevance' } =
+    queryTextos(req.query, ['provider_id', 'category', 'category_id', 'province_id', 'municipality_id', 'q', 'price_max', 'price_type', 'sort'] as const);
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(48, Math.max(1, Number(req.query.limit) || 12));
 
@@ -116,7 +115,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
     SELECT s.*, c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug, c.parent_id AS category_parent_id,
       parent.name AS parent_category_name, parent.slug AS parent_category_slug,
       pp.id AS provider_id, pp.user_id AS provider_user_id, pp.business_name, pp.description AS provider_description,
-      pp.province_id, pp.municipality_id, pp.address, pp.lat, pp.lng, pp.whatsapp, pp.telegram, pp.email_contact,
+      pp.province_id, pp.municipality_id, pp.address, pp.whatsapp, pp.telegram, pp.email_contact,
       pp.years_experience, pp.rating, pp.review_count, pp.subscription_plan, pp.is_active AS provider_active,
       p.name AS province_name, m.name AS municipality_name,
       u.full_name AS owner_name, u.avatar_url
@@ -155,6 +154,12 @@ router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
   });
 }));
 
+function assertImages(images: string[] | undefined, userId: string, yaGuardadas: string[] = []) {
+  if (images?.some((url) => !imagenPermitida(url, userId, yaGuardadas))) {
+    throw new AppError('Alguna foto no es válida: súbela desde el formulario', 400);
+  }
+}
+
 function assertPriceRange(data: { price_min?: number; price_max?: number }) {
   if (data.price_min != null && data.price_max != null && data.price_max < data.price_min) {
     throw new AppError('El precio máximo no puede ser menor que el mínimo', 400);
@@ -167,6 +172,7 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 
   const data = serviceSchema.parse(req.body);
   assertPriceRange(data);
+  assertImages(data.images, req.user!.id);
   if (!db.prepare('SELECT 1 FROM categories WHERE id = ?').get(data.category_id)) throw new AppError('Categoría no válida', 400);
 
   const max = PLANS[provider.subscription_plan].maxServices;
@@ -192,15 +198,16 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 function ownedService(req: AuthRequest) {
   const providerId = providerProfileIdFor(req.user!.id);
   if (!providerId) throw new AppError('Perfil de proveedor no encontrado', 404);
-  const service = db.prepare('SELECT id, is_active FROM services WHERE id = ? AND provider_id = ?').get(req.params.id, providerId);
+  const service = db.prepare('SELECT id, provider_id, is_active, images FROM services WHERE id = ? AND provider_id = ?').get(req.params.id, providerId);
   if (!service) throw new AppError('Servicio no encontrado', 404);
-  return service as { id: string; is_active: number };
+  return service as { id: string; provider_id: string; is_active: number; images: string | null };
 }
 
 router.put('/:id', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  ownedService(req);
+  const current = ownedService(req);
   const data = serviceSchema.parse(req.body);
   assertPriceRange(data);
+  assertImages(data.images, req.user!.id, parseImages(current.images));
   if (!db.prepare('SELECT 1 FROM categories WHERE id = ?').get(data.category_id)) throw new AppError('Categoría no válida', 400);
 
   const negotiable = data.price_type === 'negotiable';
@@ -215,14 +222,26 @@ router.put('/:id', authMiddleware, requireProvider, asyncHandler(async (req: Aut
 }));
 
 router.delete('/:id', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  ownedService(req);
-  db.prepare('DELETE FROM services WHERE id = ?').run(req.params.id);
+  const service = ownedService(req);
+  // Las reseñas del servicio se quedan (service_id pasa a NULL) y siguen contando para el proveedor.
+  db.transaction(() => {
+    db.prepare('DELETE FROM services WHERE id = ?').run(service.id);
+    refreshProviderRating(service.provider_id);
+  })();
   res.json({ message: 'Servicio eliminado' });
 }));
 
 router.patch('/:id/toggle', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const service = ownedService(req);
   const next = service.is_active ? 0 : 1;
+  if (next === 1) {
+    const { subscription_plan: plan } = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(service.provider_id) as { subscription_plan: PlanId };
+    const max = PLANS[plan].maxServices;
+    const { count } = db.prepare('SELECT COUNT(*) AS count FROM services WHERE provider_id = ? AND is_active = 1').get(service.provider_id) as { count: number };
+    if (max !== null && count >= max) {
+      throw new AppError(`Tu plan ${PLANS[plan].name} permite ${max} servicio${max === 1 ? '' : 's'} activo${max === 1 ? '' : 's'}. Pausa otro o mejora tu plan.`, 403);
+    }
+  }
   db.prepare('UPDATE services SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(next, service.id);
   res.json({ is_active: Boolean(next) });
 }));

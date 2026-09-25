@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
 import db, { parseImages } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireClient } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -47,11 +48,7 @@ router.get('/ids', authMiddleware, requireClient, asyncHandler(async (req: AuthR
 }));
 
 router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const { provider_id } = req.body;
-
-  if (!provider_id) {
-    throw new AppError('ID de proveedor requerido', 400);
-  }
+  const { provider_id } = z.object({ provider_id: z.string().uuid('ID de proveedor requerido') }).parse(req.body);
 
   const provider = db.prepare('SELECT id FROM provider_profiles WHERE id = ? AND is_active = 1').get(provider_id);
   if (!provider) {

@@ -1,16 +1,4 @@
-import Database from 'better-sqlite3';
-import { mkdirSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { PLANS, PlanId } from '../config.js';
 
-const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
-mkdirSync(dirname(dbPath), { recursive: true });
-const db = new Database(dbPath);
-
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-export const schema = `
 -- Users table (both clients and providers)
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -21,7 +9,6 @@ CREATE TABLE IF NOT EXISTS users (
   user_type TEXT NOT NULL CHECK (user_type IN ('client', 'provider')),
   avatar_url TEXT,
   is_verified INTEGER DEFAULT 0,
-  password_changed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -121,14 +108,13 @@ CREATE TABLE IF NOT EXISTS service_areas (
 -- Reviews
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
-  service_id TEXT,
+  service_id TEXT NOT NULL,
   client_id TEXT NOT NULL,
   provider_id TEXT NOT NULL,
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comment TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  -- SET NULL: borrar un servicio no puede borrar sus reseñas (se lavaría la valoración).
-  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
+  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
   FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
 );
@@ -202,14 +188,6 @@ CREATE TABLE IF NOT EXISTS favorites (
   UNIQUE(client_id, provider_id)
 );
 
--- Fotos subidas (para cuota por usuario y para comprobar quién es el dueño)
-CREATE TABLE IF NOT EXISTS uploads (
-  name TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
@@ -225,133 +203,4 @@ CREATE INDEX IF NOT EXISTS idx_reviews_service ON reviews(service_id);
 CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
 CREATE INDEX IF NOT EXISTS idx_municipalities_province ON municipalities(province_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_client ON favorites(client_id);
-CREATE INDEX IF NOT EXISTS idx_reviews_client_provider ON reviews(client_id, provider_id);
-CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(user_id, created_at);
-`;
 
-// Migraciones de bases ya existentes (la de producción nació sin control de versión = 0).
-// Una base nueva se crea directamente con `schema` y se marca con la última versión.
-// Cada migración corre una sola vez, dentro de una transacción; nunca se edita una ya publicada.
-const MIGRACIONES: ((d: typeof db) => void)[] = [
-  // 1 — reviews.service_id pasa a admitir NULL con ON DELETE SET NULL. SQLite no permite
-  //     cambiar una FK en sitio: se reconstruye la tabla.
-  (d) => {
-    d.exec(`
-      CREATE TABLE reviews_v1 (
-        id TEXT PRIMARY KEY,
-        service_id TEXT,
-        client_id TEXT NOT NULL,
-        provider_id TEXT NOT NULL,
-        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-        comment TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
-        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
-      );
-      INSERT INTO reviews_v1 (id, service_id, client_id, provider_id, rating, comment, created_at)
-        SELECT id, service_id, client_id, provider_id, rating, comment, created_at FROM reviews;
-      DROP TABLE reviews;
-      ALTER TABLE reviews_v1 RENAME TO reviews;
-      CREATE INDEX IF NOT EXISTS idx_reviews_provider ON reviews(provider_id);
-      CREATE INDEX IF NOT EXISTS idx_reviews_service ON reviews(service_id);
-    `);
-  },
-  // 2 — fecha del último cambio de contraseña, para invalidar los tokens anteriores.
-  (d) => {
-    d.exec('ALTER TABLE users ADD COLUMN password_changed_at DATETIME');
-  },
-];
-
-export const ESQUEMA_VERSION = MIGRACIONES.length;
-
-function migrar() {
-  const actual = (db.pragma('user_version') as { user_version: number }[])[0].user_version;
-  if (actual >= ESQUEMA_VERSION) return;
-  // Reconstruir tablas exige las FK apagadas, y ese pragma no surte efecto dentro de una transacción.
-  db.pragma('foreign_keys = OFF');
-  try {
-    for (let v = actual; v < ESQUEMA_VERSION; v++) {
-      db.transaction(() => {
-        MIGRACIONES[v](db);
-        const rotas = db.pragma('foreign_key_check') as unknown[];
-        if (rotas.length) throw new Error(`Migración ${v + 1}: ${rotas.length} referencias rotas`);
-        db.pragma(`user_version = ${v + 1}`);
-      })();
-      console.log(`Base de datos migrada a la versión ${v + 1}`);
-    }
-  } finally {
-    db.pragma('foreign_keys = ON');
-  }
-}
-
-export function initDatabase() {
-  const existia = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get());
-  if (existia) {
-    migrar();
-    db.exec(schema); // tablas e índices nuevos (CREATE ... IF NOT EXISTS)
-  } else {
-    db.exec(schema);
-    db.pragma(`user_version = ${ESQUEMA_VERSION}`);
-  }
-  return db;
-}
-
-export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 3 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
-
-export function parseImages(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'string') return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-export function providerProfileIdFor(userId: string): string | undefined {
-  const row = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(userId) as { id: string } | undefined;
-  return row?.id;
-}
-
-export function refreshProviderRating(providerId: string) {
-  const stats = db.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM reviews WHERE provider_id = ?')
-    .get(providerId) as { avg_rating: number | null; count: number };
-  db.prepare('UPDATE provider_profiles SET rating = ?, review_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(stats.avg_rating ? Math.round(stats.avg_rating * 10) / 10 : 0, stats.count, providerId);
-}
-
-// Deja activos como máximo los servicios que permite el plan actual: se conservan los más
-// antiguos y el resto se pausa (el proveedor puede elegir cuáles pausando y reactivando).
-export function enforcePlanLimit(providerId: string) {
-  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: PlanId } | undefined;
-  if (!row) return;
-  const max = PLANS[row.subscription_plan].maxServices;
-  if (max === null) return;
-  db.prepare(`
-    UPDATE services SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-    WHERE id IN (SELECT id FROM services WHERE provider_id = ? AND is_active = 1 ORDER BY created_at, id LIMIT -1 OFFSET ?)
-  `).run(providerId, max);
-}
-
-export function expireSubscriptions() {
-  const now = new Date().toISOString();
-  const vencidos = db.prepare(`
-    SELECT id FROM provider_profiles
-    WHERE subscription_plan != 'free' AND subscription_expires_at IS NOT NULL AND subscription_expires_at < ?
-  `).all(now) as { id: string }[];
-  db.transaction(() => {
-    for (const { id } of vencidos) {
-      db.prepare("UPDATE provider_profiles SET subscription_plan = 'free', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
-      enforcePlanLimit(id);
-    }
-    db.prepare("UPDATE subscriptions SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE status = 'active' AND current_period_end < ?")
-      .run(now);
-  })();
-}
-
-export function getDb() {
-  return db;
-}
-
-export default db;

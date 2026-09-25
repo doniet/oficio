@@ -5,6 +5,7 @@ import { z } from 'zod';
 import db from '../db/index.js';
 import { authMiddleware, AuthRequest, generateToken } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { imagenPermitida } from '../lib/entrada.js';
 
 const router = Router();
 
@@ -21,6 +22,8 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Contraseña requerida'),
 });
 
+const DUMMY_HASH = bcrypt.hashSync('contraseña-que-nadie-tiene', 10);
+
 router.post('/register', asyncHandler(async (req, res) => {
   const data = registerSchema.parse(req.body);
 
@@ -32,17 +35,21 @@ router.post('/register', asyncHandler(async (req, res) => {
   const passwordHash = await bcrypt.hash(data.password, 10);
   const userId = uuidv4();
 
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, full_name, phone, user_type, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(userId, data.email, passwordHash, data.full_name, data.phone || null, data.user_type, new Date().toISOString());
-
-  if (data.user_type === 'provider') {
+  // En una transacción: un proveedor sin perfil se quedaría con todas sus rutas en 404.
+  db.transaction(() => {
     db.prepare(`
-      INSERT INTO provider_profiles (id, user_id, province_id, whatsapp, created_at)
-      VALUES (?, ?, COALESCE((SELECT id FROM provinces WHERE name = 'La Habana'), (SELECT id FROM provinces LIMIT 1)), ?, ?)
-    `).run(uuidv4(), userId, data.phone || null, new Date().toISOString());
-  }
+      INSERT INTO users (id, email, password_hash, full_name, phone, user_type, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, data.email, passwordHash, data.full_name, data.phone || null, data.user_type, new Date().toISOString());
+
+    if (data.user_type === 'provider') {
+      // El formulario de registro avisa al proveedor de que los clientes lo contactarán por este número.
+      db.prepare(`
+        INSERT INTO provider_profiles (id, user_id, province_id, whatsapp, created_at)
+        VALUES (?, ?, COALESCE((SELECT id FROM provinces WHERE name = 'La Habana'), (SELECT id FROM provinces LIMIT 1)), ?, ?)
+      `).run(uuidv4(), userId, data.phone || null, new Date().toISOString());
+    }
+  })();
 
   const token = generateToken({ id: userId, email: data.email, user_type: data.user_type });
 
@@ -68,11 +75,13 @@ router.post('/login', asyncHandler(async (req, res) => {
     | { id: string; email: string; password_hash: string; full_name: string; user_type: 'client' | 'provider'; is_verified: number }
     | undefined;
 
+  // Con usuario inexistente también se compara contra un hash: si no, el tiempo de respuesta
+  // delata qué emails están registrados.
+  const validPassword = await bcrypt.compare(data.password, user?.password_hash ?? DUMMY_HASH);
   if (!user) {
     throw new AppError('Credenciales inválidas', 401);
   }
 
-  const validPassword = await bcrypt.compare(data.password, user.password_hash);
   if (!validPassword) {
     throw new AppError('Credenciales inválidas', 401);
   }
@@ -120,10 +129,16 @@ router.put('/profile', authMiddleware, asyncHandler(async (req: AuthRequest, res
   const updateSchema = z.object({
     full_name: z.string().trim().min(2, 'Escribe tu nombre completo').max(80).optional(),
     phone: z.string().trim().max(20).optional(),
-    avatar_url: z.union([z.literal(''), z.string().max(500).refine((v) => v.startsWith('/api/uploads/') || v.startsWith('https://'), 'URL de imagen no válida')]).optional(),
+    avatar_url: z.union([z.literal(''), z.string().max(500)]).optional(),
   });
 
   const data = updateSchema.parse(req.body);
+  if (data.avatar_url) {
+    const actual = db.prepare('SELECT avatar_url FROM users WHERE id = ?').get(req.user!.id) as { avatar_url: string | null } | undefined;
+    if (!imagenPermitida(data.avatar_url, req.user!.id, actual?.avatar_url ? [actual.avatar_url] : [])) {
+      throw new AppError('URL de imagen no válida', 400);
+    }
+  }
 
   const updates = [];
   const values = [];
@@ -177,10 +192,11 @@ router.put('/password', authMiddleware, asyncHandler(async (req: AuthRequest, re
   }
 
   const newPasswordHash = await bcrypt.hash(data.new_password, 10);
-  db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(newPasswordHash, req.user!.id);
+  // Cambiar la contraseña cierra las demás sesiones; esta sigue con el token nuevo.
+  db.prepare('UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(newPasswordHash, new Date().toISOString(), req.user!.id);
 
-  res.json({ message: 'Contraseña actualizada correctamente' });
+  res.json({ message: 'Contraseña actualizada correctamente', token: generateToken(req.user!) });
 }));
 
 export default router;

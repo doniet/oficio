@@ -4,6 +4,7 @@ import { z } from 'zod';
 import db, { parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { queryTextos } from '../lib/entrada.js';
 
 const router = Router();
 
@@ -53,11 +54,11 @@ function toCard(row: any) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const { province_id, category, q, sort = 'relevance' } = req.query as Record<string, string | undefined>;
+  const { province_id, category, q, sort = 'relevance' } = queryTextos(req.query, ['province_id', 'category', 'q', 'sort'] as const);
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(48, Math.max(1, Number(req.query.limit) || 12));
 
-  let where = 'WHERE pp.is_active = 1 AND pp.business_name IS NOT NULL';
+  let where = 'WHERE pp.is_active = 1';
   const params: unknown[] = [];
   if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
   if (category) {
@@ -89,7 +90,7 @@ router.get('/featured', asyncHandler(async (req, res) => {
   const limit = Math.min(12, Math.max(1, Number(req.query.limit) || 6));
   const rows = db.prepare(`
     SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS}
-    WHERE pp.is_active = 1 AND pp.business_name IS NOT NULL
+    WHERE pp.is_active = 1
       AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1)
     ORDER BY ${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC
     LIMIT ?
@@ -126,16 +127,22 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
   const provider = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string } | undefined;
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
 
+  if (!db.prepare('SELECT 1 FROM provinces WHERE id = ?').get(data.province_id)) throw new AppError('Provincia no válida', 400);
   if (data.municipality_id) {
     const ok = db.prepare('SELECT 1 FROM municipalities WHERE id = ? AND province_id = ?').get(data.municipality_id, data.province_id);
     if (!ok) throw new AppError('El municipio no pertenece a la provincia elegida', 400);
+  }
+  if (data.service_area_ids?.length) {
+    const ids = [...new Set(data.service_area_ids)];
+    const { n } = db.prepare(`SELECT COUNT(*) AS n FROM municipalities WHERE id IN (${ids.map(() => '?').join(',')})`).get(...ids) as { n: number };
+    if (n !== ids.length) throw new AppError('Alguna zona de servicio no existe', 400);
   }
 
   // Formulario completo: los campos vacíos se guardan como NULL para poder borrarlos.
   const tx = db.transaction(() => {
     db.prepare(`
       UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
-        lat = COALESCE(?, lat), lng = COALESCE(?, lng), whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
+        lat = ?, lng = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
@@ -162,7 +169,7 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const provider = db.prepare(`
-    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.lat, pp.lng, pp.whatsapp, pp.telegram, pp.email_contact
+    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact
     ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
   `).get(req.params.id);
   if (!provider) throw new AppError('Proveedor no encontrado', 404);
@@ -181,7 +188,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
   const reviews = db.prepare(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar, s.title AS service_title
-    FROM reviews r JOIN users u ON r.client_id = u.id JOIN services s ON r.service_id = s.id
+    FROM reviews r JOIN users u ON r.client_id = u.id LEFT JOIN services s ON r.service_id = s.id
     WHERE r.provider_id = ? ORDER BY r.created_at DESC LIMIT 20
   `).all(req.params.id);
 

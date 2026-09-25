@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Camera, Eye, EyeOff, LogOut, Trash2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
-import { apiError, authApi } from '../../services/api';
+import { apiError, authApi, tokenStore } from '../../services/api';
 import { uploadImage } from '../../lib/image';
 import { memberSince } from '../../lib/format';
 import { PageTitle } from '../../components/DashboardLayout';
@@ -150,7 +150,9 @@ function PasswordForm() {
     if (Object.keys(errs).length) return;
     setSaving(true);
     try {
-      await authApi.updatePassword({ current_password: current, new_password: next });
+      // El backend invalida los tokens anteriores y devuelve uno nuevo para esta sesión.
+      const res = await authApi.updatePassword({ current_password: current, new_password: next });
+      if (res.data.token) tokenStore.set(res.data.token);
       toast('Contraseña actualizada');
       setCurrent(''); setNext(''); setConfirm('');
     } catch (err) {
