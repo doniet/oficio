@@ -43,3 +43,7 @@ coverage/
 .cache/
 # Datos persistentes (SQLite + fotos subidas)
 /data/
+mobile/android/
+mobile/ios/
+mobile/.expo/
+mobile/google-services.json
