@@ -5,11 +5,18 @@
 - Tests: pass — `tsc` + build de imagen OK; E2E con Playwright (contenedor en net_dmz) a 390 px y 1280 px sobre 25 rutas: 0 errores de consola/red, 0 desbordes horizontales. Flujos con escritura OK: enviar mensaje, crear → listar → pausar → borrar servicio. Bugs arreglados en la verificación: regex sin comillas en nginx.conf (el contenedor no arrancaba), desborde del resumen del proveedor en móvil, barra inferior tapando la caja de texto del chat.
 - Security: N/A cambios de superficie. Se intentó abrir `/api/uploads` a clientes (para su avatar) y se revirtió: queda pendiente de decisión de Dariel.
 - Next:
-  - Publicar `oficio.dardoit.com`: añadir Public Hostname en el túnel de la cuenta Doniet (`cloudflared_doniet`, gestionado desde el panel) → `http://traefik:80`. El router Traefik ya existe.
+  - ~~Publicar `oficio.dardoit.com`~~ hecho (ver entrada siguiente).
   - Decidir si los clientes pueden subir avatar (quitar `requireProvider` en `backend/src/routes/uploads.ts` y el `canUpload` de `Account.tsx`).
   - Definir datos de pago reales (cuenta de transferencia/contacto) antes de poner `DEMO_MODE=false`.
   - La conversación demo de `proveedor@demo.com` contiene un mensaje "Prueba E2E …" de la verificación.
 - Blockers: el hostname del túnel requiere acceso al panel Cloudflare de Doniet (Dariel).
+
+## 2026-09-25 06:10 — claude-code (vps2) — Publicación en oficio.dardoit.com
+- Changes: Dariel añadió el Public Hostname `oficio.dardoit.com` → `http://traefik:80` en el túnel Doniet. Sin cambios de código.
+- Tests: pass — E2E Playwright contra la URL pública, 25 rutas a 390 px, login demo cliente y proveedor OK, 0 desbordes. `/api/*` 200, asset inexistente 404 real (sin envenenar caché), CSP y X-Frame-Options presentes.
+- Security: OK. Único error de consola: la CSP bloquea el beacon de Cloudflare Web Analytics que inyecta el edge. Inofensivo; decidir si se desactiva la inyección en CF o se permite `static.cloudflareinsights.com` en la CSP.
+- Next: avatar para clientes (pendiente de decisión), datos de pago reales antes de `DEMO_MODE=false`, decidir sobre el beacon de CF.
+- Blockers: ninguno.
 
 ## 2026-09-25 02:10 — cc-jarvis-ubuntu — Arranque en j-u, CLAUDE.md y revisión a fondo del código
 - Changes: clon en j-u (`~/Documentos/dev/oficio`). El commit del rediseño (`d68b13f`) estaba solo en vps2, sin push a GitHub: se trajo con `git fetch vps2:docker/oficio master` (lectura en vps2). Nuevo `CLAUDE.md` (stack, API, modelo, páginas, dev/prod, gotchas). `frontend/vite.config.ts`: proxy `/api` solo para `vite dev` (el build no cambia).
