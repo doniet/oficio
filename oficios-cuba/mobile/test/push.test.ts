@@ -3,10 +3,13 @@ import { crearGestorPush, rutaDeNotificacion } from '../src/lib/push';
 
 function deps(api: any, token: string | null = 'FCM-1') {
   let lista: string[] = [];
+  let ultimo: string | null = null;
   return {
     api, obtenerToken: jest.fn(async () => token), plataforma: 'android' as const, version: '0.1.0',
     pendientes: { leer: jest.fn(async () => lista), guardar: jest.fn(async (l: string[]) => { lista = l; }) },
+    ultimoToken: { leer: jest.fn(async () => ultimo), guardar: jest.fn(async (t: string | null) => { ultimo = t; }) },
     get lista() { return lista; },
+    get ultimo() { return ultimo; },
   };
 }
 
@@ -38,6 +41,26 @@ describe('gestor de push', () => {
     expect(rutaDeNotificacion({ tipo: 'mensaje', conversation_id: 'c1' })).toBe('/conversacion/c1');
     expect(rutaDeNotificacion({ tipo: 'prueba', n: '1' })).toBeNull();
     expect(rutaDeNotificacion({ tipo: 'mensaje' })).toBeNull();
+  });
+
+  it('el refresco de token (FCM rotado en caliente) se re-registra', async () => {
+    const api = { push: { registrar: jest.fn(async () => undefined), borrar: jest.fn() } };
+    const d = deps(api);
+    const gestor = crearGestorPush(d);
+    await gestor.alRenovarToken('FCM-2');
+    expect(api.push.registrar).toHaveBeenCalledWith({ canal: 'fcm', token: 'FCM-2', plataforma: 'android', app_version: '0.1.0' });
+    expect(d.ultimo).toBe('FCM-2');
+  });
+
+  it('permiso revocado a mitad de sesión: al salir igual borra el token que quedó registrado', async () => {
+    const api = { push: { registrar: jest.fn(async () => undefined), borrar: jest.fn(async () => undefined) } };
+    const d = deps(api);
+    const gestor = crearGestorPush(d);
+    await gestor.alEntrar(); // registra 'FCM-1' y lo persiste como último token
+    d.obtenerToken.mockResolvedValue(null); // el usuario revocó el permiso de notificaciones
+    await gestor.alSalir();
+    expect(api.push.borrar).toHaveBeenCalledWith('FCM-1');
+    expect(d.ultimo).toBeNull();
   });
 });
 

@@ -9,7 +9,7 @@ import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ProveedorSesion, useSesion } from '../src/lib/contexto';
-import { crearGestorPush, obtenerTokenFcm, pendientesDeBorrar, rutaDeNotificacion } from '../src/lib/push';
+import { crearGestorPush, obtenerTokenFcm, pendientesDeBorrar, rutaDeNotificacion, ultimoTokenRegistrado } from '../src/lib/push';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, staleTime: 30_000 } } });
 
@@ -33,6 +33,7 @@ function Push({ gestorRef }: { gestorRef: GestorRef }) {
     plataforma: Platform.OS as 'android' | 'ios',
     version: Constants.expoConfig?.version ?? '0.0.0',
     pendientes: pendientesDeBorrar,
+    ultimoToken: ultimoTokenRegistrado,
   }), [api]);
   gestorRef.current = gestor;
 
@@ -43,11 +44,24 @@ function Push({ gestorRef }: { gestorRef: GestorRef }) {
     gestor.reintentarPendientes().then(() => gestor.alEntrar()).catch(() => {});
   }, [usuario, gestor]);
 
+  // FCM puede rotar el token en caliente mientras hay sesión: solo se escucha con usuario logueado,
+  // y se deja de escuchar al cerrar sesión o desmontar (evita re-registrar a nombre de nadie).
+  useEffect(() => {
+    if (!usuario) return;
+    const sub = Notifications.addPushTokenListener((token) => {
+      if (typeof token.data === 'string') gestor.alRenovarToken(token.data).catch(() => {});
+    });
+    return () => sub.remove();
+  }, [usuario, gestor]);
+
   const respuesta = Notifications.useLastNotificationResponse();
   useEffect(() => {
     if (!respuesta) return;
     const ruta = rutaDeNotificacion(respuesta.notification.request.content.data);
     if (ruta) router.push(ruta as never);
+    // Se limpia DESPUÉS de navegar (nunca antes): si se limpiara antes, un tap real en cold start
+    // se perdería. Sin limpiar, un tap viejo reabre la misma conversación en cada apertura futura.
+    Notifications.clearLastNotificationResponse();
   }, [respuesta]);
 
   useEffect(() => {
