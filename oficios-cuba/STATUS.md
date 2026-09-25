@@ -73,3 +73,10 @@
 - Security: nuevo tráfico saliente de `oficio_web` a `dardoventas.com` (URL fija, sin cookies ni IP del visitante). Sin cambios de Traefik, túnel, puertos ni CSP. Google real pendiente de decisión (Client ID + salida de la API).
 - Next: desplegar en vps2 (backup → build → up); en prod la base demo conserva sus precios viejos en USD salvo que se re-siembre. Google real: crear OAuth Client y decidir la salida de red de `oficio_api`.
 - Blockers: ninguno.
+
+## 2026-09-25 22:50 — claude-code (vps2) — Despliegue de planes/CUP-USD/agenda en oficio.dardoit.com
+- Changes: backup `data/oficios-2026-09-25-2240-pre-deploy.db`; base anterior movida a `data/reemplazada-2026-09-25/` y re-sembrada (demo con precios cubanos); build + up de `oficio_api` y `oficio_web` con b1a7e39.
+- Tests: pass — base en `user_version` 3, `integrity_check` ok, FK limpias (17 usuarios, 12 perfiles, 22 servicios, 34 reseñas, 3 citas). Por Cloudflare: `/`, `/buscar`, `/planes`, `/api/health`, `/api/config`, `/api/providers/featured` → 200; `/api/tasas` sirve elTOQUE vía dardoventas; `/api/subscriptions/plans` ya da Gratis/Básico/Profesional; login + subida de foto de punta a punta → 200 image/png.
+- Security: sin cambios de red, túnel ni `.env`.
+- Next: Google real (OAuth Client + salida de red de `oficio_api`), pendiente de decisión.
+- Blockers: ninguno.
