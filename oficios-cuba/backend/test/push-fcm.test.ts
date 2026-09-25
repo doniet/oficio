@@ -82,6 +82,13 @@ describe('canal FCM', () => {
     }));
     expect(await crearCanalFcm(cuenta, malo as unknown as typeof fetch).enviar('X', n)).toBe('error');
   });
+
+  it('error.details que no es un array (cuerpo inesperado) → error, sin lanzar', async () => {
+    for (const details of [{ errorCode: 'UNREGISTERED' }, 'UNREGISTERED', 42, null]) {
+      const raro = fetchFalso(() => json(400, { error: { status: 'INVALID_ARGUMENT', details } }));
+      expect(await crearCanalFcm(cuenta, raro as unknown as typeof fetch).enviar('X', n)).toBe('error');
+    }
+  });
 });
 
 describe('cargarCuentaFcm', () => {

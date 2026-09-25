@@ -32,7 +32,9 @@ interface RespuestaErrorFcm { error?: { status?: string; details?: { errorCode?:
 // rotada) también dice "the registration token" en su texto, y confiar en eso borraría TODOS
 // los dispositivos válidos ante un simple error de configuración.
 function clasificarError(status: number, cuerpo: RespuestaErrorFcm | null): ResultadoEnvio {
-  const errorCode = cuerpo?.error?.details?.find((d) => d && typeof d.errorCode === 'string')?.errorCode;
+  // `details` viene de la red: si no es un array (cuerpo inesperado, proxy intermedio), se ignora.
+  const details = cuerpo?.error?.details;
+  const errorCode = Array.isArray(details) ? details.find((d) => d && typeof d.errorCode === 'string')?.errorCode : undefined;
   if (errorCode === 'UNREGISTERED') return 'token_invalido';
   if (status === 404 && cuerpo?.error?.status === 'NOT_FOUND') return 'token_invalido';
   if (errorCode === 'SENDER_ID_MISMATCH') {

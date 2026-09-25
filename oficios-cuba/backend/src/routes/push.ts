@@ -23,7 +23,7 @@ router.post('/devices', asyncHandler(async (req: AuthRequest, res) => {
 }));
 
 router.delete('/devices/:token', asyncHandler(async (req: AuthRequest, res) => {
-  borrarDispositivo(req.user!.id, req.params.token);
+  borrarDispositivo(req.params.token);
   res.json({ ok: true });
 }));
 

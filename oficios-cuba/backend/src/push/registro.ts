@@ -14,8 +14,15 @@ export function registrarDispositivo(userId: string, d: { canal: Canal; token: s
   `).run(uuidv4(), userId, d.canal, d.token, d.plataforma, d.app_version, ahora, ahora);
 }
 
-export function borrarDispositivo(userId: string, token: string) {
-  db.prepare('DELETE FROM push_devices WHERE user_id = ? AND token = ?').run(userId, token);
+// Borra por token, sea de quien sea: el token FCM es un secreto que solo conoce el dispositivo
+// y borrarlo solo deja de enviarle avisos. Así, si la app no pudo borrarlo al cerrar la sesión
+// de una cuenta, lo reintenta con la sesión de la siguiente cuenta que entre en ese teléfono.
+export function borrarDispositivo(token: string) {
+  db.prepare('DELETE FROM push_devices WHERE token = ?').run(token);
+}
+
+export function borrarDispositivosDe(userId: string) {
+  db.prepare('DELETE FROM push_devices WHERE user_id = ?').run(userId);
 }
 
 export function borrarToken(canal: Canal, token: string) {

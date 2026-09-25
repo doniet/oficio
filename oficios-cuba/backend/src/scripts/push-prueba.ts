@@ -5,27 +5,49 @@ import db, { initDatabase } from '../db/index.js';
 import { crearCanalFcm, cargarCuentaFcm } from '../push/fcm.js';
 import { dispositivosDe } from '../push/registro.js';
 
-initDatabase();
-const [email, nArg = '10', segArg = '30'] = process.argv.slice(2);
-const cuenta = cargarCuentaFcm();
-if (!email || !cuenta) {
-  console.error('Uso: push-prueba <email> [n] [segundos]  (requiere FCM_SERVICE_ACCOUNT_FILE)');
-  process.exit(2);
-}
-const usuario = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase()) as { id: string } | undefined;
-if (!usuario) { console.error(`No existe ${email}`); process.exit(1); }
-const dispositivos = dispositivosDe(usuario.id);
-if (!dispositivos.length) { console.error('Ese usuario no tiene dispositivos registrados (¿abrió la app con sesión?)'); process.exit(1); }
+const USO = 'Uso: push-prueba <email> [n=10] [segundos=30]  (n y segundos: enteros positivos; requiere FCM_SERVICE_ACCOUNT_FILE)';
 
-const canal = crearCanalFcm(cuenta);
-const n = Number(nArg);
-(async () => {
+function enteroPositivo(texto: string, nombre: string): number {
+  const v = Number(texto);
+  if (!/^\d+$/.test(texto) || !Number.isSafeInteger(v) || v < 1) {
+    console.error(`${nombre} debe ser un entero positivo (recibido: "${texto}")\n${USO}`);
+    process.exit(2);
+  }
+  return v;
+}
+
+async function main() {
+  const [email, nArg = '10', segArg = '30'] = process.argv.slice(2);
+  if (!email) { console.error(USO); process.exit(2); }
+  const n = enteroPositivo(nArg, 'n');
+  const segundos = enteroPositivo(segArg, 'segundos');
+
+  initDatabase();
+  const cuenta = cargarCuentaFcm();
+  if (!cuenta) { console.error(USO); process.exit(2); }
+  const usuario = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase()) as { id: string } | undefined;
+  if (!usuario) { console.error(`No existe ${email}`); process.exit(1); }
+  const dispositivos = dispositivosDe(usuario.id);
+  if (!dispositivos.length) { console.error('Ese usuario no tiene dispositivos registrados (¿abrió la app con sesión?)'); process.exit(1); }
+
+  const canal = crearCanalFcm(cuenta);
   for (let i = 1; i <= n; i++) {
     const hora = new Date().toISOString().slice(11, 19);
     for (const d of dispositivos) {
-      const r = await canal.enviar(d.token, { titulo: `Prueba ${i}/${n} · ${hora} UTC`, cuerpo: 'Anota a qué hora te llegó', datos: { tipo: 'prueba', n: String(i) } });
+      // Un fallo de red en un envío no debe abortar la prueba de campo: se anota y se sigue.
+      let r: string;
+      try {
+        r = await canal.enviar(d.token, { titulo: `Prueba ${i}/${n} · ${hora} UTC`, cuerpo: 'Anota a qué hora te llegó', datos: { tipo: 'prueba', n: String(i) } });
+      } catch (err) {
+        r = `excepción: ${err instanceof Error ? err.message : String(err)}`;
+      }
       console.log(`${hora} UTC  #${i}  …${d.token.slice(-8)}  ${r}`);
     }
-    if (i < n) await new Promise((r) => setTimeout(r, Number(segArg) * 1000));
+    if (i < n) await new Promise((res) => setTimeout(res, segundos * 1000));
   }
-})();
+}
+
+main().catch((err) => {
+  console.error(`push-prueba falló: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});

@@ -6,6 +6,7 @@ import db from '../db/index.js';
 import { authMiddleware, AuthRequest, generateToken } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida } from '../lib/entrada.js';
+import { borrarDispositivosDe } from '../push/registro.js';
 
 const router = Router();
 
@@ -195,6 +196,9 @@ router.put('/password', authMiddleware, asyncHandler(async (req: AuthRequest, re
   // Cambiar la contraseña cierra las demás sesiones; esta sigue con el token nuevo.
   db.prepare('UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(newPasswordHash, new Date().toISOString(), req.user!.id);
+  // Las sesiones revocadas no deben seguir recibiendo avisos; la app vuelve a registrar su
+  // token en el próximo inicio de sesión o arranque en frío.
+  borrarDispositivosDe(req.user!.id);
 
   res.json({ message: 'Contraseña actualizada correctamente', token: generateToken(req.user!) });
 }));

@@ -21,14 +21,43 @@ describe('dispositivos push', () => {
     expect(dispositivosDe(b.userId)).toEqual([{ canal: 'fcm', token: 'tok-compartido' }]);
   });
 
-  it('borrar solo quita el token propio', async () => {
+  it('cualquier sesión puede borrar un token que conoce (reintento tras cambiar de cuenta)', async () => {
+    // El token FCM solo lo conoce el teléfono: quien lo tiene es ese dispositivo, y borrarlo
+    // solo deja de enviarle avisos. Es lo que permite reintentar el borrado pendiente de la
+    // cuenta anterior con la sesión de la cuenta que entra después.
     const a = await registrar('client');
     const b = await registrar('client');
     await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-de-a'));
+    await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-otro-de-a'));
     expect((await api.delete('/api/push/devices/tok-de-a').set(b.auth)).status).toBe(200);
+    expect(dispositivosDe(a.userId)).toEqual([{ canal: 'fcm', token: 'tok-otro-de-a' }]);
+  });
+
+  it('borrar exige sesión', async () => {
+    const a = await registrar('client');
+    await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-protegido'));
+    expect((await api.delete('/api/push/devices/tok-protegido')).status).toBe(401);
     expect(dispositivosDe(a.userId)).toHaveLength(1);
-    await api.delete('/api/push/devices/tok-de-a').set(a.auth);
-    expect(dispositivosDe(a.userId)).toHaveLength(0);
+  });
+
+  it('cambiar la contraseña borra los dispositivos de esa cuenta (y solo los suyos)', async () => {
+    const a = await registrar('client');
+    const b = await registrar('client');
+    await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-a-1'));
+    await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-a-2'));
+    await api.post('/api/push/devices').set(b.auth).send(dispositivo('tok-b-1'));
+    const res = await api.put('/api/auth/password').set(a.auth).send({ current_password: 'Clave-segura-1', new_password: 'Otra-clave-2' });
+    expect(res.status).toBe(200);
+    expect(dispositivosDe(a.userId)).toEqual([]);
+    expect(dispositivosDe(b.userId)).toEqual([{ canal: 'fcm', token: 'tok-b-1' }]);
+  });
+
+  it('una contraseña actual incorrecta no borra los dispositivos', async () => {
+    const a = await registrar('client');
+    await api.post('/api/push/devices').set(a.auth).send(dispositivo('tok-a-seguro'));
+    const res = await api.put('/api/auth/password').set(a.auth).send({ current_password: 'mala-clave', new_password: 'Otra-clave-2' });
+    expect(res.status).toBe(400);
+    expect(dispositivosDe(a.userId)).toHaveLength(1);
   });
 
   it('valida la entrada y exige sesión', async () => {
