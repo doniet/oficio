@@ -3,6 +3,7 @@ import { Figtree_400Regular, Figtree_600SemiBold } from '@expo-google-fonts/figt
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ProveedorSesion } from '../src/lib/contexto';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, staleTime: 30_000 } } });
 
@@ -12,9 +13,15 @@ export default function Raiz() {
   if (!listas) return null;
   return (
     <QueryClientProvider client={queryClient}>
-      <Stack screenOptions={{ headerTitleStyle: { fontFamily: 'Figtree_600SemiBold' } }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
+      <ProveedorSesion>
+        <Stack screenOptions={{ headerTitleStyle: { fontFamily: 'Figtree_600SemiBold' } }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)/entrar" options={{ presentation: 'modal', title: 'Entrar' }} />
+          <Stack.Screen name="(auth)/registro" options={{ presentation: 'modal', title: 'Crear cuenta' }} />
+          <Stack.Screen name="servicio/[id]" options={{ title: '' }} />
+          <Stack.Screen name="conversacion/[id]" options={{ title: 'Conversación' }} />
+        </Stack>
+      </ProveedorSesion>
     </QueryClientProvider>
   );
 }
