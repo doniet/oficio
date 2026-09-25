@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # ─── BACKEND ───
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runner
+      # BuildKit features
+      network: host
+    container_name: oficios-cuba-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/oficios.db
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-min-32-chars}
+      - JWT_EXPIRES_IN=7d
+      - FRONTEND_URL=http://localhost
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PLAN_BASIC_PRICE=9.99
+      - PLAN_PRO_PRICE=19.99
+      - PLAN_PREMIUM_PRICE=39.99
+    volumes:
+      - backend_data:/app/data
+      - ./backend/.env:/app/.env:ro
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - oficios-network
+    # DNS for better connectivity
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+      - 223.5.5.5
+
+  # ─── FRONTEND ───
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+      network: host
+    container_name: oficios-cuba-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - oficios-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+      - 223.5.5.5
+
+  # ─── DB INIT (runs once) ───
+  db-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder
+      network: host
+    container_name: oficios-cuba-db-init
+    command: sh -c "npm run db:init && npm run db:seed"
+    environment:
+      - DATABASE_PATH=/app/data/oficios.db
+      - NODE_ENV=production
+    volumes:
+      - backend_data:/app/data
+    networks:
+      - oficios-network
+    profiles:
+      - init
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+      - 223.5.5.5
+
+volumes:
+  backend_data:
+    driver: local
+
+networks:
+  oficios-network:
+    driver: bridge
+    name: oficios-cuba-network
