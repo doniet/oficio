@@ -47,3 +47,8 @@ mobile/android/
 mobile/ios/
 mobile/.expo/
 mobile/google-services.json
+
+# Secretos de push (repo PÚBLICO): cuentas de servicio y config de Firebase
+secrets/
+**/google-services.json
+*firebase-adminsdk*.json
