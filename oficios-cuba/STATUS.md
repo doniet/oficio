@@ -18,7 +18,7 @@
 - Next: avatar para clientes (pendiente de decisión), datos de pago reales antes de `DEMO_MODE=false`, decidir sobre el beacon de CF.
 - Blockers: ninguno.
 
-## 2026-09-25 02:10 — cc-jarvis-ubuntu — Arranque en j-u, CLAUDE.md y revisión a fondo del código
+## 2026-09-25 06:10 UTC — cc-jarvis-ubuntu — Arranque en j-u, CLAUDE.md y revisión a fondo del código
 - Changes: clon en j-u (`~/Documentos/dev/oficio`). El commit del rediseño (`d68b13f`) estaba solo en vps2, sin push a GitHub: se trajo con `git fetch vps2:docker/oficio master` (lectura en vps2). Nuevo `CLAUDE.md` (stack, API, modelo, páginas, dev/prod, gotchas). `frontend/vite.config.ts`: proxy `/api` solo para `vite dev` (el build no cambia).
 - Tests: typecheck N/A (sin cambios de lógica). Dev local OK: API :3000 (demo, 12 proveedores / 22 servicios), vite :5176, home sin errores de consola.
 - Security: revisión de solo lectura. Sin IDOR ni inyección SQL; subida con detección por firma. Hallazgos que importan (detalle abajo).
@@ -33,7 +33,7 @@
 - Next: decidir con Dariel/Doniet (a) el push de `d68b13f` + este commit a GitHub, (b) quitar el modo demo de prod o esconder la web hasta tenerlo, (c) orden de arreglos: nginx `^~` → cascada de reseñas → límite de plan → admin de pagos.
 - Blockers: los cambios en prod (vps2) y el modo demo tocan superficie pública → OK de Dariel.
 
-## 2026-09-25 03:00 — cc-jarvis-ubuntu — Corrección de los hallazgos de la revisión
+## 2026-09-25 07:00 UTC — cc-jarvis-ubuntu — Corrección de los hallazgos de la revisión
 - Changes:
   - **nginx** `^~` en `/api/`, `/assets/`, `/demo/`: las fotos subidas llegan a la API y la caché de assets se aplica.
   - **Migraciones versionadas** (`PRAGMA user_version`, `MIGRACIONES` en `db/index.ts`): v1 reconstruye `reviews` con `service_id` NULL / `ON DELETE SET NULL`; v2 añade `users.password_changed_at`. Tabla nueva `uploads`.
@@ -51,3 +51,10 @@
   - **Prod (vps2) sigue con el código anterior y `DEMO_MODE=true` públicamente.** Desplegar con el procedimiento de `DOCKER.md` (backup → pull → up --build) y decidir el modo demo — requiere OK de Dariel.
   - Pendiente menor: fechas en dos formatos (`CURRENT_TIMESTAMP` vs ISO), `strict:false` del backend, endpoints sin uso, limpieza de fotos huérfanas, backup automático de `data/`, mostrar la dirección del local en el perfil público.
 - Blockers: ninguno para seguir desarrollando.
+
+## 2026-09-25 07:12 UTC — cc-jarvis-ubuntu — Despliegue en vps2 (oficio.dardoit.com), DEMO_MODE=true
+- Changes: backup `data/oficios-2026-09-25-0708-pre-deploy.db` (API `.backup()`), vps2 alineado con `origin/master` (su commit local `66b4db6` integrado en GitHub como `56fba14`; queda la rama `respaldo-vps2-66b4db6` allí), `docker compose up -d --build`. Migración 0→2 aplicada al arrancar. `DEMO_MODE=true` a propósito: es entorno de desarrollo con HTTPS.
+- Tests: pass — ambos contenedores healthy; `user_version=2`, `foreign_key_check` vacío, `integrity_check` ok, conteos iguales a antes (17 usuarios, 22 servicios, 34 reseñas, 35 conversaciones, 9 mensajes). Por Cloudflare: subida de foto → GET 200 `image/png` (antes 404); home y /buscar 200; asset inexistente 404; sin `lat` en el listado; UI a 390 px OK con la insignia "Premium".
+- Security: sin cambios de red/Traefik/túnel. Único error de consola: la CSP bloquea el beacon de CF Web Analytics (pendiente de decidir, ver entrada 06:10).
+- Next: queda en `data/uploads/` un PNG de prueba de 72 bytes de la verificación (del proveedor demo, sin usar). Pendientes menores en la entrada de las 07:00.
+- Blockers: ninguno.
