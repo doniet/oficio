@@ -13,6 +13,7 @@ import reviewRoutes from './routes/reviews.js';
 import favoriteRoutes from './routes/favorites.js';
 import statsRoutes from './routes/stats.js';
 import uploadRoutes, { UPLOAD_DIR } from './routes/uploads.js';
+import pushRoutes from './routes/push.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { DEMO_MODE } from './config.js';
 
@@ -87,6 +88,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/push', pushRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);

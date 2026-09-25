@@ -210,6 +210,20 @@ CREATE TABLE IF NOT EXISTS uploads (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Dispositivos para notificaciones push (un token pertenece a un solo usuario)
+CREATE TABLE IF NOT EXISTS push_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  canal TEXT NOT NULL CHECK (canal IN ('fcm')),
+  token TEXT NOT NULL,
+  plataforma TEXT NOT NULL CHECK (plataforma IN ('android', 'ios')),
+  app_version TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE (canal, token)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
@@ -227,6 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_municipalities_province ON municipalities(provinc
 CREATE INDEX IF NOT EXISTS idx_favorites_client ON favorites(client_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_client_provider ON reviews(client_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
 `;
 
 // Migraciones de bases ya existentes (la de producción nació sin control de versión = 0).
@@ -260,6 +275,24 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   // 2 — fecha del último cambio de contraseña, para invalidar los tokens anteriores.
   (d) => {
     d.exec('ALTER TABLE users ADD COLUMN password_changed_at DATETIME');
+  },
+  // 3 — push_devices. La tabla es nueva: basta con crearla (mismo SQL que en `schema`).
+  (d) => {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS push_devices (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        canal TEXT NOT NULL CHECK (canal IN ('fcm')),
+        token TEXT NOT NULL,
+        plataforma TEXT NOT NULL CHECK (plataforma IN ('android', 'ios')),
+        app_version TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (canal, token)
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
+    `);
   },
 ];
 

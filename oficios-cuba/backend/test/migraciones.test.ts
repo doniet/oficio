@@ -34,6 +34,9 @@ describe('migraciones sobre una base existente', () => {
     const columnas = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name);
     expect(columnas).toContain('password_changed_at');
 
+    const tablas = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
+    expect(tablas).toContain('push_devices');
+
     // Idempotente: arrancar otra vez no rehace nada.
     initDatabase();
     expect(db.prepare('SELECT COUNT(*) AS n FROM reviews').get()).toEqual({ n: 1 });
