@@ -18,11 +18,18 @@ async function start() {
   expireSubscriptions();
   setInterval(expireSubscriptions, 60 * 60 * 1000).unref();
 
-  const cuentaFcm = cargarCuentaFcm();
+  // El push es opcional: nunca debe tumbar el arranque de la API (igual que nunca
+  // retrasa ni rompe la respuesta del chat — ver push/avisos.ts).
+  let cuentaFcm: ReturnType<typeof cargarCuentaFcm> = null;
+  try {
+    cuentaFcm = cargarCuentaFcm();
+  } catch (err) {
+    console.log(`Push FCM desactivado: ${(err as Error).message}`);
+  }
   if (cuentaFcm) {
     usarCanal('fcm', crearCanalFcm(cuentaFcm));
     console.log(`Push FCM activo (proyecto ${cuentaFcm.project_id})`);
-  } else {
+  } else if (!process.env.FCM_SERVICE_ACCOUNT_FILE) {
     console.log('Push FCM desactivado: falta FCM_SERVICE_ACCOUNT_FILE');
   }
 

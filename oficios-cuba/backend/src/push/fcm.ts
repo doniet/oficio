@@ -6,9 +6,43 @@ interface CuentaServicio { project_id: string; client_email: string; private_key
 
 export function cargarCuentaFcm(ruta = process.env.FCM_SERVICE_ACCOUNT_FILE): CuentaServicio | null {
   if (!ruta) return null;
-  const c = JSON.parse(readFileSync(ruta, 'utf8'));
+  let contenido: string;
+  try {
+    contenido = readFileSync(ruta, 'utf8');
+  } catch {
+    // Nunca el detalle del sistema de archivos: solo la ruta, sin contenido.
+    throw new Error(`No se pudo leer ${ruta}`);
+  }
+  let c: Partial<CuentaServicio>;
+  try {
+    c = JSON.parse(contenido);
+  } catch {
+    // JSON.parse en Node puede citar un fragmento del texto en el mensaje de error;
+    // nunca lo reenviamos tal cual (podría filtrar la clave privada).
+    throw new Error(`${ruta} no es un JSON válido`);
+  }
   if (!c.project_id || !c.client_email || !c.private_key) throw new Error(`${ruta} no es una cuenta de servicio de Firebase`);
-  return c;
+  return c as CuentaServicio;
+}
+
+interface RespuestaErrorFcm { error?: { status?: string; details?: { errorCode?: string }[] } }
+
+// Clasifica por el error ESTRUCTURADO de FCM (`error.details[].errorCode`, `error.status`),
+// nunca por un grep del mensaje humano: SENDER_ID_MISMATCH (cuenta de servicio equivocada o
+// rotada) también dice "the registration token" en su texto, y confiar en eso borraría TODOS
+// los dispositivos válidos ante un simple error de configuración.
+function clasificarError(status: number, cuerpo: RespuestaErrorFcm | null): ResultadoEnvio {
+  const errorCode = cuerpo?.error?.details?.find((d) => d && typeof d.errorCode === 'string')?.errorCode;
+  if (errorCode === 'UNREGISTERED') return 'token_invalido';
+  if (status === 404 && cuerpo?.error?.status === 'NOT_FOUND') return 'token_invalido';
+  if (errorCode === 'SENDER_ID_MISMATCH') {
+    console.warn('push fcm: SENDER_ID_MISMATCH — revisa FCM_SERVICE_ACCOUNT_FILE (¿cuenta de servicio equivocada o rotada?)');
+  }
+  // 400 INVALID_ARGUMENT: la documentación de FCM no da una forma estructurada confiable de
+  // distinguir "el token es inválido" de "el payload está mal formado" — nunca se borra el
+  // dispositivo por ambigüedad. Igual para 401/403 de auth, QUOTA_EXCEEDED, UNAVAILABLE,
+  // INTERNAL y cualquier otro código no reconocido arriba.
+  return 'error';
 }
 
 export function crearCanalFcm(cuenta: CuentaServicio, fetchImpl: typeof fetch = fetch): CanalPush {
@@ -49,12 +83,7 @@ export function crearCanalFcm(cuenta: CuentaServicio, fetchImpl: typeof fetch = 
         }),
       });
       if (res.ok) return 'ok';
-      // UNREGISTERED (404) siempre es token muerto. INVALID_ARGUMENT (400) también lo es
-      // SOLO si el cuerpo señala el token: nuestro payload es fijo y válido, pero no lo
-      // asumimos — si el 400 no menciona el token, es un fallo real y no se borra el dispositivo.
-      const cuerpo = JSON.stringify(await res.json().catch(() => ({})));
-      if (res.status === 404 || /UNREGISTERED|registration token/i.test(cuerpo)) return 'token_invalido';
-      return 'error';
+      return clasificarError(res.status, await res.json().catch(() => null));
     },
   };
 }
