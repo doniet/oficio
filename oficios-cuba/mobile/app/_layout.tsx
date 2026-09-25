@@ -8,8 +8,8 @@ import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { ProveedorSesion, useSesion } from '../src/lib/contexto';
-import { crearGestorPush, obtenerTokenFcm, pendientesDeBorrar, rutaDeNotificacion, ultimoTokenRegistrado } from '../src/lib/push';
+import { ProveedorSesion, requiereSesion, useSesion } from '../src/lib/contexto';
+import { accionDeToque, crearGestorPush, obtenerTokenFcm, pendientesDeBorrar, ultimoTokenRegistrado } from '../src/lib/push';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, staleTime: 30_000 } } });
 
@@ -24,7 +24,7 @@ type GestorRef = MutableRefObject<ReturnType<typeof crearGestorPush> | null>;
 // del usuario ya autenticado). Expone el gestor al layout vía `gestorRef` para que `salir()` pueda
 // borrar el token del dispositivo antes de cerrar sesión.
 function Push({ gestorRef }: { gestorRef: GestorRef }) {
-  const { usuario, api } = useSesion();
+  const { usuario, api, cargando, sinRed } = useSesion();
   const queryClient = useQueryClient();
 
   const gestor = useMemo(() => crearGestorPush({
@@ -55,14 +55,20 @@ function Push({ gestorRef }: { gestorRef: GestorRef }) {
   }, [usuario, gestor]);
 
   const respuesta = Notifications.useLastNotificationResponse();
+  const tocada = useRef<string | null>(null);
   useEffect(() => {
-    if (!respuesta) return;
-    const ruta = rutaDeNotificacion(respuesta.notification.request.content.data);
-    if (ruta) router.push(ruta as never);
+    if (!respuesta || tocada.current === respuesta.notification.request.identifier) return;
+    const accion = accionDeToque(respuesta.notification.request.content.data, { cargando, sinRed, hayUsuario: !!usuario });
+    // Arranque en frío: aún no se sabe si hay sesión; el efecto se repite cuando termine de cargar.
+    if (accion?.tipo === 'esperar') return;
+    tocada.current = respuesta.notification.request.identifier;
+    if (accion?.tipo === 'abrir') router.push(accion.ruta as never);
+    // Sin sesión: a Entrar, y tras entrar vuelve a la conversación (nunca un chat con 401).
+    if (accion?.tipo === 'entrar') requiereSesion(router, null, accion.volver);
     // Se limpia DESPUÉS de navegar (nunca antes): si se limpiara antes, un tap real en cold start
     // se perdería. Sin limpiar, un tap viejo reabre la misma conversación en cada apertura futura.
     Notifications.clearLastNotificationResponse();
-  }, [respuesta]);
+  }, [respuesta, cargando, sinRed, usuario]);
 
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener(() => {

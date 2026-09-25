@@ -41,3 +41,29 @@ export function crearSesion({ almacen, api }: { almacen: Almacen; api: ClienteAp
     },
   };
 }
+
+// Los dos caminos que terminan una sesión: el botón "Cerrar sesión" y un 401 del servidor
+// (token revocado, contraseña cambiada en otro teléfono). En ambos se vacía la caché de datos
+// (React Query): si no, el siguiente usuario del teléfono vería las conversaciones del anterior.
+export function crearCierreSesion({ almacen, limpiarDatos, olvidarUsuario }: {
+  almacen: Pick<Almacen, 'borrar'>; limpiarDatos(): void; olvidarUsuario(): void;
+}) {
+  function terminar() {
+    olvidarUsuario();
+    limpiarDatos();
+  }
+  return {
+    async salir(antes?: () => Promise<void>) {
+      try {
+        await antes?.();
+        await almacen.borrar();
+      } finally {
+        terminar();
+      }
+    },
+    alNoAutorizado() {
+      void almacen.borrar();
+      terminar();
+    },
+  };
+}

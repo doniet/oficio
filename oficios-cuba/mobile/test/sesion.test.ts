@@ -1,5 +1,5 @@
-import { ErrorApi } from '@oficio/shared';
-import { crearSesion } from '../src/lib/sesion';
+import { crearCliente, ErrorApi } from '@oficio/shared';
+import { crearCierreSesion, crearSesion } from '../src/lib/sesion';
 
 function almacenFalso(inicial: string | null = null) {
   let valor = inicial;
@@ -38,5 +38,41 @@ describe('sesión', () => {
     const api = { auth: { login: jest.fn(async () => ({ token: 'NUEVO', user: usuario })) } } as any;
     expect(await crearSesion({ almacen, api }).entrar({ email: 'a@b.cu', password: 'x' })).toEqual(usuario);
     expect(almacen.valor).toBe('NUEVO');
+  });
+});
+
+describe('cierre de sesión', () => {
+  function cierreFalso() {
+    const almacen = almacenFalso('T');
+    const limpiarDatos = jest.fn();
+    const olvidarUsuario = jest.fn();
+    return { almacen, limpiarDatos, olvidarUsuario, cierre: crearCierreSesion({ almacen, limpiarDatos, olvidarUsuario }) };
+  }
+
+  it('cerrar sesión vacía la caché de datos (el siguiente usuario no ve las conversaciones del anterior)', async () => {
+    const f = cierreFalso();
+    const antes = jest.fn(async () => undefined);
+    await f.cierre.salir(antes);
+    expect(antes).toHaveBeenCalled();
+    expect(f.almacen.valor).toBeNull();
+    expect(f.limpiarDatos).toHaveBeenCalledTimes(1);
+    expect(f.olvidarUsuario).toHaveBeenCalledTimes(1);
+  });
+
+  it('aunque falle el paso previo (borrar el token push), la sesión se cierra y la caché se vacía', async () => {
+    const f = cierreFalso();
+    await expect(f.cierre.salir(async () => { throw new Error('x'); })).rejects.toThrow('x');
+    expect(f.limpiarDatos).toHaveBeenCalledTimes(1);
+    expect(f.olvidarUsuario).toHaveBeenCalledTimes(1);
+  });
+
+  it('un 401 del servidor (cliente real de @oficio/shared) también vacía la caché y borra el token', async () => {
+    const f = cierreFalso();
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ error: 'Token inválido' }), { status: 401, headers: { 'content-type': 'application/json' } }));
+    const api = crearCliente({ baseUrl: 'http://x/api', getToken: async () => 'T', onUnauthorized: f.cierre.alNoAutorizado, fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(api.conversaciones.listar()).rejects.toMatchObject({ status: 401 });
+    expect(f.limpiarDatos).toHaveBeenCalledTimes(1);
+    expect(f.olvidarUsuario).toHaveBeenCalledTimes(1);
+    expect(f.almacen.borrar).toHaveBeenCalled();
   });
 });

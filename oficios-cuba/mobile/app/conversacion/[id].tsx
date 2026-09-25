@@ -3,6 +3,7 @@ import { AppState, FlatList, KeyboardAvoidingView, Platform, Text, TextInput, Vi
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { ErrorApi, esquemaMensaje, Message, shortTime } from '@oficio/shared';
 import { Boton } from '../../src/componentes/Boton';
+import { chatVacio, trasEnviar, trasSondeo } from '../../src/lib/chat';
 import { useSesion } from '../../src/lib/contexto';
 import { colores, espacio, fuentes } from '../../src/lib/tema';
 
@@ -14,20 +15,19 @@ export default function Conversacion() {
   const [texto, setTexto] = useState('');
   const [error, setError] = useState<string>();
   const [enviando, setEnviando] = useState(false);
-  const ultimo = useRef<string | undefined>(undefined);
+  // Ref (no estado) para que sondeo y envío partan siempre del último valor, sin carreras de render.
+  const chat = useRef(chatVacio);
 
   useEffect(() => {
     let vivo = true;
     let reloj: ReturnType<typeof setInterval> | undefined;
     async function traer() {
       try {
-        const r = await api.conversaciones.detalle(id, ultimo.current);
+        const r = await api.conversaciones.detalle(id, chat.current.cursor);
         if (!vivo) return;
-        if (!ultimo.current) navegacion.setOptions({ title: usuario?.user_type === 'client' ? r.conversation.provider_name : r.conversation.client_name });
-        if (r.messages.length) {
-          ultimo.current = r.messages[r.messages.length - 1].created_at;
-          setMensajes((m) => [...m, ...r.messages.filter((n) => !m.some((x) => x.id === n.id))]);
-        }
+        if (!chat.current.cursor) navegacion.setOptions({ title: usuario?.user_type === 'client' ? r.conversation.provider_name : r.conversation.client_name });
+        chat.current = trasSondeo(chat.current, r.messages);
+        setMensajes(chat.current.mensajes);
         setError(undefined);
       } catch (e) { if (vivo) setError(e instanceof ErrorApi ? e.message : 'No se pudo actualizar'); }
     }
@@ -45,8 +45,8 @@ export default function Conversacion() {
     setEnviando(true);
     try {
       const { message } = await api.conversaciones.enviar(id, d.data.content);
-      setMensajes((m) => [...m, message]);
-      ultimo.current = message.created_at;
+      chat.current = trasEnviar(chat.current, message);
+      setMensajes(chat.current.mensajes);
       setTexto(''); setError(undefined);
     } catch (e) { setError(e instanceof ErrorApi ? e.message : 'No se pudo enviar. Inténtalo de nuevo.'); }
     finally { setEnviando(false); }
