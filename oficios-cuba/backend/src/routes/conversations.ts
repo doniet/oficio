@@ -4,6 +4,7 @@ import { z } from 'zod';
 import db, { providerProfileIdFor } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { avisarNuevaSolicitud, avisarNuevoMensaje } from '../push/avisos.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -89,11 +90,13 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
 
   const now = new Date().toISOString();
   const serviceId = data.service_id ?? null;
+  let nueva = false;
   const tx = db.transaction(() => {
     let conv = db.prepare('SELECT id FROM conversations WHERE client_id = ? AND provider_id = ? AND service_id IS ?')
       .get(req.user!.id, data.provider_id, serviceId) as { id: string } | undefined;
     if (!conv) {
       conv = { id: uuidv4() };
+      nueva = true;
       db.prepare('INSERT INTO conversations (id, client_id, provider_id, service_id, last_message, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(conv.id, req.user!.id, data.provider_id, serviceId, data.initial_message, now, now);
     } else {
@@ -101,10 +104,12 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
     }
     db.prepare("INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, created_at) VALUES (?, ?, ?, 'client', ?, ?)")
       .run(uuidv4(), conv.id, req.user!.id, data.initial_message, now);
-    return conv.id;
+    return { id: conv.id, nueva };
   });
 
-  res.status(201).json({ conversation: { id: tx() } });
+  const { id, nueva: esNueva } = tx();
+  if (esNueva) avisarNuevaSolicitud(id); else avisarNuevoMensaje(id, 'client');
+  res.status(201).json({ conversation: { id } });
 }));
 
 router.get('/:id', asyncHandler(async (req: AuthRequest, res) => {
@@ -128,6 +133,7 @@ router.post('/:id/messages', asyncHandler(async (req: AuthRequest, res) => {
     .run(id, conversation.id, req.user!.id, req.user!.user_type, content, now);
   db.prepare('UPDATE conversations SET last_message = ?, last_message_at = ? WHERE id = ?').run(content, now, conversation.id);
   markRead(conversation.id, req.user!.user_type);
+  avisarNuevoMensaje(conversation.id, req.user!.user_type);
   res.status(201).json({ message: { id, sender_id: req.user!.id, sender_type: req.user!.user_type, content, read_at: null, created_at: now } });
 }));
 
