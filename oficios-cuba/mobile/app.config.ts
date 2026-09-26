@@ -19,13 +19,25 @@ const config: ExpoConfig = {
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
+  icon: './assets/images/icon.png',
   android: {
+    adaptiveIcon: {
+      foregroundImage: './assets/images/android-icon-foreground.png',
+      backgroundImage: './assets/images/android-icon-background.png',
+      monochromeImage: './assets/images/android-icon-monochrome.png',
+      backgroundColor: '#c8472b',
+    },
     package: 'com.dardoit.oficios',
     ...(existsSync(googleServicesFile) ? { googleServicesFile } : {}),
     permissions: ['POST_NOTIFICATIONS'],
   },
   ios: { bundleIdentifier: 'com.dardoit.oficios' },
-  plugins: ['expo-router', 'expo-secure-store', ['expo-notifications', { defaultChannel: 'mensajes' }]],
+  plugins: [
+    'expo-router',
+    'expo-secure-store',
+    // Android pinta el icono de la notificación solo con su canal alfa: blanco sobre transparente.
+    ['expo-notifications', { defaultChannel: 'mensajes', icon: './assets/images/notification-icon.png', color: '#c8472b' }],
+  ],
   experiments: { typedRoutes: true },
 };
 
