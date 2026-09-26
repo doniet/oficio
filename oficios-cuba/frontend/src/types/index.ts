@@ -382,3 +382,54 @@ export interface Pagination {
   total: number;
   totalPages: number;
 }
+
+export type CatalogPriceType = 'fixed' | 'from' | 'ask';
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  description: string | null;
+  /** null si price_type es 'ask' (a consultar). */
+  price: number | null;
+  price_type: CatalogPriceType;
+  price_currency: Currency;
+  image: string | null;
+  section: string | null;
+  available: boolean;
+  created_at: string;
+}
+
+export interface CatalogInput {
+  name: string;
+  description?: string | null;
+  price?: number | null;
+  price_type: CatalogPriceType;
+  price_currency: Currency;
+  image?: string | null;
+  section?: string | null;
+  available: boolean;
+}
+
+export interface CatalogPage {
+  items: CatalogItem[];
+  sections: { name: string; count: number }[];
+  /** Con el filtro aplicado. */
+  total: number;
+  /** Sin filtros: si es 0 el perfil no enseña la sección. */
+  total_all: number;
+  page: number;
+  pages: number;
+}
+
+export interface CatalogSearchItem extends CatalogItem {
+  provider_id: string;
+  provider_name: string;
+  provider_avatar: string | null;
+  subscription_plan: Plan;
+  contact_mode: ContactMode;
+  whatsapp: string | null;
+  province_name: string | null;
+  municipality_name: string | null;
+}
+
+export interface CatalogSearchPage { items: CatalogSearchItem[]; total: number; page: number; pages: number }

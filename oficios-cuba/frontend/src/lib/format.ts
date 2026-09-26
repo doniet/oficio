@@ -133,3 +133,10 @@ export function whatsappLink(phone: string, text: string) {
 }
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Precio de un artículo del catálogo: { prefix: 'desde' | '', amount, alt (≈ otra moneda) }. */
+export function catalogPrice(item: { price: number | null; price_type: 'fixed' | 'from' | 'ask'; price_currency: Currency }, tasa?: number) {
+  if (item.price_type === 'ask' || item.price == null) return { prefix: '', amount: 'A consultar', alt: null as string | null };
+  const p = priceParts({ price_min: item.price, price_type: 'fixed', price_currency: item.price_currency }, tasa);
+  return { prefix: item.price_type === 'from' ? 'desde' : '', amount: p.main, alt: p.alt };
+}

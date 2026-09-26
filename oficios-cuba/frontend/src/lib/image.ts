@@ -19,8 +19,8 @@ export async function compressImage(file: File, maxSide = 1400, quality = 0.8): 
   return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', quality);
 }
 
-export async function uploadImage(file: File, maxSide?: number): Promise<string> {
+export async function uploadImage(file: File, maxSide?: number, purpose?: 'catalog'): Promise<string> {
   const data = await compressImage(file, maxSide);
-  const res = await uploadApi.image(data);
+  const res = await uploadApi.image(data, purpose);
   return res.data.url;
 }

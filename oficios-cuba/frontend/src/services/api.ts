@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, UserType } from '../types';
+import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -137,7 +137,20 @@ export const serviceApi = {
 };
 
 export const uploadApi = {
-  image: (data: string) => api.post<{ url: string }>('/uploads', { data }),
+  /** `catalog`: foto de un artículo del catálogo (cuota propia, la del plan en 24 h). */
+  image: (data: string, purpose?: 'catalog') => api.post<{ url: string }>('/uploads', { data, purpose }),
+};
+
+export const catalogApi = {
+  ofProvider: (providerId: string, params: { q?: string; section?: string; page?: number } = {}) =>
+    api.get<CatalogPage>(`/catalog/provider/${providerId}`, { params }),
+  search: (params: { q?: string; province_id?: string; municipality_id?: string; page?: number }) =>
+    api.get<CatalogSearchPage>('/catalog/search', { params }),
+  mine: () => api.get<{ items: (CatalogItem & { hidden_by_plan: boolean })[]; max: number; plan: string }>('/catalog/mine'),
+  create: (data: CatalogInput) => api.post<{ item: CatalogItem }>('/catalog', data),
+  update: (id: string, data: CatalogInput) => api.put<{ item: CatalogItem }>(`/catalog/${id}`, data),
+  setAvailable: (id: string, available: boolean) => api.patch(`/catalog/${id}/available`, { available }),
+  remove: (id: string) => api.delete(`/catalog/${id}`),
 };
 
 export const subscriptionApi = {

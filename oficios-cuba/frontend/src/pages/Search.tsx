@@ -1,11 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Map as MapIcon, Search as SearchIcon, SearchX, SlidersHorizontal, X } from 'lucide-react';
-import { categoryApi, provinceApi, serviceApi, apiError } from '../services/api';
-import type { Category, Municipality, Pagination, PriceType, Province, ServiceSummary } from '../types';
+import { ChevronLeft, ChevronRight, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Wrench, X } from 'lucide-react';
+import { catalogApi, categoryApi, provinceApi, serviceApi, apiError } from '../services/api';
+import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, Province, ServiceSummary } from '../types';
 import { cup, plural, priceTypeLabel } from '../lib/format';
 import { ServiceCard, ServiceCardSkeleton } from '../components/cards';
-import { EmptyState, ErrorState, Modal, PageLoader, cn } from '../components/ui';
+import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../components/ui';
+import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
+import CatalogItemModal from '../components/catalog/CatalogItemModal';
 
 // Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa.
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
@@ -21,6 +23,8 @@ const SORTS = [
 const PRICE_CAPS = [2000, 5000, 10000, 25000, 50000];
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
 const FILTER_KEYS = ['category', 'province', 'municipality', 'price_max', 'price_type'] as const;
+// En la pestaña Productos solo cuenta la ubicación: categoría y precio son de los oficios.
+const PRODUCT_FILTER_KEYS = ['province', 'municipality'] as const;
 const PAGE_SIZE = 12;
 
 function useUrlFilters() {
@@ -48,13 +52,13 @@ function FilterBlock({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function Filters({ categories, provinces, municipalities, get, update, onOpenMap }: {
+function Filters({ categories, provinces, municipalities, get, update, onOpenMap, productos = false }: {
   categories: Category[]; provinces: Province[]; municipalities: Municipality[];
-  get: (k: string) => string; update: (p: Record<string, string | null>) => void; onOpenMap: () => void;
+  get: (k: string) => string; update: (p: Record<string, string | null>) => void; onOpenMap: () => void; productos?: boolean;
 }) {
   return (
     <div className="space-y-5">
-      <FilterBlock title="Categoría">
+      {!productos && <FilterBlock title="Categoría">
         <select className="input" value={get('category')} onChange={(e) => update({ category: e.target.value || null })} aria-label="Categoría">
           <option value="">Todas las categorías</option>
           {categories.map((c) => (
@@ -64,7 +68,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
             </optgroup>
           ))}
         </select>
-      </FilterBlock>
+      </FilterBlock>}
 
       <FilterBlock title="Ubicación">
         <div className="space-y-2">
@@ -84,6 +88,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
         </div>
       </FilterBlock>
 
+      {!productos && <>
       <FilterBlock title="Precio máximo (CUP)">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => update({ price_max: null })} className={cn('chip', !get('price_max') && 'chip-active')}>Cualquiera</button>
@@ -105,6 +110,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
           ))}
         </div>
       </FilterBlock>
+      </>}
     </div>
   );
 }
@@ -202,6 +208,13 @@ export default function Search() {
 
   const province = get('province');
   const key = params.toString();
+  const productos = get('tab') === 'productos';
+  const [prod, setProd] = useState<CatalogSearchPage | null>(null);
+  const [prodItems, setProdItems] = useState<CatalogSearchItem[]>([]);
+  const [prodMore, setProdMore] = useState(false);
+  const [abierto, setAbierto] = useState<CatalogSearchItem | null>(null);
+  const cerrarArticulo = useCallback(() => setAbierto(null), []);
+  const prodParams = { q: get('q') || undefined, province_id: province || undefined, municipality_id: get('municipality') || undefined };
 
   useEffect(() => { setQ(get('q')); }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -219,6 +232,7 @@ export default function Search() {
   }, [province]);
 
   useEffect(() => {
+    if (productos) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -243,6 +257,37 @@ export default function Search() {
     return () => { alive = false; };
   }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Productos del catálogo: "Ver más" concatena páginas (no va en la URL).
+  useEffect(() => {
+    if (!productos) return;
+    let alive = true;
+    setLoading(true);
+    setError('');
+    catalogApi.search({ ...prodParams, page: 1 })
+      .then((r) => {
+        if (!alive) return;
+        setProd(r.data);
+        setProdItems(r.data.items);
+      })
+      .catch((err) => alive && setError(apiError(err, 'No pudimos cargar los productos.')))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [productos, get('q'), province, get('municipality'), reload]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const verMasProductos = async () => {
+    if (!prod) return;
+    setProdMore(true);
+    try {
+      const r = await catalogApi.search({ ...prodParams, page: prod.page + 1 });
+      setProd(r.data);
+      setProdItems((prev) => [...prev, ...r.data.items]);
+    } catch {
+      /* el botón sigue ahí para reintentar */
+    } finally {
+      setProdMore(false);
+    }
+  };
+
   const categoryLabel = useMemo(() => {
     const slug = get('category');
     if (!slug) return '';
@@ -256,13 +301,15 @@ export default function Search() {
 
   const chips: { key: string; label: string; clear: Record<string, null> }[] = [];
   if (get('q')) chips.push({ key: 'q', label: `“${get('q')}”`, clear: { q: null } });
-  if (get('category')) chips.push({ key: 'category', label: categoryLabel, clear: { category: null } });
+  if (get('category') && !productos) chips.push({ key: 'category', label: categoryLabel, clear: { category: null } });
   if (province) chips.push({ key: 'province', label: provinces.find((p) => p.id === province)?.name ?? 'Provincia', clear: { province: null } });
   if (get('municipality')) chips.push({ key: 'municipality', label: municipalities.find((m) => m.id === get('municipality'))?.name ?? 'Municipio', clear: { municipality: null } });
-  if (get('price_max')) chips.push({ key: 'price_max', label: `Hasta ${cup(Number(get('price_max')))}`, clear: { price_max: null } });
-  if (get('price_type')) chips.push({ key: 'price_type', label: priceTypeLabel[get('price_type') as PriceType] ?? get('price_type'), clear: { price_type: null } });
+  if (get('price_max') && !productos) chips.push({ key: 'price_max', label: `Hasta ${cup(Number(get('price_max')))}`, clear: { price_max: null } });
+  if (get('price_type') && !productos) chips.push({ key: 'price_type', label: priceTypeLabel[get('price_type') as PriceType] ?? get('price_type'), clear: { price_type: null } });
 
-  const activeFilters = FILTER_KEYS.filter((k) => get(k)).length;
+  const filterKeys: readonly string[] = productos ? PRODUCT_FILTER_KEYS : FILTER_KEYS;
+  const activeFilters = filterKeys.filter((k) => get(k)).length;
+  const clearFilters = () => update(Object.fromEntries(filterKeys.map((k) => [k, null])));
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -274,8 +321,12 @@ export default function Search() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const title = categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : 'Explorar servicios');
-  const filterProps = { categories, provinces, municipalities, get, update, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
+  const title = productos
+    ? (get('q') ? `Productos: “${get('q')}”` : 'Explorar productos')
+    : categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : 'Explorar servicios');
+  const filterProps = { categories, provinces, municipalities, get, update, productos, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
+  const totalResultados = productos ? prod?.total : pagination?.total;
+  const resultadosTexto = productos ? ['producto encontrado', 'productos encontrados'] : ['servicio encontrado', 'servicios encontrados'];
 
   return (
     <div className="container-page py-8 sm:py-10">
@@ -289,12 +340,26 @@ export default function Search() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Electricista, clases de inglés, arreglo de celulares…"
+              placeholder={productos ? 'Cake, breaker, zapatos, pintura…' : 'Electricista, clases de inglés, arreglo de celulares…'}
               className="input py-3 pl-11"
             />
           </label>
           <button type="submit" className="btn-primary px-5">Buscar</button>
         </form>
+        <div className="mt-4 inline-grid grid-cols-2 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Qué buscar">
+          {([[false, 'Oficios', Wrench], [true, 'Productos', Package]] as const).map(([esProd, label, Icon]) => (
+            <button
+              key={label}
+              type="button"
+              role="tab"
+              aria-selected={productos === esProd}
+              onClick={() => update({ tab: esProd ? 'productos' : null })}
+              className={cn('flex items-center justify-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition', productos === esProd ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}
+            >
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[16.5rem_1fr]">
@@ -303,7 +368,7 @@ export default function Search() {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-sans text-base font-bold">Filtros</h2>
               {activeFilters > 0 && (
-                <button onClick={() => update(Object.fromEntries(FILTER_KEYS.map((k) => [k, null])))} className="text-sm font-semibold text-brand-700 hover:underline">
+                <button onClick={clearFilters} className="text-sm font-semibold text-brand-700 hover:underline">
                   Limpiar
                 </button>
               )}
@@ -315,17 +380,19 @@ export default function Search() {
         <div className="min-w-0">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink-500" aria-live="polite">
-              {loading && !pagination ? 'Buscando…' : pagination ? plural(pagination.total, 'servicio encontrado', 'servicios encontrados') : ''}
+              {loading && totalResultados === undefined ? 'Buscando…' : totalResultados !== undefined ? plural(totalResultados, resultadosTexto[0], resultadosTexto[1]) : ''}
             </p>
             <div className="flex items-center gap-2">
               <button onClick={() => setFiltersOpen(true)} className="btn-secondary lg:hidden">
                 <SlidersHorizontal className="h-4 w-4" /> Filtros
                 {activeFilters > 0 && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] leading-5 text-white">{activeFilters}</span>}
               </button>
-              <label className="sr-only" htmlFor="sort">Ordenar por</label>
-              <select id="sort" value={get('sort') || 'relevance'} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
-                {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              {!productos && <>
+                <label className="sr-only" htmlFor="sort">Ordenar por</label>
+                <select id="sort" value={get('sort') || 'relevance'} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
+                  {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </>}
             </div>
           </div>
 
@@ -341,6 +408,35 @@ export default function Search() {
 
           {error ? (
             <ErrorState message={error} onRetry={() => setReload((n) => n + 1)} />
+          ) : productos ? (
+            loading && prodItems.length === 0 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, i) => <CatalogCardSkeleton key={i} />)}
+              </div>
+            ) : prodItems.length === 0 ? (
+              <EmptyState
+                icon={<SearchX className="h-6 w-6" />}
+                title="No encontramos productos"
+                action={chips.length > 0 ? (
+                  <button onClick={() => update({ q: null, province: null, municipality: null })} className="btn-secondary">Quitar la búsqueda y la zona</button>
+                ) : (
+                  <button onClick={() => update({ tab: null })} className="btn-secondary">Buscar oficios</button>
+                )}
+              >
+                Prueba con otra palabra o amplía la zona. Los productos salen de los catálogos de los profesionales Básico y Profesional.
+              </EmptyState>
+            ) : (
+              <>
+                <div className={cn('grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 xl:grid-cols-4', loading && 'opacity-50')} aria-busy={loading}>
+                  {prodItems.map((it) => <CatalogCard key={it.id} item={it} onOpen={() => setAbierto(it)} />)}
+                </div>
+                {prod && prod.page < prod.pages && (
+                  <button type="button" onClick={verMasProductos} disabled={prodMore} className="btn-secondary mt-6 w-full">
+                    {prodMore && <Spinner className="h-4 w-4" />} Ver más productos
+                  </button>
+                )}
+              </>
+            )
           ) : loading && services.length === 0 ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => <ServiceCardSkeleton key={i} />)}
@@ -371,12 +467,19 @@ export default function Search() {
       <Modal open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filtros">
         <Filters {...filterProps} />
         <div className="sticky -bottom-6 -mx-6 mt-6 flex gap-2 border-t border-sand-200 bg-white px-6 py-4">
-          <button onClick={() => update(Object.fromEntries(FILTER_KEYS.map((k) => [k, null])))} className="btn-secondary flex-1" disabled={!activeFilters}>Limpiar</button>
+          <button onClick={clearFilters} className="btn-secondary flex-1" disabled={!activeFilters}>Limpiar</button>
           <button onClick={() => setFiltersOpen(false)} className="btn-primary flex-[2]">
-            {pagination ? `Ver ${plural(pagination.total, 'resultado', 'resultados')}` : 'Ver resultados'}
+            {totalResultados !== undefined ? `Ver ${plural(totalResultados, 'resultado', 'resultados')}` : 'Ver resultados'}
           </button>
         </div>
       </Modal>
+
+      <CatalogItemModal
+        item={abierto}
+        vendedor={abierto ? { id: abierto.provider_id, name: abierto.provider_name, whatsapp: abierto.whatsapp, contactMode: abierto.contact_mode, hasChat: abierto.subscription_plan === 'pro' } : null}
+        onClose={cerrarArticulo}
+        profileLink
+      />
 
       <MapModal
         open={mapOpen}

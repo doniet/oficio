@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, Briefcase, CalendarDays, Clock, Mail, MapPin, Send, UserX, Wrench, X } from 'lucide-react';
@@ -8,6 +8,7 @@ import { providerApi, reviewApi, apiError } from '../services/api';
 import { memberSince, priceFrom } from '../lib/format';
 import type { Pagination, ProviderPublic, ProviderServiceItem, Review, ServiceArea } from '../types';
 import ContactActions from '../components/ContactActions';
+import ProviderCatalog from '../components/catalog/ProviderCatalog';
 import { NegocioChip } from '../components/cards';
 import { RatingBreakdown, ReviewItem } from '../components/ReviewList';
 import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, Spinner } from '../components/ui';
@@ -128,6 +129,9 @@ export default function ProviderProfile() {
   }, [load]);
 
   const name = provider ? provider.business_name || provider.owner_name : '';
+  const vendedor = useMemo(() => (provider
+    ? { id: provider.id, name, whatsapp: provider.whatsapp, contactMode: provider.contact_mode, hasChat: provider.has_chat }
+    : null), [provider, name]);
 
   useEffect(() => {
     if (name) document.title = `${name} · Oficios Cuba`;
@@ -281,6 +285,8 @@ export default function ProviderProfile() {
                 </div>
               )}
             </section>
+
+            {vendedor && <ProviderCatalog vendedor={vendedor} />}
 
             {areas.length > 0 && (
               <section aria-labelledby="areas-title" className="lg:hidden">

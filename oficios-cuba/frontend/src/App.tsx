@@ -27,6 +27,7 @@ const Account = lazy(() => import('./pages/dashboard/Account'));
 const Agenda = lazy(() => import('./pages/dashboard/Agenda'));
 const AgendaAjustes = lazy(() => import('./pages/dashboard/AgendaAjustes'));
 const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
+const Catalogo = lazy(() => import('./pages/dashboard/Catalogo'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="favoritos" element={<RequireAuth only="client"><Favorites /></RequireAuth>} />
             <Route path="perfil" element={<RequireAuth only="provider"><ProviderProfileEdit /></RequireAuth>} />
             <Route path="servicios" element={<RequireAuth only="provider"><MyServices /></RequireAuth>} />
+            <Route path="catalogo" element={<RequireAuth only="provider"><Catalogo /></RequireAuth>} />
             <Route path="servicios/nuevo" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="servicios/:id/editar" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="suscripcion" element={<RequireAuth only="provider"><MySubscription /></RequireAuth>} />

@@ -352,6 +352,32 @@ export async function seedDemo() {
     db.prepare('INSERT INTO agenda_blocks (id, provider_id, starts_at, ends_at, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(uuidv4(), electro.profileId, aLas(3, 9), aLas(3, 13), 'Compra de piezas', daysAgo(1));
 
+    // Catálogos: ElectroHogar (Profesional) vende piezas y Dulces La Abuela (Básico) sus dulces.
+    const catalogo = (providerIdx: number, items: [string, string, number | null, 'fixed' | 'from' | 'ask', 'CUP' | 'USD', string | null, string, boolean][]) => {
+      items.forEach(([name, description, price, price_type, currency, image, section, available], i) => {
+        db.prepare(`INSERT INTO catalog_items (id, provider_id, name, description, price, price_type, price_currency, image, section, available, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(uuidv4(), providerRows[providerIdx].profileId, name, description, price, price_type,
+          currency, image, section, available ? 1 : 0, daysAgo(20 - i));
+      });
+    };
+    catalogo(0, [
+      ['Breaker 20 A', 'Interruptor termomagnético de riel DIN, nuevo en caja.', 3500, 'fixed', 'CUP', '/demo/electricidad-1.webp', 'Piezas', true],
+      ['Tomacorriente doble', 'Con tierra, blanco. Incluye tapa.', 900, 'fixed', 'CUP', null, 'Piezas', true],
+      ['Cable 2×12 (metro)', 'Cable dúplex de cobre, se vende por metros.', 450, 'fixed', 'CUP', null, 'Piezas', true],
+      ['Bombillo LED 12 W', 'Luz fría, rosca E27.', 2, 'fixed', 'USD', null, 'Piezas', false],
+      ['Ventilador de techo', 'Tres velocidades, con instalación aparte.', 95, 'fixed', 'USD', '/demo/electricidad-2.webp', 'Equipos', true],
+      ['Estabilizador de voltaje', 'Para refrigerador o split. Pregunta por modelos.', null, 'ask', 'USD', '/demo/electronica-1.webp', 'Equipos', true],
+      ['Revisión de instalación', 'Visita, diagnóstico y presupuesto por escrito.', 2000, 'from', 'CUP', null, 'Servicios', true],
+      ['Montaje de lámpara', 'Colgar y conectar lámpara o plafón.', 1500, 'from', 'CUP', null, 'Servicios', true],
+    ]);
+    catalogo(6, [
+      ['Cake de chocolate (1 lb)', 'Relleno de dulce de leche, decorado a tu gusto.', 3500, 'fixed', 'CUP', '/demo/reposteria-1.webp', 'Cakes', true],
+      ['Cake de cumpleaños (3 lb)', 'Con nombre y figuras. Encárgalo con 2 días.', 9000, 'from', 'CUP', null, 'Cakes', true],
+      ['Pastelitos de guayaba (docena)', 'Hojaldre casero.', 1200, 'fixed', 'CUP', null, 'Dulces', true],
+      ['Flan de leche', 'Molde grande, para 8 personas.', 1800, 'fixed', 'CUP', null, 'Dulces', true],
+      ['Merenguitos (bolsa)', 'Unos 30 merenguitos de colores.', 600, 'fixed', 'CUP', null, 'Dulces', false],
+    ]);
+
     for (const idx of [0, 2, 3]) {
       db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)').run(uuidv4(), laura, providerRows[idx].profileId);
     }

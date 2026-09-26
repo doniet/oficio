@@ -51,6 +51,9 @@ describe('migraciones sobre una base existente', () => {
     db.prepare("INSERT INTO appointments (id, provider_id, starts_at, ends_at, duration_min, client_name, origin, status, created_at) VALUES ('a2', 'pp', 'x', 'y', 30, 'Mercedes', 'manual', 'no_show', 'z')").run();
     expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'agenda_blocks'").get()).toEqual({ n: 1 });
     expect((db.prepare('PRAGMA table_info(services)').all() as { name: string }[]).map((c) => c.name)).toContain('duration_min');
+    // v5: catálogo y propósito de las subidas.
+    expect((db.prepare('PRAGMA table_info(uploads)').all() as { name: string }[]).map((c) => c.name)).toContain('purpose');
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'catalog_items'").get()).toEqual({ n: 1 });
 
     db.prepare('DELETE FROM services WHERE id = ?').run('s1');
     expect(db.prepare('SELECT service_id FROM reviews WHERE id = ?').get('r1')).toEqual({ service_id: null });

@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS favorites (
 CREATE TABLE IF NOT EXISTS uploads (
   name TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  purpose TEXT, -- 'catalog' = foto de un artículo del catálogo (cuota propia); NULL = el resto
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -244,6 +245,25 @@ CREATE TABLE IF NOT EXISTS appointments (
   FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL
 );
 
+-- Catálogo de productos o servicios de un profesional (Básico 50, Profesional 1000).
+-- hidden_by_plan: pasa del límite del plan actual; vuelve a verse si sube de plan.
+CREATE TABLE IF NOT EXISTS catalog_items (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  price REAL,
+  price_type TEXT NOT NULL DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'from', 'ask')),
+  price_currency TEXT NOT NULL DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
+  image TEXT,
+  section TEXT,
+  available INTEGER NOT NULL DEFAULT 1,
+  hidden_by_plan INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
+);
+
 -- Tiempo en que el profesional no acepta citas (almuerzo, un trámite, vacaciones).
 CREATE TABLE IF NOT EXISTS agenda_blocks (
   id TEXT PRIMARY KEY,
@@ -270,6 +290,8 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_catalog_provider ON catalog_items(provider_id, section, name);
+CREATE INDEX IF NOT EXISTS idx_uploads_purpose ON uploads(user_id, purpose, created_at);
 CREATE INDEX IF NOT EXISTS idx_agenda_blocks_provider ON agenda_blocks(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
@@ -378,6 +400,13 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
     `);
   },
+  // 5 — catálogo: la tabla catalog_items la crea `schema`; las subidas llevan su propósito.
+  (d) => {
+    // Las bases muy viejas no tenían uploads: la crea `schema` ya con la columna.
+    if (d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'uploads'").get()) {
+      d.exec('ALTER TABLE uploads ADD COLUMN purpose TEXT');
+    }
+  },
 ];
 
 export const ESQUEMA_VERSION = MIGRACIONES.length;
@@ -445,10 +474,17 @@ export function refreshProviderRating(providerId: string) {
 
 // Deja activos como máximo los servicios que permite el plan actual: se conservan los más
 // antiguos y el resto se pausa (el proveedor puede elegir cuáles pausando y reactivando).
+// Se llama en cada cambio de plan, hacia arriba o hacia abajo.
 export function enforcePlanLimit(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   if (!row) return;
-  const max = planDe(row.subscription_plan).maxServices;
+  const { maxServices: max, maxCatalog } = planDe(row.subscription_plan);
+  // Catálogo: se ven los `maxCatalog` más antiguos; al subir de plan reaparecen solos.
+  db.prepare(`
+    UPDATE catalog_items SET hidden_by_plan = CASE WHEN id IN (
+      SELECT id FROM catalog_items WHERE provider_id = ? ORDER BY created_at, id LIMIT ?
+    ) THEN 0 ELSE 1 END WHERE provider_id = ?
+  `).run(providerId, maxCatalog, providerId);
   if (max === null) return;
   db.prepare(`
     UPDATE services SET is_active = 0, updated_at = CURRENT_TIMESTAMP
