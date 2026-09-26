@@ -184,3 +184,10 @@
 - Security: N/A (sin cambios de backend ni de red).
 - Next: el perfil del profesional, la agenda ("Pedir cita"), la pestaña Productos y el filtro por provincia siguen solo en la web. En prod, buscar "Mecánico" da 0 resultados (la categoría es "Mecánica General"): pasa igual en la web.
 - Blockers: ninguno.
+
+## 2026-09-26 07:25 UTC — cc-jarvis-ubuntu — Llave de firma y primer APK de release (0.1.0)
+- Changes: **llave de firma definitiva** (PKCS12 `oficios-cuba.p12`, alias `oficios`, RSA 4096, hasta 2126, SHA-256 `111a8cec…5099257`), fuera del repo: j-u `~/.claude/.oficio-firma/` y copia para Doniet en vps2 `secrets/firma-android/` (con LEEME). `mobile/plugins/firma-release.js`: la plantilla de RN firma el release con `signingConfigs.debug` y eso ganaba a `-Pandroid.injected.signing.*` (el primer APK salió con la llave de debug y lo paró la verificación de huella); el plugin pone la firma `release` desde `OFICIO_FIRMA_*` y sobrevive a `prebuild`. `mobile/scripts/apk-release.sh`: prebuild con `REQUIRE_PUSH=1`, sin `EXPO_PUBLIC_API_URL` (siempre producción), solo ARM (`armeabi-v7a,arm64-v8a`: 104 → 60 MB), verifica la huella con apksigner y deja `dist/oficios-cuba-<versión>.apk`. Rediseño de la app como la web: ver entrada anterior.
+- Tests: pass — mobile 33, shared 20. APK: firma v2 con la huella esperada, `com.dardoit.oficios` 0.1.0, targetSdk 36. En el emulador x86_64 el APK solo-ARM no arranca (`SoLoader` busca en `lib/x86_64` bajo la traducción ARM: problema del emulador); variante de prueba idéntica + x86_64 contra PRODUCCIÓN en solo lectura: portada, categorías, ficha con precio CUP/USD, buscador con fotos, y **arranque sin red** (abre con los datos guardados), 0 cierres.
+- Security: llave y contraseña solo en archivos 600 (j-u y vps2), nunca en el repo ni en el chat.
+- Next: primera instalación en un teléfono ARM real (confirma el APK solo-ARM); decidir cómo se reparte el APK (¿descarga desde oficio.dardoit.com? es superficie pública → OK de Dariel); Apklis; R8/minify para bajar de 60 MB (probar antes).
+- Blockers: ninguno.

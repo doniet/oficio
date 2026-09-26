@@ -35,6 +35,8 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     'expo-secure-store',
+    // Firma de release con la llave de Oficios Cuba (ver plugins/firma-release.js).
+    './plugins/firma-release',
     // Android pinta el icono de la notificación solo con su canal alfa: blanco sobre transparente.
     ['expo-notifications', { defaultChannel: 'mensajes', icon: './assets/images/notification-icon.png', color: '#c8472b' }],
   ],
