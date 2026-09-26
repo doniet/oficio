@@ -69,6 +69,12 @@ export function crearCliente({ baseUrl, getToken, onUnauthorized, timeoutMs = 20
       listar: (q?: Query) => pedir<PaginaServicios>('GET', '/services', undefined, q),
       detalle: (id: string) => pedir<{ service: ServiceDetail; reviews: Review[]; related: ServiceSummary[] }>('GET', `/services/${encodeURIComponent(id)}`),
     },
+    proveedores: {
+      /** Deja constancia de que el cliente contactó por WhatsApp/llamada (vale para poder reseñar). 204. */
+      contacto: (id: string, via: 'whatsapp' | 'call') => pedir<void>('POST', `/providers/${encodeURIComponent(id)}/contact`, { via }),
+    },
+    /** CUP por 1 USD. En prod lo sirve nginx desde dardoventas.com; la API da el respaldo. */
+    tasa: () => pedir<{ usd: number; updated_at: string | null; fuente: string }>('GET', '/tasas'),
     conversaciones: {
       listar: () => pedir<{ conversations: Conversation[] }>('GET', '/conversations'),
       noLeidos: () => pedir<{ count: number }>('GET', '/conversations/unread-count'),

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState, FlatList, KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorApi, esquemaMensaje, Message, shortTime } from '@oficio/shared';
 import { Boton } from '../../src/componentes/Boton';
 import { chatVacio, trasEnviar, trasSondeo } from '../../src/lib/chat';
@@ -11,10 +12,14 @@ export default function Conversacion() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api, usuario } = useSesion();
   const navegacion = useNavigation();
+  // La fila de escribir va pegada abajo: sin el margen inferior, Enviar queda bajo la barra de gestos.
+  const abajo = useSafeAreaInsets().bottom;
   const [mensajes, setMensajes] = useState<Message[]>([]);
   const [texto, setTexto] = useState('');
   const [error, setError] = useState<string>();
   const [enviando, setEnviando] = useState(false);
+  // 403 al enviar = el profesional ya no tiene el plan con chat: se lee, pero no se puede escribir.
+  const [cerrado, setCerrado] = useState<string>();
   // Ref (no estado) para que sondeo y envío partan siempre del último valor, sin carreras de render.
   const chat = useRef(chatVacio);
 
@@ -48,7 +53,10 @@ export default function Conversacion() {
       chat.current = trasEnviar(chat.current, message);
       setMensajes(chat.current.mensajes);
       setTexto(''); setError(undefined);
-    } catch (e) { setError(e instanceof ErrorApi ? e.message : 'No se pudo enviar. Inténtalo de nuevo.'); }
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 403) { setCerrado(e.message); setError(undefined); }
+      else setError(e instanceof ErrorApi ? e.message : 'No se pudo enviar. Inténtalo de nuevo.');
+    }
     finally { setEnviando(false); }
   }
 
@@ -69,11 +77,17 @@ export default function Conversacion() {
         }}
       />
       {error ? <Text style={{ color: colores.error, paddingHorizontal: espacio(4) }}>{error}</Text> : null}
-      <View style={{ flexDirection: 'row', gap: espacio(2), padding: espacio(3), borderTopWidth: 1, borderColor: colores.borde, backgroundColor: colores.superficie }}>
+      {cerrado ? (
+        <View style={{ padding: espacio(4), paddingBottom: espacio(4) + abajo, borderTopWidth: 1, borderColor: colores.borde, backgroundColor: colores.superficie }}>
+          <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>{cerrado}</Text>
+        </View>
+      ) : (
+      <View style={{ flexDirection: 'row', gap: espacio(2), padding: espacio(3), paddingBottom: espacio(3) + abajo, borderTopWidth: 1, borderColor: colores.borde, backgroundColor: colores.superficie }}>
         <TextInput value={texto} onChangeText={setTexto} placeholder="Escribe un mensaje" multiline maxLength={2000} accessibilityLabel="Mensaje"
           style={{ flex: 1, minHeight: 44, maxHeight: 120, fontFamily: fuentes.texto, fontSize: 16, color: colores.tinta }} />
         <Boton titulo="Enviar" onPress={enviar} cargando={enviando} deshabilitado={!texto.trim()} />
       </View>
+      )}
     </KeyboardAvoidingView>
   );
 }

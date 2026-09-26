@@ -151,3 +151,13 @@
 - Security: sin cambio de red: `oficio_notifier` ya tenía salida (net_dmz). Nuevos destinos cuando haya cuenta de Firebase: `oauth2.googleapis.com` y `fcm.googleapis.com`. La cuenta de servicio solo la monta el notificador.
 - Next: la app debe respetar chat solo Profesional y fotos según plan; Task 7 (proyecto Firebase + `google-services.json`); prueba real con un teléfono en Cuba.
 - Blockers: ninguno.
+
+## 2026-09-26 01:55 UTC — cc-jarvis-ubuntu — App: chat solo Profesional, precios CUP/USD y contacto por WhatsApp/llamada
+- Changes:
+  - **shared:** tipos al día con la API (`Plan` sin `premium`; `price_currency`, `contact_mode`, `kind`, `has_chat`, `has_agenda`, `horario`). `formatPrice`/`priceFrom` con moneda y conversión (mismo redondeo que la web, sin `Intl` por Hermes, miles con U+00A0), `TASA_RESPALDO`, `telLink`. Cliente: `proveedores.contacto` y `tasa`. **Bug que corrige:** la app mostraba "800 – 1.500 CUP/hora" como "$800 – $1.500 / hora".
+  - **mobile:** `src/lib/contacto.ts` (qué botones: chat solo con `has_chat` y no proveedor; WhatsApp/llamada según `contact_mode`; aviso si no hay contacto) y `src/lib/tasa.ts` (`/api/tasas` con respaldo). Pantalla de servicio: Pedir presupuesto / Escribir por WhatsApp / Llamar, registrando el contacto del cliente. Conversación: un 403 al enviar oculta la caja y deja el aviso del servidor. **Fila de escribir con el margen inferior del área segura** (Enviar quedaba bajo la barra de gestos: fallaban los toques).
+  - Fotos según plan: no aplica aún (la app v1 no tiene pantallas de proveedor; Parte 2).
+- Tests: pass — shared 17, mobile 33 (6 nuevos de contacto), backend 108; `tsc` OK; `expo export` OK. E2E en emulador (AVD API 34, dev build + Metro, backend demo local :3010): lista con precios CUP/USD; Profesional → 3 botones, Gratis "llamada" → Llamar, Básico "WhatsApp" → WhatsApp (abre wa.me); cliente con chat de un proveedor bajado a Básico → al enviar aparece el aviso y se oculta la caja; chat abierto envía al primer toque tras el arreglo del margen.
+- Security: N/A.
+- Next: Task 7 (proyecto Firebase de Dariel + `google-services.json`), prueba de push real con un teléfono en Cuba; Parte 2 (proveedor: servicios con fotos según plan).
+- Blockers: Firebase (Dariel).

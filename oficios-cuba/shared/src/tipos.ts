@@ -1,6 +1,9 @@
 export type UserType = 'client' | 'provider';
-export type Plan = 'free' | 'basic' | 'pro' | 'premium';
+export type Plan = 'free' | 'basic' | 'pro';
 export type PriceType = 'fixed' | 'hourly' | 'daily' | 'negotiable';
+export type Currency = 'CUP' | 'USD';
+export type ContactMode = 'whatsapp' | 'call' | 'both';
+export type ProviderKind = 'oficio' | 'negocio';
 
 export interface User {
   id: string;
@@ -65,6 +68,7 @@ export interface ServiceSummary {
   price_min?: number | null;
   price_max?: number | null;
   price_type: PriceType;
+  price_currency: Currency;
   cover: string | null;
   image_count: number;
   is_active: boolean;
@@ -82,6 +86,11 @@ export interface ServiceSummary {
   rating: number;
   review_count: number;
   subscription_plan: Plan;
+  kind: ProviderKind;
+  contact_mode: ContactMode;
+  /** Plan Profesional: se le puede escribir por el chat. Si no, WhatsApp o llamada. */
+  has_chat: boolean;
+  has_agenda: boolean;
   province_name?: string | null;
   municipality_name?: string | null;
 }
@@ -96,6 +105,7 @@ export interface ServiceDetail extends Omit<ServiceSummary, 'cover' | 'image_cou
   telegram?: string | null;
   email_contact?: string | null;
   years_experience: number;
+  horario?: string | null;
   is_owner: boolean;
 }
 
@@ -117,6 +127,10 @@ export interface ProviderCard {
   service_count: number;
   categories: string[];
   cover: string | null;
+  kind: ProviderKind;
+  contact_mode: ContactMode;
+  has_chat: boolean;
+  has_agenda: boolean;
 }
 
 export interface ProviderPublic extends ProviderCard {
@@ -133,6 +147,7 @@ export interface ProviderServiceItem {
   price_min?: number | null;
   price_max?: number | null;
   price_type: PriceType;
+  price_currency: Currency;
   cover: string | null;
   category_name: string;
   category_icon: string;

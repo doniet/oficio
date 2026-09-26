@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -9,11 +9,14 @@ import { Campo } from '../../src/componentes/Campo';
 import { Boton } from '../../src/componentes/Boton';
 import { requiereSesion, useSesion } from '../../src/lib/contexto';
 import { urlImagen } from '../../src/lib/api';
+import { opcionesContacto } from '../../src/lib/contacto';
+import { useTasa } from '../../src/lib/tasa';
 import { colores, espacio, fuentes } from '../../src/lib/tema';
 
 export default function Servicio() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api, usuario } = useSesion();
+  const tasa = useTasa();
   const consulta = useQuery({ queryKey: ['servicio', id], queryFn: () => api.servicios.detalle(id) });
   const [abierto, setAbierto] = useState(false);
   const [mensaje, setMensaje] = useState('');
@@ -40,7 +43,13 @@ export default function Servicio() {
   }
 
   const { service } = consulta.data;
-  const mostrarBoton = !service.is_owner && usuario?.user_type !== 'provider';
+  const contacto = opcionesContacto(service, usuario);
+
+  function abrirExterno(url: string, via: 'whatsapp' | 'call') {
+    // Constancia del contacto (sirve para poder reseñar). Si falla, no importa: lo importante es contactar.
+    if (usuario?.user_type === 'client') api.proveedores.contacto(service.provider_id, via).catch(() => {});
+    Linking.openURL(url).catch(() => setError(via === 'call' ? 'No se pudo abrir el teléfono.' : 'No se pudo abrir WhatsApp. ¿Lo tienes instalado?'));
+  }
 
   function pedirPresupuesto() {
     if (!requiereSesion(router, usuario, `/servicio/${id}`)) return;
@@ -73,10 +82,14 @@ export default function Servicio() {
       <Text style={{ fontFamily: fuentes.textoFuerte, color: colores.tintaSuave }}>
         {nombreVisible(service)} · {service.municipality_name ?? service.province_name ?? ''}
       </Text>
-      <Text style={{ fontFamily: fuentes.textoFuerte, fontSize: 18, color: colores.acento }}>{formatPrice(service)}</Text>
+      <Text style={{ fontFamily: fuentes.textoFuerte, fontSize: 18, color: colores.acento }}>{formatPrice(service, tasa)}</Text>
       {service.description ? <Text style={{ fontFamily: fuentes.texto, color: colores.tinta }}>{service.description}</Text> : null}
 
-      {mostrarBoton && !abierto ? <Boton titulo="Pedir presupuesto" onPress={pedirPresupuesto} /> : null}
+      {contacto.chat && !abierto ? <Boton titulo="Pedir presupuesto" onPress={pedirPresupuesto} /> : null}
+      {contacto.whatsapp ? <Boton titulo="Escribir por WhatsApp" variante={contacto.chat ? 'secundario' : 'primario'} onPress={() => abrirExterno(contacto.whatsapp!, 'whatsapp')} /> : null}
+      {contacto.llamar ? <Boton titulo="Llamar" variante={contacto.chat || contacto.whatsapp ? 'secundario' : 'primario'} onPress={() => abrirExterno(contacto.llamar!, 'call')} /> : null}
+      {contacto.nada ? <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>Este profesional aún no ha puesto un teléfono de contacto.</Text> : null}
+      {error && !abierto ? <Text style={{ fontFamily: fuentes.texto, color: colores.error }}>{error}</Text> : null}
 
       {abierto ? (
         <View style={{ gap: espacio(2) }}>
