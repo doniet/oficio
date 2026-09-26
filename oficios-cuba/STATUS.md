@@ -92,3 +92,14 @@
 - Security: sin cambios de red, Traefik, túnel, CORS ni `.env`. Endpoints nuevos con auth (solo profesional o dueño de la cita); el feed iCal suscribible quedó fuera a propósito (endpoint público con datos de clientes, decisión de Dariel).
 - Next: catálogo de productos (foto + precio + descripción; Básico 50 / Profesional 1000) — presentar diseño. Queda en `data/uploads/` un PNG de 1×1 de la verificación. Opcional: feed iCal, colores por servicio.
 - Blockers: ninguno.
+
+## 2026-09-26 01:05 UTC — claude-code (vps2) — Catálogo de productos o servicios y despliegue en oficio.dardoit.com
+- Changes (334999d):
+  - Decisiones de Dariel: foto opcional; fotos del catálogo sin espera, hasta el tope del plan; los productos también aparecen en /buscar (pestaña aparte).
+  - **Backend:** `catalog_items` (migración 5 + `uploads.purpose`), `routes/catalog.ts`. Límites `PLANS.maxCatalog`: Gratis 0 · Básico 50 · Profesional 1000; `enforcePlanLimit` recalcula `hidden_by_plan` en cada cambio de plan (bajan los más nuevos, reaparecen al subir). Cuota de fotos del catálogo = tope del plan en 24 h (borrar y resubir no la salta); `borrarSiHuerfana` quita del disco la foto que ya nadie usa. Búsqueda de productos intercalada por profesional (`ROW_NUMBER`), solo disponibles. Ventajas de los planes actualizadas.
+  - **Frontend:** `/dashboard/catalogo` (contador con barra, buscador, secciones, disponible/agotado con un toque, alta/edición con foto y "Guardar y añadir otro", aviso de ocultos por el plan); sección `#catalogo` en el perfil (buscador, secciones, de 24 en 24, detalle con "Lo quiero": chat si es Profesional, WhatsApp o llamada, registrando el contacto); pestaña Productos en `/buscar` (`?tab=productos`).
+  - Deploy: backup `data/oficios-2026-09-26-0059-pre-deploy.db`, build + up, migrada a v5.
+- Tests: pass — backend 67 (6 nuevos del catálogo + v5 en la de migraciones). Migración probada antes sobre copia de prod. `tsc` y `vite build` OK. E2E Playwright local a 390 y 1280 px: panel, alta con foto, agotado con un toque, perfil con catálogo, detalle, búsqueda de productos; 0 errores, 0 desbordes. En prod: v5, `integrity_check` ok, FK limpias, conteos iguales; por Cloudflare subida de catálogo → alta → foto 200 image/png → borrado → foto 404 (se limpió del disco); rutas nuevas 200.
+- Security: sin cambios de red, túnel, CORS ni `.env`. Endpoints de escritura solo para el dueño; imágenes solo propias o demo. Disco de vps2 al 83 % (14 GB libres): con 1000 fotos por Profesional (~60 KB c/u) conviene vigilarlo.
+- Next: la base de prod no tiene catálogos demo (la semilla solo corre en base nueva). Opcional: importar catálogo desde CSV, ordenar artículos a mano.
+- Blockers: ninguno.
