@@ -28,6 +28,7 @@ const Agenda = lazy(() => import('./pages/dashboard/Agenda'));
 const AgendaAjustes = lazy(() => import('./pages/dashboard/AgendaAjustes'));
 const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
 const Catalogo = lazy(() => import('./pages/dashboard/Catalogo'));
+const Admin = lazy(() => import('./pages/admin/Admin'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -67,6 +68,9 @@ export default function App() {
           <Route path="auth/google" element={<GoogleCallback />} />
 
           <Route path="dashboard/mensajes/:id" element={<RequireAuth><Conversation /></RequireAuth>} />
+          <Route path="admin" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
+            <Route index element={<Admin />} />
+          </Route>
           <Route path="dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="mensajes" element={<Messages />} />

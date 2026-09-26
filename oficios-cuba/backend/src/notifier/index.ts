@@ -1,28 +1,68 @@
 import 'dotenv/config';
-import { readFileSync } from 'fs';
+import { createPublicKey, generateKeyPairSync } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join, resolve } from 'path';
 import db from './db.js';
-import { clienteTelegram, enviarPendientes, presentarse, recibir } from './bot.js';
+import { clienteTelegram, enviarPendientes, estado, latido, presentarse, recibir, type Llamar } from './bot.js';
+import { descifrarToken } from '../lib/telegram-comun.js';
 
 // Proceso del contenedor oficio_notifier. La base la migra la API: aquí solo se espera a que exista.
-// El token se lee de TELEGRAM_BOT_TOKEN_FILE (secreto de Docker / archivo chmod 600) o de TELEGRAM_BOT_TOKEN.
-
-function leerToken() {
-  const archivo = process.env.TELEGRAM_BOT_TOKEN_FILE;
-  const token = (archivo ? readFileSync(archivo, 'utf8') : process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
-  if (!/^\d+:[\w-]{30,}$/.test(token)) {
-    console.error('Falta el token del bot (TELEGRAM_BOT_TOKEN_FILE) o no tiene el formato de Telegram.');
-    process.exit(1);
-  }
-  return token;
-}
+// El token lo pega un admin en el panel; la API lo guarda cifrado con la clave pública que este
+// proceso publica en telegram_state. La clave privada vive solo en NOTIFIER_KEYS_DIR (volumen propio).
+// TELEGRAM_BOT_TOKEN en el entorno sirve para desarrollo y tiene prioridad.
 
 const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function clavePrivada() {
+  const dir = process.env.NOTIFIER_KEYS_DIR || resolve(__dirname, '../../data/notifier-keys');
+  const archivo = join(dir, 'notifier.key');
+  if (!existsSync(archivo)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
+    writeFileSync(archivo, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
+    console.log('Par de claves del notificador creado.');
+  }
+  return readFileSync(archivo, 'utf8');
+}
 
 async function esperarEsquema() {
   for (;;) {
     if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").get()) return;
     console.log('Esperando a que la API cree la base…');
     await pausa(5000);
+  }
+}
+
+let llamar: Llamar | null = null;
+let version: string | null | undefined;
+
+/** Relee el token si cambió en el panel y se reconecta. Sin token, el notificador espera. */
+async function sincronizarToken(privada: string) {
+  const deEntorno = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const actual = deEntorno ? 'entorno' : estado.leer('token_version') ?? null;
+  if (actual === version) return;
+  version = actual;
+  llamar = null;
+  estado.quitar('bot_username');
+  const cifrado = estado.leer('token_cipher');
+  if (!deEntorno && !cifrado) {
+    console.log('Sin token: esperando a que un admin lo pegue en el panel.');
+    return;
+  }
+  try {
+    const token = deEntorno || descifrarToken(privada, cifrado!);
+    const cliente = clienteTelegram(token, process.env.TELEGRAM_API_BASE || undefined);
+    const anterior = estado.leer('bot_id');
+    const usuario = await presentarse(cliente);
+    // Otro bot = otra cola de mensajes: su offset empieza de cero.
+    if (anterior !== estado.leer('bot_id')) estado.quitar('update_offset');
+    estado.quitar('token_error');
+    llamar = cliente;
+    console.log(`Notificador activo como @${usuario}`);
+  } catch (err) {
+    const msg = (err as Error).message;
+    estado.poner('token_error', msg.slice(0, 200));
+    console.error(`El token no funciona: ${msg}`);
   }
 }
 
@@ -42,13 +82,15 @@ async function bucle(nombre: string, vuelta: () => Promise<unknown>, descanso: n
 }
 
 async function main() {
-  const llamar = clienteTelegram(leerToken(), process.env.TELEGRAM_API_BASE || undefined);
   await esperarEsquema();
-  const usuario = await presentarse(llamar);
-  console.log(`Notificador activo como @${usuario}`);
+  const privada = clavePrivada();
+  estado.poner('notifier_pubkey', createPublicKey(privada).export({ type: 'spki', format: 'pem' }) as string);
+  latido();
+  await sincronizarToken(privada);
   await Promise.all([
-    bucle('recibir', () => recibir(llamar), 0),
-    bucle('enviar', () => enviarPendientes(llamar), 3000),
+    bucle('token', () => sincronizarToken(privada), 10_000),
+    bucle('recibir', async () => (llamar ? recibir(llamar) : (latido(), pausa(5000))), 0),
+    bucle('enviar', async () => (llamar ? enviarPendientes(llamar) : latido()), 3000),
   ]);
 }
 

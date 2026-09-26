@@ -17,6 +17,8 @@ export interface User {
   google?: boolean;
   has_password?: boolean;
   created_at?: string;
+  /** Solo viene (true) para administradores del panel técnico. */
+  is_admin?: boolean;
 }
 
 export interface Province {
@@ -446,3 +448,30 @@ export interface TelegramStatus {
   /** Solo los grupos que aplican al tipo de cuenta. */
   groups: { id: TelegramGroupId; label: string; description: string }[];
 }
+
+export interface AdminSession { admin_token: string; expires_at: string }
+
+export interface AdminSystem {
+  schema_version: number;
+  schema_expected: number;
+  demo_mode: boolean;
+  node: string;
+  uptime_s: number;
+  db_bytes: number;
+  uploads: { files: number; bytes: number };
+  disk: { free_bytes: number; total_bytes: number };
+  counts: {
+    users: number; clients: number; providers_free: number; providers_basic: number; providers_pro: number;
+    services: number; catalog_items: number; appointments_upcoming: number; pending_payments: number;
+  };
+}
+
+export interface AdminTelegram {
+  token: { configured: boolean; hint: string | null; updated_at: string | null; error: string | null };
+  notifier: { key_fingerprint: string | null; heartbeat: string | null; alive: boolean; bot_username: string | null };
+  linked_users: number;
+  last7d: Partial<Record<'pending' | 'sent' | 'failed' | 'skipped', number>>;
+  recent_errors: { kind: string; status: string; last_error: string | null; attempts: number; created_at: string }[];
+}
+
+export interface AdminAuditEntry { action: string; detail: string | null; ip: string | null; created_at: string; email: string | null }

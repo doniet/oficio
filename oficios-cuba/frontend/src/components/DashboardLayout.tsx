@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Briefcase, CalendarDays, CreditCard, Heart, LayoutDashboard, MessageCircle, Settings, ShoppingBag, UserRound } from 'lucide-react';
+import { Briefcase, CalendarDays, CreditCard, Heart, LayoutDashboard, MessageCircle, Settings, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Avatar, cn } from './ui';
 
@@ -24,6 +24,7 @@ export default function DashboardLayout() {
         ]),
     { to: '/dashboard/mensajes', label: 'Mensajes', icon: MessageCircle, badge: unread },
     { to: '/dashboard/cuenta', label: 'Cuenta', icon: Settings },
+    ...(user.is_admin ? [{ to: '/admin', label: 'Técnico', icon: ShieldCheck }] : []),
   ];
 
   return (

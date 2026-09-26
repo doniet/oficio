@@ -3,7 +3,7 @@ import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { planDe } from '../config.js';
 
-const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
+export const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 mkdirSync(dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 
@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS users (
   telegram_chat_id TEXT, -- chat privado con el bot (lo escribe oficio_notifier al vincular)
   telegram_linked_at TEXT,
   notify_prefs TEXT, -- JSON {grupo: false} con los avisos que el usuario apagó
+  is_admin INTEGER NOT NULL DEFAULT 0, -- solo se da desde el servidor: npm run admin -- dar <email>
+  totp_secret TEXT, -- 2FA del panel de administración (base32)
+  totp_enabled_at TEXT,
+  totp_last_step INTEGER, -- último paso TOTP aceptado: un código no vale dos veces
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -297,6 +301,17 @@ CREATE TABLE IF NOT EXISTS telegram_link_tokens (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Registro de lo que se hace en el panel de administración.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  ip TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- Estado del bot que escribe oficio_notifier: usuario del bot, offset de getUpdates, latido.
 CREATE TABLE IF NOT EXISTS telegram_state (
   key TEXT PRIMARY KEY,
@@ -330,6 +345,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_chat_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_fecha ON admin_audit(created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_pending ON notifications(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_catalog_provider ON catalog_items(provider_id, section, name);
 CREATE INDEX IF NOT EXISTS idx_uploads_purpose ON uploads(user_id, purpose, created_at);
@@ -454,6 +470,15 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       ALTER TABLE users ADD COLUMN telegram_chat_id TEXT;
       ALTER TABLE users ADD COLUMN telegram_linked_at TEXT;
       ALTER TABLE users ADD COLUMN notify_prefs TEXT;
+    `);
+  },
+  // 7 — panel de administración: rol y 2FA (admin_audit la crea `schema`).
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN totp_secret TEXT;
+      ALTER TABLE users ADD COLUMN totp_enabled_at TEXT;
+      ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
     `);
   },
 ];

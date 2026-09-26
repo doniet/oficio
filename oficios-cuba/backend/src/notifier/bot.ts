@@ -31,9 +31,10 @@ export function clienteTelegram(token: string, base = 'https://api.telegram.org'
   };
 }
 
-const estado = {
+export const estado = {
   leer: (k: string) => (db.prepare('SELECT value FROM telegram_state WHERE key = ?').get(k) as { value: string } | undefined)?.value,
   poner: (k: string, v: string) => db.prepare('INSERT INTO telegram_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, v),
+  quitar: (k: string) => db.prepare('DELETE FROM telegram_state WHERE key = ?').run(k),
 };
 
 export const latido = () => estado.poner('heartbeat', new Date().toISOString());
@@ -41,6 +42,7 @@ export const latido = () => estado.poner('heartbeat', new Date().toISOString());
 export async function presentarse(llamar: Llamar) {
   const yo = await llamar('getMe', {});
   estado.poner('bot_username', yo.username);
+  estado.poner('bot_id', String(yo.id));
   latido();
   return yo.username as string;
 }

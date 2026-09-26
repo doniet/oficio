@@ -45,14 +45,17 @@ docker exec oficio_api node dist/scripts/pagos.js rechazar <subscription_id>
 - `data/uploads/`: fotos subidas por los proveedores.
 - Todavía no hay copia de seguridad automática de ninguno de los dos.
 
+## Panel técnico (/admin)
+
+- Dar el rol (solo desde el servidor; la web no puede): `docker exec oficio_api node dist/scripts/admin.js dar <email>` (también `listar`, `quitar <email>`, `reset-2fa <email>`).
+- Al entrar en `/admin` el admin activa el 2FA (app de autenticación) y cada entrada abre una sesión de 30 min. Las acciones sensibles piden un código nuevo. Todo queda en el registro (`admin_audit`).
+- Perdió el móvil del 2FA: `reset-2fa <email>` y lo vuelve a activar.
+
 ## Avisos por Telegram (oficio_notifier)
 
-Contenedor aparte, en el perfil `telegram` de compose: `docker compose up -d` **no** lo arranca. Es el único con el token del bot y con salida a internet (net_dmz, solo hacia api.telegram.org); recibe por long polling, sin puertos ni rutas en Traefik. La API sigue sin salida.
+Contenedor aparte, en el perfil `telegram` de compose: `docker compose up -d` **no** lo arranca (usar `docker compose --profile telegram up -d`). Es el único con salida a internet (net_dmz, solo hacia api.telegram.org) y el único que puede leer el token: al arrancar crea su par de claves en `secrets/notifier/` (solo lo monta él) y publica la pública; la API guarda el token cifrado con ella. Recibe por long polling, sin puertos ni rutas en Traefik. La API sigue sin salida.
 
-Activarlo (requiere OK de Dariel: da salida a internet a un contenedor nuevo):
-1. Crear el bot con @BotFather (nombre y usuario, p. ej. `OficiosCubaBot`).
-2. Pegar el token en `secrets/telegram_bot_token` con un editor (el archivo ya existe, `chmod 600`, fuera de git). Nunca en el chat ni en `.env`.
-3. `docker compose --profile telegram up -d` (usa la imagen `oficio-api:latest` ya construida).
-4. `docker logs oficio_notifier` → `Notificador activo como @<bot>`; en la web, Cuenta → "Conectar Telegram" deja de decir "Muy pronto" (tarda hasta 1 min).
-
-Pararlo: `docker compose --profile telegram stop oficio_notifier`. Los avisos se siguen apuntando y caducan a las 24 h. Rotar el token: /revoke en @BotFather, pegar el nuevo y `docker compose --profile telegram up -d --force-recreate oficio_notifier`.
+- Token: lo pega un admin en `/admin` → Telegram (con código 2FA). El panel solo enseña los 4 últimos caracteres; nadie puede volver a leerlo. El notificador lo detecta en ≤10 s y se reconecta.
+- Rotar: /revoke en @BotFather y pegar el nuevo en el panel. Quitarlo: botón "Quitar token".
+- Si se borra `secrets/notifier/`, el notificador crea claves nuevas y hay que volver a pegar el token.
+- Pararlo: `docker compose --profile telegram stop oficio_notifier`. Los avisos se siguen apuntando y caducan a las 24 h.

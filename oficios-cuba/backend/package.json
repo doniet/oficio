@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "pagos": "tsx src/scripts/pagos.ts"
+    "pagos": "tsx src/scripts/pagos.ts",
+    "admin": "tsx src/scripts/admin.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

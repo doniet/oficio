@@ -51,11 +51,12 @@ function crearUsuario(u: { email: string; passwordHash: string; full_name: strin
 }
 
 function usuarioPublico(id: string) {
-  const u = db.prepare('SELECT id, email, full_name, phone, avatar_url, user_type, is_verified, google_sub, password_hash FROM users WHERE id = ?').get(id);
+  const u = db.prepare('SELECT id, email, full_name, phone, avatar_url, user_type, is_verified, google_sub, password_hash, is_admin FROM users WHERE id = ?').get(id);
   return {
     id: u.id, email: u.email, full_name: u.full_name, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null,
     user_type: u.user_type, is_verified: Boolean(u.is_verified),
     google: Boolean(u.google_sub), has_password: tienePassword(u.password_hash),
+    ...(u.is_admin ? { is_admin: true } : {}),
   };
 }
 

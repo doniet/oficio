@@ -2,8 +2,7 @@
 # Cloudflare (túnel de la cuenta Doniet) → traefik:80 → oficio_web (nginx) → oficio_api por red interna.
 # oficio_api no está en net_dmz ni publica puertos; su red es interna (sin salida a internet).
 # oficio_notifier (avisos por Telegram) va en el perfil "telegram": `docker compose up -d` no lo arranca.
-#   Activarlo (con OK de Dariel): token en secrets/telegram_bot_token (chmod 600) y
-#   `docker compose --profile telegram up -d --build`.
+#   Arrancarlo: `docker compose --profile telegram up -d`. El token se pega en /admin → Telegram.
 # Deploy: docker compose up -d --build
 services:
   oficio_web:
@@ -48,9 +47,10 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Mismo código e imagen que la API, otro proceso. Es el ÚNICO con el token del bot y con salida a
-  # internet (net_dmz, como oficio_web), y solo habla con api.telegram.org. Recibe por long polling:
-  # no escucha ningún puerto ni tiene ruta en Traefik. La API sigue sin salida.
+  # Mismo código e imagen que la API, otro proceso. Es el ÚNICO que puede leer el token del bot (la API
+  # lo guarda cifrado con la clave pública de este contenedor; la privada vive en secrets/notifier,
+  # que solo monta él) y el único con salida a internet (net_dmz, como oficio_web), solo hacia
+  # api.telegram.org. Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
   oficio_notifier:
     image: oficio-api:latest
     container_name: oficio_notifier
@@ -63,12 +63,11 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/oficios.db
-      - TELEGRAM_BOT_TOKEN_FILE=/run/secrets/telegram_bot_token
+      - NOTIFIER_KEYS_DIR=/app/keys
       - TZ=America/Havana
-    secrets:
-      - telegram_bot_token
     volumes:
       - ./data:/app/data
+      - ./secrets/notifier:/app/keys
     networks:
       - net_dmz
     mem_limit: 128m
@@ -83,10 +82,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-secrets:
-  telegram_bot_token:
-    file: ./secrets/telegram_bot_token
 
 networks:
   net_dmz:
