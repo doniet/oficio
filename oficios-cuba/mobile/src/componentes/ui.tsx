@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { initials, Plan } from '@oficio/shared';
 import { urlImagen } from '../lib/api';
 import { ambar, brand, fuentes, ink, radios, sand, sea, sombra } from '../lib/tema';
@@ -41,7 +41,8 @@ export function Insignia({ tipo, texto }: { tipo: 'plan' | 'negocio' | 'suave' |
   if (tipo === 'plan') {
     return (
       <View style={[u.badge, { backgroundColor: ink[900] }]}>
-        <Ionicons name="ribbon-outline" size={13} color={ambar[300]} />
+        {/* La corona de la web (lucide Crown): Ionicons no tiene corona. */}
+        <MaterialCommunityIcons name="crown-outline" size={14} color={ambar[300]} />
         <Text style={[u.badgeTexto, { color: ambar[300] }]}>Profesional</Text>
       </View>
     );
