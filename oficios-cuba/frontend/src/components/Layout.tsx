@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import {
   Briefcase, ChevronDown, CreditCard, Heart, Home, LayoutDashboard, LogOut, MessageCircle, Plus, Search, Settings, User as UserIcon, UserRound,
 } from 'lucide-react';
+import { EnlaceApp } from './DescargarApp';
 import { useAuth } from '../hooks/useAuth';
 import { Avatar, Logo, cn } from './ui';
 
@@ -198,6 +199,7 @@ export default function Layout() {
                   <li><Link to="/buscar" className="hover:text-white">Explorar servicios</Link></li>
                   <li><Link to="/profesionales" className="hover:text-white">Ver profesionales</Link></li>
                   <li><Link to="/registro" className="hover:text-white">Crear cuenta gratis</Link></li>
+                  <EnlaceApp className="hover:text-white" />
                 </ul>
               </div>
               <div>

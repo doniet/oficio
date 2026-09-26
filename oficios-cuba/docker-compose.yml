@@ -13,6 +13,9 @@ services:
     depends_on:
       oficio_api:
         condition: service_healthy
+    # APK de Android + android.json (mobile/scripts/publicar-apk.sh). Solo lectura: la web no escribe.
+    volumes:
+      - ./descargas:/usr/share/nginx/html/descargas:ro
     networks:
       - net_dmz
       - oficio_net

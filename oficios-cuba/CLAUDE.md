@@ -82,6 +82,7 @@ Públicas: `/`, `/buscar`, `/profesionales`, `/planes`, `/servicio/:id`, `/prove
 - **Plan:** el máximo de servicios se aplica al crear, al reactivar (`toggle`) y al bajar de plan (caducidad, cancelación): se pausan los más nuevos.
 - **Reseñas:** una por cliente y proveedor; solo si hubo trato (respuesta en el chat, cita confirmada/hecha, o contacto por WhatsApp/llamada con sesión — tabla `contacts`); nunca sobre un servicio pausado. Borrar un servicio conserva sus reseñas (`service_id` → NULL).
 - **Sesiones:** cambiar la contraseña invalida los tokens anteriores (`users.password_changed_at`); el endpoint devuelve uno nuevo.
+- **Descarga de la app:** `components/DescargarApp.tsx` (sección en la portada + enlace en el pie) lee `/descargas/android.json`; sin él no se muestra nada. En iPhone no se ofrece el APK. Publicar: `mobile/scripts/publicar-apk.sh` (ver DOCKER.md).
 - **Imágenes:** solo `/demo/*.webp` o subidas propias (tabla `uploads`), máx. 60 subidas / 24 h por usuario.
 - **Login:** además del límite por IP, 10 fallos / 15 min por cuenta.
 

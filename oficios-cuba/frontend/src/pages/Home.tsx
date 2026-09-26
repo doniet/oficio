@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, MapPin, MessageCircle, Search, ShieldCheck, Star, UserRoundSearch } from 'lucide-react';
+import { SeccionApp } from '../components/DescargarApp';
 import { useAuth } from '../hooks/useAuth';
 import { providerApi, provinceApi, serviceApi, statsApi } from '../services/api';
 import type { CategoryStat, ProviderCard as ProviderCardType, Province, ServiceSummary, SiteStats } from '../types';
@@ -227,6 +228,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <SeccionApp />
 
       {user?.user_type !== 'client' && (
         <section className="container-page pt-12">

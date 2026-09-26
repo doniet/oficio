@@ -52,3 +52,6 @@ mobile/google-services.json
 secrets/
 **/google-services.json
 *firebase-adminsdk*.json
+
+# APK publicado (lo sube mobile/scripts/publicar-apk.sh; no va al repo)
+descargas/

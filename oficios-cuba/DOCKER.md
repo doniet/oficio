@@ -67,3 +67,11 @@ La API apunta los avisos push en `push_outbox` (una fila por teléfono) y el not
 - Activarlo: `mkdir -p secrets/fcm && chmod 700 secrets/fcm`, dejar ahí la cuenta de servicio de Firebase como `cuenta.json` (`chmod 600`; nunca al repo) y `docker compose --profile telegram up -d oficio_notifier`. El log dice `Push FCM activo (proyecto …)`; sin el archivo, `Push FCM desactivado` y Telegram sigue igual.
 - Reintentos: 5, con espera exponencial; un aviso caduca a las 24 h; un token que FCM da por muerto (`UNREGISTERED`/404) borra el dispositivo. Si el teléfono pasó a otra cuenta antes del envío, el aviso de la anterior se descarta.
 - Prueba de campo (latencia real en un teléfono): `docker exec oficio_notifier node dist/scripts/push-prueba.js <email> [n] [segundos]`.
+
+## App Android (APK) en la web
+
+El APK se sirve en `https://oficio.dardoit.com/descargas/` desde la carpeta `descargas/` (montada en `oficio_web` en solo lectura; no va en la imagen ni en git). La web lee `descargas/android.json` para mostrar el botón «Descargar APK» (portada y pie); sin ese archivo no lo muestra.
+
+- Publicar una versión (desde j-u): `cd mobile && ./scripts/apk-release.sh && ./scripts/publicar-apk.sh`. Sube el APK a un temporal, comprueba el SHA-256, lo renombra, escribe `android.json` y borra las versiones anteriores. No hace falta reconstruir la web.
+- nginx (`location ^~ /descargas/`): solo sirve `*.apk` (tipo de Android, `attachment`, caché de un año: el nombre lleva la versión) y `android.json` (sin caché); todo lo demás, 404.
+- 🚨 Crear `descargas/` (lo hace `publicar-apk.sh`) ANTES de `docker compose up`: si no existe, Docker la crea como root.

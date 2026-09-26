@@ -191,3 +191,10 @@
 - Security: llave y contraseña solo en archivos 600 (j-u y vps2), nunca en el repo ni en el chat.
 - Next: primera instalación en un teléfono ARM real (confirma el APK solo-ARM); decidir cómo se reparte el APK (¿descarga desde oficio.dardoit.com? es superficie pública → OK de Dariel); Apklis; R8/minify para bajar de 60 MB (probar antes).
 - Blockers: ninguno.
+
+## 2026-09-26 07:50 UTC — cc-jarvis-ubuntu — Botón «Descargar APK» en la web
+- Changes: `frontend/src/components/DescargarApp.tsx`: sección «App para Android» en la portada (tarjeta `ink-950` como la franja de estadísticas y el pie, `btn-primary` «Descargar APK», versión · tamaño · Android mínimo, «¿Cómo instalarla?» en 3 pasos, huella SHA-256, icono de la app) y enlace en el pie («Para clientes»). En iPhone: aviso de que es solo Android. Lee `/descargas/android.json`: sin él no pinta nada. `nginx.conf`: `location ^~ /descargas/` (solo `.apk` con tipo de Android + `attachment` + caché 1 año, y `android.json` sin caché; resto 404; el 404 de un APK inexistente sin caché). Compose: `./descargas` montada ro en `oficio_web`. `mobile/scripts/publicar-apk.sh`: verifica firma, sube con temporal + comprobación de SHA-256, escribe `android.json`, borra versiones viejas. `frontend/public/app-icono.png` (320 px).
+- Tests: pass — `tsc` + `vite build`. nginx 1.27 real en local con la conf: `nginx -t` ok; APK 200 `application/vnd.android.package-archive` + `attachment` + hash idéntico; `android.json` 200 `no-cache`; otro archivo, el listado y un APK inexistente → 404 (sin caché). Vite + API de producción (solo lectura), Playwright a 390 y 1280 px: sección, pasos, enlace del pie; 0 errores de consola. (Producción ya desbordaba 4 px en escritorio estrecho por el círculo decorativo de «Para profesionales»; no es de este cambio.)
+- Security: superficie pública nueva pedida por Dariel: `/descargas/` solo sirve el APK y su JSON (lista blanca por extensión), carpeta en solo lectura para nginx.
+- Next: publicar y desplegar; primera instalación en un teléfono real.
+- Blockers: ninguno.
