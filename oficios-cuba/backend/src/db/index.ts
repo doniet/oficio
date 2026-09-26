@@ -1,14 +1,16 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
-import { PLANS, PlanId } from '../config.js';
+import { planDe } from '../config.js';
 
-const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
+export const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 mkdirSync(dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// La base la comparten dos procesos (la API y oficio_notifier): esperar en vez de fallar con SQLITE_BUSY.
+db.pragma('busy_timeout = 5000');
 
 export const schema = `
 -- Users table (both clients and providers)
@@ -22,6 +24,14 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   is_verified INTEGER DEFAULT 0,
   password_changed_at DATETIME,
+  google_sub TEXT,
+  telegram_chat_id TEXT, -- chat privado con el bot (lo escribe oficio_notifier al vincular)
+  telegram_linked_at TEXT,
+  notify_prefs TEXT, -- JSON {grupo: false} con los avisos que el usuario apagó
+  is_admin INTEGER NOT NULL DEFAULT 0, -- solo se da desde el servidor: npm run admin -- dar <email>
+  totp_secret TEXT, -- 2FA del panel de administración (base32)
+  totp_enabled_at TEXT,
+  totp_last_step INTEGER, -- último paso TOTP aceptado: un código no vale dos veces
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,6 +92,12 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'basic', 'pro', 'premium')),
   subscription_expires_at DATETIME,
   stripe_customer_id TEXT,
+  contact_mode TEXT DEFAULT 'whatsapp' CHECK (contact_mode IN ('whatsapp', 'call', 'both')),
+  kind TEXT DEFAULT 'oficio' CHECK (kind IN ('oficio', 'negocio')),
+  horario TEXT,
+  gallery TEXT, -- JSON: fotos del negocio
+  agenda TEXT, -- JSON: días y horas en que acepta citas
+  show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -99,7 +115,9 @@ CREATE TABLE IF NOT EXISTS services (
   price_min REAL,
   price_max REAL,
   price_type TEXT DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'hourly', 'daily', 'negotiable')),
+  price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
   images TEXT, -- JSON array of image URLs
+  duration_min INTEGER, -- duración de la cita; NULL = la general de la agenda
   is_active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -206,8 +224,120 @@ CREATE TABLE IF NOT EXISTS favorites (
 CREATE TABLE IF NOT EXISTS uploads (
   name TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  purpose TEXT, -- 'catalog' = foto de un artículo del catálogo (cuota propia); NULL = el resto
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Citas agendadas (plan Profesional). provider_id = id del PERFIL. Las citas manuales (las apunta
+-- el profesional) pueden no tener cliente con cuenta: llevan client_name / client_phone.
+CREATE TABLE IF NOT EXISTS appointments (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  client_id TEXT,
+  service_id TEXT,
+  starts_at TEXT NOT NULL, -- ISO UTC
+  ends_at TEXT NOT NULL, -- ISO UTC, fijado al reservar
+  duration_min INTEGER NOT NULL,
+  note TEXT,
+  client_name TEXT,
+  client_phone TEXT,
+  origin TEXT NOT NULL DEFAULT 'online' CHECK (origin IN ('online', 'manual')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done', 'no_show')),
+  cancelled_by TEXT CHECK (cancelled_by IN ('client', 'provider')),
+  rescheduled_from TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE,
+  FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
+  FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+-- Catálogo de productos o servicios de un profesional (Básico 50, Profesional 1000).
+-- hidden_by_plan: pasa del límite del plan actual; vuelve a verse si sube de plan.
+CREATE TABLE IF NOT EXISTS catalog_items (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  price REAL,
+  price_type TEXT NOT NULL DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'from', 'ask')),
+  price_currency TEXT NOT NULL DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
+  image TEXT,
+  section TEXT,
+  available INTEGER NOT NULL DEFAULT 1,
+  hidden_by_plan INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
+);
+
+-- Avisos por Telegram. La API solo los apunta aquí (no tiene salida a internet); los envía
+-- oficio_notifier, el único contenedor con el token del bot. dedupe_key evita repetir avisos
+-- programados (recordatorios, vencimiento del plan) y agrupa los del chat.
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  url TEXT,
+  dedupe_key TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  send_after TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  sent_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Códigos de un solo uso para vincular Telegram (t.me/<bot>?start=<código>). Se guarda el hash.
+CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Registro de lo que se hace en el panel de administración.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  ip TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Estado del bot que escribe oficio_notifier: usuario del bot, offset de getUpdates, latido.
+CREATE TABLE IF NOT EXISTS telegram_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Tiempo en que el profesional no acepta citas (almuerzo, un trámite, vacaciones).
+CREATE TABLE IF NOT EXISTS agenda_blocks (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  starts_at TEXT NOT NULL, -- ISO UTC
+  ends_at TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
+);
+
+-- Clientes con sesión que pulsaron WhatsApp o Llamar: sin chat, es la prueba de contacto para reseñar.
+CREATE TABLE IF NOT EXISTS contacts (
+  client_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  via TEXT NOT NULL CHECK (via IN ('whatsapp', 'call')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (client_id, provider_id, via),
+  FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
 );
 
 -- Dispositivos para notificaciones push (un token pertenece a un solo usuario)
@@ -225,6 +355,15 @@ CREATE TABLE IF NOT EXISTS push_devices (
 );
 
 -- Indexes
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
+CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_chat_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_fecha ON admin_audit(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_pending ON notifications(status, send_after);
+CREATE INDEX IF NOT EXISTS idx_catalog_provider ON catalog_items(provider_id, section, name);
+CREATE INDEX IF NOT EXISTS idx_uploads_purpose ON uploads(user_id, purpose, created_at);
+CREATE INDEX IF NOT EXISTS idx_agenda_blocks_provider ON agenda_blocks(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
 CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
@@ -276,7 +415,88 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   (d) => {
     d.exec('ALTER TABLE users ADD COLUMN password_changed_at DATETIME');
   },
-  // 3 — push_devices. La tabla es nueva: basta con crearla (mismo SQL que en `schema`).
+  // 3 — planes nuevos (Gratis / Básico / Profesional), login con Google, contacto por WhatsApp o
+  //     llamada, negocio, galería, agenda y moneda del precio. Los precios anteriores eran en USD.
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN google_sub TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN contact_mode TEXT DEFAULT 'whatsapp' CHECK (contact_mode IN ('whatsapp', 'call', 'both'));
+      ALTER TABLE provider_profiles ADD COLUMN kind TEXT DEFAULT 'oficio' CHECK (kind IN ('oficio', 'negocio'));
+      ALTER TABLE provider_profiles ADD COLUMN horario TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN gallery TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN agenda TEXT;
+      ALTER TABLE provider_profiles ADD COLUMN show_on_map INTEGER DEFAULT 0;
+      ALTER TABLE services ADD COLUMN price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD'));
+      UPDATE services SET price_currency = 'USD';
+      UPDATE provider_profiles SET subscription_plan = 'pro' WHERE subscription_plan = 'premium';
+      UPDATE subscriptions SET plan = 'pro' WHERE plan = 'premium';
+    `);
+  },
+  // 4 — agenda profesional: fin de la cita, citas manuales sin cuenta, "no vino", quién cancela y
+  //     reprogramaciones; duración por servicio. La tabla agenda_blocks la crea `schema`.
+  (d) => {
+    d.exec('ALTER TABLE services ADD COLUMN duration_min INTEGER');
+    // Las bases anteriores a la v3 no tenían appointments: la crea `schema` ya en su forma nueva.
+    if (!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'appointments'").get()) return;
+    d.exec(`
+      CREATE TABLE appointments_v4 (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        client_id TEXT,
+        service_id TEXT,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        duration_min INTEGER NOT NULL,
+        note TEXT,
+        client_name TEXT,
+        client_phone TEXT,
+        origin TEXT NOT NULL DEFAULT 'online' CHECK (origin IN ('online', 'manual')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done', 'no_show')),
+        cancelled_by TEXT CHECK (cancelled_by IN ('client', 'provider')),
+        rescheduled_from TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE,
+        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
+        FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL
+      );
+      INSERT INTO appointments_v4 (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, status, created_at, updated_at)
+        SELECT id, provider_id, client_id, service_id, starts_at,
+          strftime('%Y-%m-%dT%H:%M:%fZ', starts_at, '+' || duration_min || ' minutes'),
+          duration_min, note, status, created_at, updated_at
+        FROM appointments;
+      DROP TABLE appointments;
+      ALTER TABLE appointments_v4 RENAME TO appointments;
+      CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
+      CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
+    `);
+  },
+  // 5 — catálogo: la tabla catalog_items la crea `schema`; las subidas llevan su propósito.
+  (d) => {
+    // Las bases muy viejas no tenían uploads: la crea `schema` ya con la columna.
+    if (d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'uploads'").get()) {
+      d.exec('ALTER TABLE uploads ADD COLUMN purpose TEXT');
+    }
+  },
+  // 6 — avisos por Telegram: vinculación y preferencias por usuario (las tablas, en `schema`).
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN telegram_chat_id TEXT;
+      ALTER TABLE users ADD COLUMN telegram_linked_at TEXT;
+      ALTER TABLE users ADD COLUMN notify_prefs TEXT;
+    `);
+  },
+  // 7 — panel de administración: rol y 2FA (admin_audit la crea `schema`).
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN totp_secret TEXT;
+      ALTER TABLE users ADD COLUMN totp_enabled_at TEXT;
+      ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
+    `);
+  },
+  // 8 — push_devices. La tabla es nueva: basta con crearla (mismo SQL que en `schema`).
   (d) => {
     d.exec(`
       CREATE TABLE IF NOT EXISTS push_devices (
@@ -330,7 +550,12 @@ export function initDatabase() {
   return db;
 }
 
-export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 3 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
+export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 2 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
+
+export function planDelPerfil(providerId: string) {
+  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
+  return planDe(row?.subscription_plan);
+}
 
 export function parseImages(raw: unknown): string[] {
   if (!raw || typeof raw !== 'string') return [];
@@ -356,10 +581,17 @@ export function refreshProviderRating(providerId: string) {
 
 // Deja activos como máximo los servicios que permite el plan actual: se conservan los más
 // antiguos y el resto se pausa (el proveedor puede elegir cuáles pausando y reactivando).
+// Se llama en cada cambio de plan, hacia arriba o hacia abajo.
 export function enforcePlanLimit(providerId: string) {
-  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: PlanId } | undefined;
+  const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   if (!row) return;
-  const max = PLANS[row.subscription_plan].maxServices;
+  const { maxServices: max, maxCatalog } = planDe(row.subscription_plan);
+  // Catálogo: se ven los `maxCatalog` más antiguos; al subir de plan reaparecen solos.
+  db.prepare(`
+    UPDATE catalog_items SET hidden_by_plan = CASE WHEN id IN (
+      SELECT id FROM catalog_items WHERE provider_id = ? ORDER BY created_at, id LIMIT ?
+    ) THEN 0 ELSE 1 END WHERE provider_id = ?
+  `).run(providerId, maxCatalog, providerId);
   if (max === null) return;
   db.prepare(`
     UPDATE services SET is_active = 0, updated_at = CURRENT_TIMESTAMP

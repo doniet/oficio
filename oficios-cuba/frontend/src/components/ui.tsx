@@ -82,10 +82,9 @@ export function RatingInline({ rating, count, className = '' }: { rating: number
 
 // Es la insignia del plan, no una verificación de identidad: no puede decir "Verificado".
 export function PlanBadge({ plan, className = '' }: { plan: Plan; className?: string }) {
-  if (plan === 'premium') {
-    return <span className={cn('badge bg-ink-900 text-amber-300', className)}><Crown className="h-3.5 w-3.5" aria-hidden="true" /> Premium</span>;
+  if (plan === 'pro') {
+    return <span className={cn('badge bg-ink-900 text-amber-300', className)}><Crown className="h-3.5 w-3.5" aria-hidden="true" /> Profesional</span>;
   }
-  if (plan === 'pro') return <span className={cn('badge bg-sea-100 text-sea-800', className)}>Pro</span>;
   return null;
 }
 
@@ -93,8 +92,7 @@ export function PlanPill({ plan }: { plan: Plan }) {
   const styles: Record<Plan, string> = {
     free: 'bg-sand-100 text-ink-600',
     basic: 'bg-amber-100 text-amber-800',
-    pro: 'bg-sea-100 text-sea-800',
-    premium: 'bg-ink-900 text-amber-300',
+    pro: 'bg-ink-900 text-amber-300',
   };
   return <span className={cn('badge', styles[plan])}>{planLabel[plan]}</span>;
 }

@@ -1,15 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { authApi, configApi, conversationApi, tokenStore } from '../services/api';
+import { authApi, configApi, conversationApi, tokenStore, type GoogleLogin } from '../services/api';
 import type { User, UserType } from '../types';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   demo: boolean;
+  /** 'real' = Google de verdad; 'demo' = selector de cuentas ficticias; null = sin Google. */
+  googleMode: 'real' | 'demo' | null;
+  googleClientId: string | null;
   unread: number;
   refreshUnread: () => void;
   login: (email: string, password: string) => Promise<User>;
   register: (data: { email: string; password: string; full_name: string; phone?: string; user_type: UserType }) => Promise<User>;
+  /** Devuelve el usuario, o `needs_user_type` si es la primera vez y hay que preguntar cliente/profesional. */
+  loginWithGoogle: (data: GoogleLogin) => Promise<{ user: User; isNew: boolean } | { needs_user_type: true; email: string; full_name: string }>;
   logout: () => void;
   updateUser: (data: Partial<User>) => void;
 }
@@ -20,11 +25,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [demo, setDemo] = useState(false);
+  const [googleMode, setGoogleMode] = useState<'real' | 'demo' | null>(null);
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
 
   // El token guardado se valida contra /auth/me: nunca se confía en datos cacheados.
   useEffect(() => {
-    configApi.get().then((r) => setDemo(r.data.demo)).catch(() => {});
+    configApi.get().then((r) => {
+      setDemo(r.data.demo);
+      setGoogleMode(r.data.google ?? null);
+      setGoogleClientId(r.data.google_client_id ?? null);
+    }).catch(() => {});
     if (!tokenStore.get()) {
       setIsLoading(false);
       return;
@@ -72,6 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data.user as User;
   }, []);
 
+  const loginWithGoogle = useCallback(async (payload: GoogleLogin) => {
+    const { data } = await authApi.google(payload);
+    if (data.needs_user_type) return { needs_user_type: true as const, email: data.email, full_name: data.full_name };
+    tokenStore.set(data.token);
+    setUser(data.user);
+    return { user: data.user as User, isNew: Boolean(data.is_new) };
+  }, []);
+
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
@@ -82,8 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isLoading, demo, unread, refreshUnread, login, register, logout, updateUser }),
-    [user, isLoading, demo, unread, refreshUnread, login, register, logout, updateUser],
+    () => ({ user, isLoading, demo, googleMode, googleClientId, unread, refreshUnread, login, register, loginWithGoogle, logout, updateUser }),
+    [user, isLoading, demo, googleMode, googleClientId, unread, refreshUnread, login, register, loginWithGoogle, logout, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

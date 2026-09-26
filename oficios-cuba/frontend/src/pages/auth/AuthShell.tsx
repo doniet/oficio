@@ -18,7 +18,7 @@ export function AuthShell({ title, subtitle, children, aside }: { title: string;
 
 function Perks() {
   const items = [
-    { icon: <MessageCircle className="h-5 w-5" />, title: 'Chat directo', text: 'Habla con el profesional sin intermediarios ni comisiones.' },
+    { icon: <MessageCircle className="h-5 w-5" />, title: 'Contacto directo', text: 'Escríbele por WhatsApp o llámalo, sin intermediarios ni comisiones.' },
     { icon: <Star className="h-5 w-5" />, title: 'Reseñas reales', text: 'Solo opina quien contactó al profesional por la plataforma.' },
     { icon: <ShieldCheck className="h-5 w-5" />, title: 'Tus datos, protegidos', text: 'Tu teléfono solo lo ve quien tú decidas.' },
   ];

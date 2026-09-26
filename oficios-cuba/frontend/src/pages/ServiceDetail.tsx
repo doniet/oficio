@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Briefcase, ChevronLeft, ChevronRight, Clock, EyeOff, MapPin, MessageSquareText, Pencil, SearchX } from 'lucide-react';
+import { useTasa } from '../hooks/useTasa';
 import { useAuth } from '../hooks/useAuth';
 import { reviewApi, serviceApi, apiError } from '../services/api';
-import { formatPrice, priceTypeLabel, relativeTime } from '../lib/format';
+import { priceParts, priceTypeLabel, relativeTime } from '../lib/format';
 import type { Review, ServiceDetail as ServiceDetailType, ServiceSummary } from '../types';
 import ContactActions from '../components/ContactActions';
-import { ServiceCard } from '../components/cards';
+import { NegocioChip, ServiceCard } from '../components/cards';
 import { ReviewForm, ReviewItem } from '../components/ReviewList';
 import { Alert, Avatar, Breadcrumbs, CategoryCover, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, cn } from '../components/ui';
 import axios from 'axios';
@@ -144,6 +145,21 @@ function ReviewsSection({ service, reviews, onCreated }: { service: ServiceDetai
   );
 }
 
+function PriceBlock({ service, big }: { service: ServiceDetailType; big?: boolean }) {
+  const tasa = useTasa();
+  const p = priceParts(service, tasa);
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{priceTypeLabel[service.price_type]}</p>
+      <p className={cn('font-display font-bold text-ink-900', big ? 'text-3xl' : 'text-2xl')}>
+        {p.main}
+        {p.suffix && <span className="ml-1 text-base font-semibold text-ink-400">{p.suffix}</span>}
+      </p>
+      {p.alt && <p className="mt-0.5 text-sm text-ink-500">{p.alt} <span className="text-ink-400">· tasa informal</span></p>}
+    </div>
+  );
+}
+
 export default function ServiceDetail() {
   const { id } = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDetailType | null>(null);
@@ -253,8 +269,7 @@ export default function ServiceDetail() {
               <span className="flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" /> Publicado {relativeTime(service.created_at)}</span>
             </div>
             <div className="mt-5 rounded-2xl bg-white p-4 shadow-card lg:hidden">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{priceTypeLabel[service.price_type]}</p>
-              <p className="font-display text-2xl font-bold text-ink-900">{formatPrice(service)}</p>
+              <PriceBlock service={service} />
               {/* Entre md y lg no hay barra inferior ni columna lateral: el contacto va aquí. */}
               {!service.is_owner && (
                 <div className="mt-4 hidden md:block">
@@ -263,8 +278,10 @@ export default function ServiceDetail() {
                     providerName={providerName}
                     serviceId={service.id}
                     serviceTitle={service.title}
-                    whatsapp={service.whatsapp}
                     phone={service.whatsapp}
+                    contactMode={service.contact_mode}
+                    hasChat={service.has_chat}
+                    hasAgenda={service.has_agenda}
                   />
                 </div>
               )}
@@ -288,12 +305,16 @@ export default function ServiceDetail() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Link to={`/proveedor/${service.provider_id}`} className="text-lg font-bold text-ink-900 hover:text-brand-700">{providerName}</Link>
                   <PlanBadge plan={service.subscription_plan} />
+                  {service.kind === 'negocio' && <NegocioChip />}
                 </div>
                 {service.business_name && <p className="text-sm text-ink-500">{service.owner_name}</p>}
                 <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-500">
                   <RatingInline rating={service.rating} count={service.review_count} />
                   {service.years_experience > 0 && (
                     <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" aria-hidden="true" /> {service.years_experience} años de oficio</span>
+                  )}
+                  {service.kind === 'negocio' && service.horario && (
+                    <span className="flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" /> {service.horario}</span>
                   )}
                 </div>
               </div>
@@ -309,23 +330,22 @@ export default function ServiceDetail() {
 
         <aside className="hidden lg:block">
           <div className="card sticky top-24 space-y-5 p-6">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{priceTypeLabel[service.price_type]}</p>
-              <p className="font-display text-3xl font-bold text-ink-900">{formatPrice(service)}</p>
-            </div>
+            <PriceBlock service={service} big />
             {!service.is_owner && (
               <ContactActions
                 providerId={service.provider_id}
                 providerName={providerName}
                 serviceId={service.id}
                 serviceTitle={service.title}
-                whatsapp={service.whatsapp}
                 phone={service.whatsapp}
+                contactMode={service.contact_mode}
+                hasChat={service.has_chat}
+                hasAgenda={service.has_agenda}
               />
             )}
             <p className="flex items-start gap-2 border-t border-sand-200 pt-4 text-xs leading-relaxed text-ink-400">
               <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              Acuerda precio, fecha y lugar por el chat antes de empezar el trabajo. Oficios Cuba no cobra comisión.
+              Acuerda precio, fecha y lugar {service.has_chat ? 'por el chat' : 'por WhatsApp o por teléfono'} antes de empezar el trabajo. Oficios Cuba no cobra comisión.
             </p>
           </div>
         </aside>
@@ -347,7 +367,10 @@ export default function ServiceDetail() {
           providerName={providerName}
           serviceId={service.id}
           serviceTitle={service.title}
-          whatsapp={service.whatsapp}
+          phone={service.whatsapp}
+          contactMode={service.contact_mode}
+          hasChat={service.has_chat}
+          hasAgenda={service.has_agenda}
         />
       )}
     </div>

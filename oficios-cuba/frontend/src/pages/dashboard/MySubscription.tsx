@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Banknote, Check, Clock, CreditCard, Landmark, Receipt } from 'lucide-react';
+import { Banknote, Check, Clock, CreditCard, ExternalLink, Landmark, MessageSquareMore, Receipt } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { apiError, subscriptionApi } from '../../services/api';
 import type { Payment, Plan, PlanInfo, Subscription } from '../../types';
-import { parseDate, planLabel, usd } from '../../lib/format';
+import { DARDOIT_URL, parseDate, planLabel, planPrice, usd } from '../../lib/format';
+import { useTasa } from '../../hooks/useTasa';
 import { PageTitle } from '../../components/DashboardLayout';
 import { Alert, ErrorState, Modal, PageLoader, PlanPill, Spinner, cn } from '../../components/ui';
 import { ConfirmDialog } from './parts';
@@ -12,7 +13,7 @@ import { ConfirmDialog } from './parts';
 type PaidPlan = Exclude<Plan, 'free'>;
 type Method = 'transfer' | 'cash';
 
-const PLAN_ORDER: Plan[] = ['free', 'basic', 'pro', 'premium'];
+const PLAN_ORDER: Plan[] = ['free', 'basic', 'pro'];
 
 const paymentStatus: Record<Payment['status'], { label: string; cls: string }> = {
   pending: { label: 'En revisión', cls: 'bg-amber-100 text-amber-800' },
@@ -68,6 +69,7 @@ function ReportPayment({ subscriptionId, onDone }: { subscriptionId: string; onD
 
 export default function MySubscription() {
   const toast = useToast();
+  const tasa = useTasa();
   const [data, setData] = useState<MeResponse | null>(null);
   const [plans, setPlans] = useState<Record<Plan, PlanInfo> | null>(null);
   const [demo, setDemo] = useState(false);
@@ -102,7 +104,7 @@ export default function MySubscription() {
     const wanted = params.get('plan');
     if (!data || !wanted) return;
     const pendingPlan = data.subscription?.status === 'pending' ? data.subscription.plan : null;
-    if ((wanted === 'basic' || wanted === 'pro' || wanted === 'premium') && wanted !== data.provider.subscription_plan && wanted !== pendingPlan) {
+    if ((wanted === 'basic' || wanted === 'pro') && wanted !== data.provider.subscription_plan && wanted !== pendingPlan) {
       setChosen(wanted);
       setCheckoutError('');
     }
@@ -152,7 +154,7 @@ export default function MySubscription() {
 
   return (
     <div className="space-y-6">
-      <PageTitle title="Mi plan" subtitle="Más visibilidad y más servicios publicados según tu plan." />
+      <PageTitle title="Mi plan" subtitle="Más fotos, más oficios, agenda y chat según tu plan." />
 
       {demo && (
         <Alert tone="info">Modo demostración: los pagos se simulan y el plan se activa al momento. No se cobra nada.</Alert>
@@ -163,7 +165,7 @@ export default function MySubscription() {
           <p className="text-sm font-semibold text-ink-500">Plan actual</p>
           <div className="mt-2 flex items-center gap-2">
             <PlanPill plan={current} />
-            {current !== 'free' && <span className="font-display text-xl font-bold">{usd(currentInfo.price)}<span className="text-sm font-normal text-ink-400"> / mes</span></span>}
+            {current !== 'free' && <span className="font-display text-xl font-bold">{planPrice(currentInfo.price, tasa).usd}<span className="text-sm font-normal text-ink-400"> / mes</span></span>}
           </div>
         </div>
         <div>
@@ -171,7 +173,7 @@ export default function MySubscription() {
           <p className="mt-2 font-semibold">{current === 'free' ? 'Sin vencimiento' : expires ? longDate(expires) : '—'}</p>
         </div>
         <div>
-          <p className="text-sm font-semibold text-ink-500">Servicios publicados</p>
+          <p className="text-sm font-semibold text-ink-500">Oficios publicados</p>
           <p className="mt-2 font-semibold">{data.service_count} {max === null ? '· ilimitados' : `de ${max}`}</p>
           {max !== null && (
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand-200" aria-hidden="true">
@@ -217,9 +219,10 @@ export default function MySubscription() {
                 {featured && !isCurrent && <span className="badge absolute -top-2.5 left-5 bg-sea-600 text-white">Recomendado</span>}
                 <h3 className="font-sans text-lg font-bold">{planLabel[id]}</h3>
                 <p className="mt-1">
-                  <span className="font-display text-3xl font-bold">{p.price ? usd(p.price) : 'Gratis'}</span>
+                  <span className="font-display text-3xl font-bold">{planPrice(p.price, tasa).usd}</span>
                   {p.price > 0 && <span className="text-sm text-ink-400"> / mes</span>}
                 </p>
+                {planPrice(p.price, tasa).cup && <p className="text-xs text-ink-400">{planPrice(p.price, tasa).cup} al cambio de hoy</p>}
                 <ul className="mt-4 flex-1 space-y-2 text-sm text-ink-600">
                   {p.features.map((f) => (
                     <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-sea-600" aria-hidden="true" /> {f}</li>
@@ -230,7 +233,7 @@ export default function MySubscription() {
                     <button type="button" disabled className="btn-secondary w-full">Plan actual</button>
                   ) : id === 'free' ? (
                     hasPaidOrPending && (
-                      <button type="button" onClick={() => setCancelOpen(true)} className="btn-ghost w-full">Volver al gratuito</button>
+                      <button type="button" onClick={() => setCancelOpen(true)} className="btn-ghost w-full">Volver al Gratis</button>
                     )
                   ) : isPending ? (
                     <button type="button" disabled className="btn-secondary w-full"><Clock className="h-4 w-4" /> Pendiente</button>
@@ -243,6 +246,14 @@ export default function MySubscription() {
               </div>
             );
           })}
+          <div className="card flex flex-col bg-ink-900 p-5 text-white">
+            <MessageSquareMore className="h-6 w-6 text-amber-300" aria-hidden="true" />
+            <h3 className="mt-3 font-sans text-lg font-bold">¿Necesitas algo a medida?</h3>
+            <p className="mt-1 flex-1 text-sm text-white/70">Varias sucursales, una web propia o una integración especial: cuéntanos qué necesitas.</p>
+            <a href={DARDOIT_URL} target="_blank" rel="noopener noreferrer" className="btn-secondary mt-5 w-full">
+              Contáctanos <ExternalLink className="h-4 w-4" />
+            </a>
+          </div>
         </div>
       </section>
 
@@ -278,7 +289,10 @@ export default function MySubscription() {
           <div className="space-y-4">
             <div className="flex items-baseline justify-between rounded-2xl bg-sand-100 px-4 py-3">
               <span className="text-sm text-ink-600">Pago mensual</span>
-              <span className="font-display text-2xl font-bold">{usd(plans[chosen].price)}</span>
+              <span className="text-right">
+                <span className="block font-display text-2xl font-bold">{planPrice(plans[chosen].price, tasa).usd}</span>
+                <span className="block text-xs text-ink-400">{planPrice(plans[chosen].price, tasa).cup}</span>
+              </span>
             </div>
             {demo ? (
               <p className="text-sm text-ink-600">Es una demostración: el plan se activa ahora mismo sin cobro real.</p>
@@ -311,14 +325,14 @@ export default function MySubscription() {
       <ConfirmDialog
         open={cancelOpen}
         title="¿Cancelar tu suscripción?"
-        confirmLabel="Sí, pasar al gratuito"
+        confirmLabel="Sí, pasar al Gratis"
         busy={cancelling}
         onConfirm={cancel}
         onClose={() => setCancelOpen(false)}
       >
-        Tu cuenta pasará al plan <strong>Gratuito</strong> ahora mismo y perderás la insignia y la posición destacada.
-        {plans.free.maxServices !== null && <> Ese plan permite {plans.free.maxServices} servicio: si tienes más, no podrás publicar nuevos.</>}
-        Tus servicios actuales no se borran.
+        Tu cuenta pasará al plan <strong>Gratis</strong> ahora mismo: sin fotos, sin chat ni agenda, y sin posición destacada.
+        {plans.free.maxServices !== null && <> Ese plan permite {plans.free.maxServices} oficio activo: los demás quedarán pausados.</>}
+        {' '}No se borra nada: tus fotos y oficios vuelven a verse si mejoras de plan.
       </ConfirmDialog>
 
       <p className="text-center text-xs text-ink-400">

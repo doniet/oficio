@@ -42,7 +42,7 @@ export default function Messages() {
     <div>
       <PageTitle
         title="Mensajes"
-        subtitle={isProvider ? 'Conversaciones con clientes interesados en tus servicios.' : 'Tus conversaciones con profesionales.'}
+        subtitle={isProvider ? 'Conversaciones con clientes interesados en tus oficios. El chat es del plan Profesional.' : 'Tus conversaciones con profesionales.'}
       />
 
       {loading ? (
@@ -67,7 +67,7 @@ export default function Messages() {
         >
           {isProvider
             ? 'Cuando un cliente te escriba desde uno de tus servicios, la conversación aparecerá aquí.'
-            : 'Escribe a un profesional desde su servicio o perfil y sigue la conversación aquí.'}
+            : 'Escribe por el chat a un profesional con plan Profesional y sigue la conversación aquí.'}
         </EmptyState>
       ) : (
         <>

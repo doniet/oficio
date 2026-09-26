@@ -32,7 +32,7 @@ describe('sesiones', () => {
 });
 
 describe('perfil público del proveedor', () => {
-  it('no expone coordenadas', async () => {
+  it('no expone coordenadas si el profesional no eligió mostrarlas en el mapa', async () => {
     const pro = await registrar('provider');
     await crearServicio(pro.auth);
     db.prepare('UPDATE provider_profiles SET lat = 23.1, lng = -82.3 WHERE id = ?').run(pro.providerId);

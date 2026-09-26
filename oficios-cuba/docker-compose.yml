@@ -1,6 +1,8 @@
 # Oficios Cuba en vps2 — https://oficio.dardoit.com
 # Cloudflare (túnel de la cuenta Doniet) → traefik:80 → oficio_web (nginx) → oficio_api por red interna.
 # oficio_api no está en net_dmz ni publica puertos; su red es interna (sin salida a internet).
+# oficio_notifier (avisos por Telegram) va en el perfil "telegram": `docker compose up -d` no lo arranca.
+#   Arrancarlo: `docker compose --profile telegram up -d`. El token se pega en /admin → Telegram.
 # Deploy: docker compose up -d --build
 services:
   oficio_web:
@@ -39,6 +41,42 @@ services:
     networks:
       - oficio_net
     mem_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Mismo código e imagen que la API, otro proceso. Es el ÚNICO que puede leer el token del bot (la API
+  # lo guarda cifrado con la clave pública de este contenedor; la privada vive en secrets/notifier,
+  # que solo monta él) y el único con salida a internet (net_dmz, como oficio_web), solo hacia
+  # api.telegram.org. Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
+  oficio_notifier:
+    image: oficio-api:latest
+    container_name: oficio_notifier
+    profiles: ["telegram"]
+    restart: unless-stopped
+    command: ["node", "dist/notifier/index.js"]
+    depends_on:
+      oficio_api:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/oficios.db
+      - NOTIFIER_KEYS_DIR=/app/keys
+      - TZ=America/Havana
+    volumes:
+      - ./data:/app/data
+      - ./secrets/notifier:/app/keys
+    networks:
+      - net_dmz
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "const d=require('better-sqlite3')('/app/data/oficios.db',{readonly:true});const r=d.prepare(\"SELECT value FROM telegram_state WHERE key='heartbeat'\").get();process.exit(r&&Date.now()-Date.parse(r.value)<120000?0:1)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options:

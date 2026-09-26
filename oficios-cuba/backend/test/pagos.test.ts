@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { api, db, registrar } from './helpers.js';
 import { confirmarPago, pagosPendientes, rechazarPago } from '../src/db/pagos.js';
 
-async function solicitar(plan: 'basic' | 'pro' | 'premium') {
+async function solicitar(plan: 'basic' | 'pro') {
   const pro = await registrar('provider');
   const checkout = await api.post('/api/subscriptions/checkout').set(pro.auth).send({ plan, payment_method: 'transfer' });
   expect(checkout.body.status).toBe('pending');
@@ -25,12 +25,12 @@ describe('confirmación manual de pagos (sin DEMO_MODE)', () => {
   });
 
   it('confirmar activa el plan un mes y marca el pago como cobrado', async () => {
-    const { pro, subscriptionId } = await solicitar('premium');
+    const { pro, subscriptionId } = await solicitar('pro');
     confirmarPago(subscriptionId);
 
     const perfil = db.prepare('SELECT subscription_plan, subscription_expires_at FROM provider_profiles WHERE id = ?')
       .get(pro.providerId) as { subscription_plan: string; subscription_expires_at: string };
-    expect(perfil.subscription_plan).toBe('premium');
+    expect(perfil.subscription_plan).toBe('pro');
     const dias = (Date.parse(perfil.subscription_expires_at) - Date.now()) / 86_400_000;
     expect(dias).toBeGreaterThan(27);
     expect(dias).toBeLessThan(32);

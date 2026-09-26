@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import db, { parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
-import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
+import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { queryTextos } from '../lib/entrada.js';
+import { imagenPermitida, queryTextos } from '../lib/entrada.js';
+import { planDe } from '../config.js';
 
 const router = Router();
 
@@ -19,7 +20,12 @@ const providerProfileSchema = z.object({
   address: optionalText(200),
   lat: z.number().min(19).max(24).optional(),
   lng: z.number().min(-85.5).max(-73.5).optional(),
-  whatsapp: z.preprocess(blankToUndefined, z.string().trim().regex(/^\+?[\d\s-]{8,20}$/, 'WhatsApp no válido').optional()),
+  whatsapp: z.preprocess(blankToUndefined, z.string().trim().regex(/^\+?[\d\s-]{8,20}$/, 'Teléfono no válido').optional()),
+  contact_mode: z.enum(['whatsapp', 'call', 'both']).default('whatsapp'),
+  kind: z.enum(['oficio', 'negocio']).default('oficio'),
+  horario: optionalText(120),
+  gallery: z.array(z.string().max(500)).max(30).optional(),
+  show_on_map: z.boolean().default(false),
   telegram: optionalText(40),
   email_contact: z.preprocess(blankToUndefined, z.string().trim().email('Email de contacto no válido').optional()),
   years_experience: z.number().int().min(0).max(70).optional(),
@@ -28,7 +34,7 @@ const providerProfileSchema = z.object({
 
 const PUBLIC_COLUMNS = `
   pp.id, pp.business_name, pp.description, pp.province_id, pp.municipality_id, pp.years_experience,
-  pp.rating, pp.review_count, pp.subscription_plan, pp.created_at,
+  pp.rating, pp.review_count, pp.subscription_plan, pp.created_at, pp.kind, pp.contact_mode, pp.gallery,
   p.name AS province_name, m.name AS municipality_name,
   u.full_name AS owner_name, u.avatar_url,
   (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) AS service_count,
@@ -46,11 +52,28 @@ const PUBLIC_JOINS = `
   LEFT JOIN municipalities m ON pp.municipality_id = m.id
 `;
 
+// Lo que el plan vigente permite mostrar: al bajar de plan las fotos y el negocio no se borran,
+// solo dejan de verse.
+export function segunPlan(row: any) {
+  const plan = planDe(row.subscription_plan);
+  return {
+    subscription_plan: row.subscription_plan === 'premium' ? 'pro' : row.subscription_plan,
+    kind: plan.negocio ? row.kind ?? 'oficio' : 'oficio',
+    gallery: parseImages(row.gallery).slice(0, plan.maxPhotos),
+    has_chat: plan.chat,
+    has_agenda: plan.agenda,
+    photos_allowed: plan.maxPhotos > 0,
+  };
+}
+
 function toCard(row: any) {
-  const { cover_images, categories, ...rest } = row;
+  const { cover_images, categories, gallery: _g, ...rest } = row;
   let cats: string[] = [];
   try { cats = JSON.parse(categories || '[]'); } catch { cats = []; }
-  return { ...rest, categories: cats, cover: parseImages(cover_images)[0] ?? null };
+  const visible = segunPlan(row);
+  const cover = visible.photos_allowed ? visible.gallery[0] ?? parseImages(cover_images)[0] ?? null : null;
+  const { gallery: _v, photos_allowed: _p, ...flags } = visible;
+  return { ...rest, ...flags, categories: cats, cover };
 }
 
 router.get('/', asyncHandler(async (req, res) => {
@@ -119,13 +142,26 @@ router.get('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     WHERE pp.user_id = ?
   `).get(req.user!.id);
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
-  res.json({ provider, serviceAreas: serviceAreasOf(provider.id) });
+  res.json({ provider: { ...provider, gallery: parseImages(provider.gallery), agenda: undefined }, serviceAreas: serviceAreasOf(provider.id), limits: planDe(provider.subscription_plan) });
 }));
 
 router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const data = providerProfileSchema.parse(req.body);
-  const provider = db.prepare('SELECT id FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string } | undefined;
+  const provider = db.prepare('SELECT id, subscription_plan, gallery FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string; subscription_plan: string; gallery: string | null } | undefined;
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
+  const plan = planDe(provider.subscription_plan);
+
+  if (data.kind === 'negocio' && !plan.negocio) throw new AppError('Registrar un negocio es del plan Profesional', 403);
+  const galeriaActual = parseImages(provider.gallery);
+  const gallery = data.gallery ?? galeriaActual;
+  if (gallery.length > plan.maxPhotos) {
+    throw new AppError(plan.maxPhotos ? `Tu plan ${plan.name} permite ${plan.maxPhotos} fotos del negocio` : `El plan ${plan.name} no incluye fotos del negocio. Mejora tu plan para subirlas.`, 403);
+  }
+  if (gallery.some((url) => !imagenPermitida(url, req.user!.id, galeriaActual))) {
+    throw new AppError('Alguna foto no es válida: súbela desde el formulario', 400);
+  }
+  // El plan Gratis solo lleva nombre, logo, descripción, dirección y teléfono.
+  if (!plan.maxPhotos) { data.telegram = undefined; data.email_contact = undefined; }
 
   if (!db.prepare('SELECT 1 FROM provinces WHERE id = ?').get(data.province_id)) throw new AppError('Provincia no válida', 400);
   if (data.municipality_id) {
@@ -143,11 +179,12 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     db.prepare(`
       UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
         lat = ?, lng = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
-        updated_at = CURRENT_TIMESTAMP
+        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
       data.lat ?? null, data.lng ?? null, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
-      data.years_experience ?? 0, provider.id);
+      data.years_experience ?? 0, data.contact_mode, data.kind, data.kind === 'negocio' ? data.horario ?? null : null,
+      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, provider.id);
 
     if (data.service_area_ids) {
       db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
@@ -164,18 +201,19 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
     WHERE pp.id = ?
   `).get(provider.id);
-  res.json({ provider: updated, serviceAreas: serviceAreasOf(provider.id) });
+  res.json({ provider: { ...updated, gallery: parseImages(updated.gallery), agenda: undefined }, serviceAreas: serviceAreasOf(provider.id), limits: plan });
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const provider = db.prepare(`
-    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact
+    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario, pp.lat, pp.lng, pp.show_on_map
     ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
   `).get(req.params.id);
   if (!provider) throw new AppError('Proveedor no encontrado', 404);
+  const visible = segunPlan(provider);
 
   const services = db.prepare(`
-    SELECT s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.images, s.created_at,
+    SELECT s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.price_currency, s.images, s.created_at,
       c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug
     FROM services s JOIN categories c ON s.category_id = c.id
     WHERE s.provider_id = ? AND s.is_active = 1
@@ -183,7 +221,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   `).all(req.params.id).map((s: any) => {
     const images = parseImages(s.images);
     const { images: _i, ...rest } = s;
-    return { ...rest, cover: images[0] ?? null };
+    return { ...rest, cover: visible.photos_allowed ? images[0] ?? null : null };
   });
 
   const reviews = db.prepare(`
@@ -194,7 +232,22 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
   const distribution = db.prepare('SELECT rating, COUNT(*) AS count FROM reviews WHERE provider_id = ? GROUP BY rating').all(req.params.id);
 
-  res.json({ provider: toCard(provider), services, serviceAreas: serviceAreasOf(req.params.id), reviews, distribution });
+  // lat/lng solo en el detalle y solo si el profesional marcó su punto en el mapa para que lo encuentren.
+  const { lat, lng, show_on_map, ...card } = toCard(provider);
+  res.json({
+    provider: { ...card, ...(show_on_map ? { lat, lng } : {}), gallery: visible.gallery, horario: visible.kind === 'negocio' ? provider.horario : null },
+    services, serviceAreas: serviceAreasOf(req.params.id), reviews, distribution,
+  });
+}));
+
+// Un cliente con sesión pulsó WhatsApp o Llamar: queda constancia para poder reseñar después.
+router.post('/:id/contact', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const { via } = z.object({ via: z.enum(['whatsapp', 'call']) }).parse(req.body);
+  if (req.user?.user_type === 'client' && db.prepare('SELECT 1 FROM provider_profiles WHERE id = ? AND is_active = 1').get(req.params.id)) {
+    db.prepare('INSERT OR IGNORE INTO contacts (client_id, provider_id, via, created_at) VALUES (?, ?, ?, ?)')
+      .run(req.user.id, req.params.id, via, new Date().toISOString());
+  }
+  res.status(204).end();
 }));
 
 export default router;

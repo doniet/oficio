@@ -24,6 +24,12 @@ const Messages = lazy(() => import('./pages/dashboard/Messages'));
 const Conversation = lazy(() => import('./pages/dashboard/Conversation'));
 const Favorites = lazy(() => import('./pages/dashboard/Favorites'));
 const Account = lazy(() => import('./pages/dashboard/Account'));
+const Agenda = lazy(() => import('./pages/dashboard/Agenda'));
+const AgendaAjustes = lazy(() => import('./pages/dashboard/AgendaAjustes'));
+const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
+const Catalogo = lazy(() => import('./pages/dashboard/Catalogo'));
+const Admin = lazy(() => import('./pages/admin/Admin'));
+const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function RequireAuth({ children, only }: { children: ReactNode; only?: UserType }) {
@@ -59,8 +65,12 @@ export default function App() {
           <Route path="proveedor/:id" element={<ProviderProfile />} />
           <Route path="login" element={<GuestOnly><Login /></GuestOnly>} />
           <Route path="registro" element={<GuestOnly><Register /></GuestOnly>} />
+          <Route path="auth/google" element={<GoogleCallback />} />
 
           <Route path="dashboard/mensajes/:id" element={<RequireAuth><Conversation /></RequireAuth>} />
+          <Route path="admin" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
+            <Route index element={<Admin />} />
+          </Route>
           <Route path="dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="mensajes" element={<Messages />} />
@@ -68,9 +78,13 @@ export default function App() {
             <Route path="favoritos" element={<RequireAuth only="client"><Favorites /></RequireAuth>} />
             <Route path="perfil" element={<RequireAuth only="provider"><ProviderProfileEdit /></RequireAuth>} />
             <Route path="servicios" element={<RequireAuth only="provider"><MyServices /></RequireAuth>} />
+            <Route path="catalogo" element={<RequireAuth only="provider"><Catalogo /></RequireAuth>} />
             <Route path="servicios/nuevo" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="servicios/:id/editar" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="suscripcion" element={<RequireAuth only="provider"><MySubscription /></RequireAuth>} />
+            <Route path="agenda" element={<RequireAuth only="provider"><Agenda /></RequireAuth>} />
+            <Route path="agenda/ajustes" element={<RequireAuth only="provider"><AgendaAjustes /></RequireAuth>} />
+            <Route path="citas" element={<RequireAuth only="client"><MisCitas /></RequireAuth>} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>

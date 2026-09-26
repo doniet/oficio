@@ -7,6 +7,7 @@ import { apiError } from '../../services/api';
 import type { UserType } from '../../types';
 import { Alert, Field, Spinner, cn } from '../../components/ui';
 import { AuthShell, PasswordInput, safeNext } from './AuthShell';
+import GoogleButton, { OrDivider } from '../../components/GoogleButton';
 
 type Errors = Partial<Record<'full_name' | 'email' | 'phone' | 'password', string>>;
 
@@ -22,11 +23,11 @@ function validate(f: { full_name: string; email: string; phone: string; password
 
 const TYPES: { value: UserType; title: string; text: string; icon: React.ReactNode }[] = [
   { value: 'client', title: 'Busco un profesional', text: 'Encuentra, escribe y valora.', icon: <Search className="h-5 w-5" /> },
-  { value: 'provider', title: 'Ofrezco mis servicios', text: 'Publica gratis y recibe clientes.', icon: <Briefcase className="h-5 w-5" /> },
+  { value: 'provider', title: 'Ofrezco mi oficio o negocio', text: 'Empieza gratis y recibe clientes.', icon: <Briefcase className="h-5 w-5" /> },
 ];
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, googleMode } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -101,6 +102,19 @@ export default function Register() {
           </div>
         </fieldset>
 
+        {type === 'provider' && (
+          <p className="rounded-xl bg-sand-100 px-3.5 py-2.5 text-sm text-ink-600">
+            <strong className="text-ink-900">Empieza gratis:</strong> nombre, logo, descripción, dirección y teléfono. Mejora cuando quieras.
+          </p>
+        )}
+
+        {googleMode && (
+          <div>
+            <GoogleButton userType={type} next={next} label={type === 'provider' ? 'Registrarme con Google' : 'Continuar con Google'} />
+            <OrDivider />
+          </div>
+        )}
+
         {error && <Alert>{error}</Alert>}
 
         <Field label={type === 'provider' ? 'Tu nombre (el negocio lo añades después)' : 'Nombre completo'} htmlFor="full_name" error={errors.full_name}>
@@ -128,7 +142,7 @@ export default function Register() {
           {loading ? <Spinner className="h-4 w-4" /> : <UserPlus className="h-5 w-5" />}
           {type === 'provider' ? 'Crear cuenta profesional' : 'Crear cuenta'}
         </button>
-        <p className="text-center text-xs text-ink-400">Publicar y buscar es gratis. Los planes de pago son opcionales.</p>
+        <p className="text-center text-xs text-ink-400">Buscar y publicar tu oficio es gratis. Los planes Básico y Profesional son opcionales.</p>
       </form>
     </AuthShell>
   );

@@ -6,6 +6,7 @@ import { seedDemo } from './db/seed-demo.js';
 import { DEMO_MODE } from './config.js';
 import { cargarCuentaFcm, crearCanalFcm } from './push/fcm.js';
 import { usarCanal } from './push/avisos.js';
+import { programarAvisos } from './lib/avisos.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -17,6 +18,10 @@ async function start() {
   }
   expireSubscriptions();
   setInterval(expireSubscriptions, 60 * 60 * 1000).unref();
+  // Recordatorios, resumen de mañana y vencimiento del plan (dedupe: cada uno se apunta una vez).
+  const programar = () => { try { programarAvisos(); } catch (err) { console.error('Avisos programados:', (err as Error).message); } };
+  programar();
+  setInterval(programar, 5 * 60 * 1000).unref();
 
   // El push es opcional: nunca debe tumbar el arranque de la API (igual que nunca
   // retrasa ni rompe la respuesta del chat — ver push/avisos.ts).

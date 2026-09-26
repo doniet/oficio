@@ -5,12 +5,14 @@ import { useToast } from '../../hooks/useToast';
 import { apiError, serviceApi } from '../../services/api';
 import type { Plan, ServiceSummary } from '../../types';
 import { formatPrice, planLabel, relativeTime } from '../../lib/format';
+import { useTasa } from '../../hooks/useTasa';
 import { PageTitle } from '../../components/DashboardLayout';
 import { EmptyState, ErrorState, RatingInline, Spinner, cn } from '../../components/ui';
 import { ConfirmDialog, ServiceThumb } from './parts';
 
 export default function MyServices() {
   const toast = useToast();
+  const tasa = useTasa();
   const [services, setServices] = useState<ServiceSummary[]>([]);
   const [plan, setPlan] = useState<Plan>('free');
   const [max, setMax] = useState<number | null>(null);
@@ -42,7 +44,7 @@ export default function MyServices() {
     try {
       const res = await serviceApi.toggle(s.id);
       setServices((list) => list.map((x) => (x.id === s.id ? { ...x, is_active: res.data.is_active } : x)));
-      toast(res.data.is_active ? 'Servicio visible de nuevo' : 'Servicio pausado: ya no aparece en las búsquedas');
+      toast(res.data.is_active ? 'Oficio visible de nuevo' : 'Oficio pausado: ya no aparece en las búsquedas');
     } catch (err) {
       toast(apiError(err, 'No se pudo cambiar el estado.'), 'error');
     } finally {
@@ -56,7 +58,7 @@ export default function MyServices() {
     try {
       await serviceApi.delete(toDelete.id);
       setServices((list) => list.filter((x) => x.id !== toDelete.id));
-      toast('Servicio eliminado');
+      toast('Oficio eliminado');
       setToDelete(null);
     } catch (err) {
       toast(apiError(err, 'No se pudo eliminar el servicio.'), 'error');
@@ -71,12 +73,12 @@ export default function MyServices() {
   const newButton = atLimit ? (
     <Link to="/dashboard/suscripcion" className="btn-primary"><Sparkles className="h-4 w-4" /> Mejorar plan</Link>
   ) : (
-    <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>
+    <Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar oficio</Link>
   );
 
   return (
     <div>
-      <PageTitle title="Mis servicios" subtitle="Lo que ofreces y cómo lo ven tus clientes." action={!loading && !error && newButton} />
+      <PageTitle title="Mis oficios" subtitle="Lo que ofreces y cómo lo ven tus clientes." action={!loading && !error && newButton} />
 
       {loading ? (
         <div className="card divide-y divide-sand-200">
@@ -100,7 +102,7 @@ export default function MyServices() {
             >
               <div className="flex-1">
                 <p>
-                  Plan <strong>{planLabel[plan]}</strong>: usas <strong>{services.length} de {max}</strong> {max === 1 ? 'servicio' : 'servicios'}.
+                  Plan <strong>{planLabel[plan]}</strong>: usas <strong>{services.length} de {max}</strong> {max === 1 ? 'oficio' : 'oficios'}.
                   {atLimit && ' Para publicar otro, mejora tu plan o elimina uno existente.'}
                 </p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand-200" aria-hidden="true">
@@ -114,8 +116,8 @@ export default function MyServices() {
           {services.length === 0 ? (
             <EmptyState
               icon={<Briefcase className="h-6 w-6" />}
-              title="Publica tu primer servicio"
-              action={<Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar servicio</Link>}
+              title="Publica tu primer oficio"
+              action={<Link to="/dashboard/servicios/nuevo" className="btn-primary"><Plus className="h-4 w-4" /> Publicar oficio</Link>}
             >
               Describe lo que haces, añade fotos de tus trabajos y un precio orientativo. Así te encuentran los clientes.
             </EmptyState>
@@ -134,7 +136,7 @@ export default function MyServices() {
                       </div>
                       <p className="mt-1 truncate font-semibold text-ink-900">{s.title}</p>
                       <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-ink-500">
-                        <span className="font-semibold text-ink-700">{formatPrice(s)}</span>
+                        <span className="font-semibold text-ink-700">{formatPrice(s, tasa)}</span>
                         <RatingInline rating={s.rating} count={s.review_count} className="text-xs" />
                         <span>Publicado {relativeTime(s.created_at)}</span>
                       </p>
@@ -177,7 +179,7 @@ export default function MyServices() {
 
       <ConfirmDialog
         open={Boolean(toDelete)}
-        title="¿Eliminar este servicio?"
+        title="¿Eliminar este oficio?"
         confirmLabel="Eliminar"
         busy={deleting}
         onConfirm={confirmDelete}

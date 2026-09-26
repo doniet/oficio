@@ -5,7 +5,7 @@ import db, { parseImages, PLAN_WEIGHT_SQL, providerProfileIdFor, refreshProvider
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { PLANS, PlanId } from '../config.js';
+import { planDe, TASA_CUP_USD } from '../config.js';
 
 const router = Router();
 
@@ -20,14 +20,16 @@ const serviceSchema = z.object({
   price_min: optionalNumber,
   price_max: optionalNumber,
   price_type: z.enum(['fixed', 'hourly', 'daily', 'negotiable']).default('negotiable'),
+  price_currency: z.enum(['CUP', 'USD']).default('CUP'),
   images: z.array(imageUrl).max(6, 'Máximo 6 fotos').optional(),
+  duration_min: z.preprocess((v) => (v === '' ? null : v), z.number().int().min(10).max(480).nullable().optional()),
 });
 
 const LIST_COLUMNS = `
-  s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.images, s.is_active, s.created_at,
+  s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.price_currency, s.images, s.duration_min, s.is_active, s.created_at,
   s.category_id, c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug,
   parent.name AS parent_category_name, parent.slug AS parent_category_slug,
-  pp.id AS provider_id, pp.business_name, pp.rating, pp.review_count, pp.subscription_plan,
+  pp.id AS provider_id, pp.business_name, pp.rating, pp.review_count, pp.subscription_plan, pp.kind, pp.contact_mode,
   u.full_name AS owner_name, u.avatar_url,
   p.name AS province_name, m.name AS municipality_name
 `;
@@ -43,11 +45,23 @@ const LIST_JOINS = `
 `;
 
 // Los listados solo necesitan la portada; las fotos completas van en el detalle.
-function toListItem(row: any) {
-  const images = parseImages(row.images);
-  const { images: _omit, ...rest } = row;
-  return { ...rest, cover: images[0] ?? null, image_count: images.length, is_active: Boolean(row.is_active) };
+// Con un plan sin fotos (Gratis) las que quedaron de un plan anterior no se muestran.
+function fotosVisibles(row: { images: string | null; subscription_plan: string }) {
+  return planDe(row.subscription_plan).maxPhotos ? parseImages(row.images) : [];
 }
+
+function toListItem(row: any) {
+  const images = fotosVisibles(row);
+  const { images: _omit, ...rest } = row;
+  const plan = planDe(row.subscription_plan);
+  return {
+    ...rest, subscription_plan: row.subscription_plan === 'premium' ? 'pro' : row.subscription_plan,
+    kind: plan.negocio ? row.kind : 'oficio', has_chat: plan.chat, has_agenda: plan.agenda,
+    cover: images[0] ?? null, image_count: images.length, is_active: Boolean(row.is_active),
+  };
+}
+
+const PRECIO_CUP = (col: string) => `(CASE WHEN s.price_currency = 'USD' THEN ${col} * ${Number(TASA_CUP_USD)} ELSE ${col} END)`;
 
 router.get('/', asyncHandler(async (req, res) => {
   const { provider_id, category, category_id, province_id, municipality_id, q, price_max, price_type, sort = 'relevance' } =
@@ -73,7 +87,8 @@ router.get('/', asyncHandler(async (req, res) => {
     params.push(municipality_id, municipality_id);
   }
   if (price_max && Number(price_max) > 0) {
-    where += ' AND (s.price_min IS NULL OR s.price_min <= ?)';
+    // El filtro va en CUP; los precios en USD se convierten con la tasa de respaldo (aproximado).
+    where += ` AND (s.price_min IS NULL OR ${PRECIO_CUP('s.price_min')} <= ?)`;
     params.push(Number(price_max));
   }
   if (price_type) { where += ' AND s.price_type = ?'; params.push(price_type); }
@@ -86,8 +101,8 @@ router.get('/', asyncHandler(async (req, res) => {
   const orders: Record<string, string> = {
     relevance: `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC, s.created_at DESC`,
     rating: 'pp.rating DESC, pp.review_count DESC',
-    price_asc: 'CASE WHEN s.price_min IS NULL THEN 1 ELSE 0 END, s.price_min ASC',
-    price_desc: 'COALESCE(s.price_max, s.price_min, 0) DESC',
+    price_asc: `CASE WHEN s.price_min IS NULL THEN 1 ELSE 0 END, ${PRECIO_CUP('s.price_min')} ASC`,
+    price_desc: `${PRECIO_CUP('COALESCE(s.price_max, s.price_min, 0)')} DESC`,
     newest: 's.created_at DESC',
   };
   const orderBy = orders[sort] ?? orders.relevance;
@@ -106,8 +121,11 @@ router.get('/mine', authMiddleware, requireProvider, asyncHandler(async (req: Au
   const providerId = providerProfileIdFor(req.user!.id);
   if (!providerId) throw new AppError('Perfil de proveedor no encontrado', 404);
   const rows = db.prepare(`SELECT ${LIST_COLUMNS} ${LIST_JOINS} WHERE s.provider_id = ? ORDER BY s.is_active DESC, s.created_at DESC`).all(providerId);
-  const plan = (db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: PlanId }).subscription_plan;
-  res.json({ services: rows.map(toListItem), plan, max_services: PLANS[plan].maxServices });
+  const plan = (db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string }).subscription_plan;
+  const limites = planDe(plan);
+  // El dueño ve sus fotos aunque su plan ya no las muestre.
+  const services = rows.map((r: any) => ({ ...toListItem({ ...r, subscription_plan: 'pro' }), subscription_plan: plan }));
+  res.json({ services, plan, max_services: limites.maxServices, photos_allowed: limites.maxPhotos > 0 });
 }));
 
 router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
@@ -117,6 +135,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
       pp.id AS provider_id, pp.user_id AS provider_user_id, pp.business_name, pp.description AS provider_description,
       pp.province_id, pp.municipality_id, pp.address, pp.whatsapp, pp.telegram, pp.email_contact,
       pp.years_experience, pp.rating, pp.review_count, pp.subscription_plan, pp.is_active AS provider_active,
+      pp.kind, pp.contact_mode, pp.horario,
       p.name AS province_name, m.name AS municipality_name,
       u.full_name AS owner_name, u.avatar_url
     FROM services s
@@ -147,14 +166,23 @@ router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
   `).all(service.id, service.provider_id, service.category_id, service.category_parent_id ?? service.category_id);
 
   const { provider_user_id: _u, provider_active: _a, category_parent_id: _c, ...publicService } = service;
+  const plan = planDe(service.subscription_plan);
   res.json({
-    service: { ...publicService, images: parseImages(service.images), is_active: Boolean(service.is_active), is_owner: Boolean(isOwner) },
+    service: {
+      ...publicService, subscription_plan: service.subscription_plan === 'premium' ? 'pro' : service.subscription_plan,
+      kind: plan.negocio ? service.kind : 'oficio', horario: plan.negocio ? service.horario : null,
+      has_chat: plan.chat, has_agenda: plan.agenda,
+      images: isOwner ? parseImages(service.images) : fotosVisibles(service), is_active: Boolean(service.is_active), is_owner: Boolean(isOwner),
+    },
     reviews,
     related: related.map(toListItem),
   });
 }));
 
-function assertImages(images: string[] | undefined, userId: string, yaGuardadas: string[] = []) {
+function assertImages(images: string[] | undefined, userId: string, subscriptionPlan: string, yaGuardadas: string[] = []) {
+  const plan = planDe(subscriptionPlan);
+  const nuevas = (images ?? []).filter((url) => !yaGuardadas.includes(url));
+  if (!plan.maxPhotos && nuevas.length) throw new AppError(`El plan ${plan.name} no incluye fotos. Mejora tu plan para subirlas.`, 403);
   if (images?.some((url) => !imagenPermitida(url, userId, yaGuardadas))) {
     throw new AppError('Alguna foto no es válida: súbela desde el formulario', 400);
   }
@@ -167,30 +195,30 @@ function assertPriceRange(data: { price_min?: number; price_max?: number }) {
 }
 
 router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  const provider = db.prepare('SELECT id, subscription_plan FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string; subscription_plan: PlanId } | undefined;
+  const provider = db.prepare('SELECT id, subscription_plan FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string; subscription_plan: string } | undefined;
   if (!provider) throw new AppError('Debes completar tu perfil de proveedor primero', 400);
 
   const data = serviceSchema.parse(req.body);
   assertPriceRange(data);
-  assertImages(data.images, req.user!.id);
+  assertImages(data.images, req.user!.id, provider.subscription_plan);
   if (!db.prepare('SELECT 1 FROM categories WHERE id = ?').get(data.category_id)) throw new AppError('Categoría no válida', 400);
 
-  const max = PLANS[provider.subscription_plan].maxServices;
+  const { maxServices: max, name: planName } = planDe(provider.subscription_plan);
   if (max !== null) {
     const { count } = db.prepare('SELECT COUNT(*) AS count FROM services WHERE provider_id = ?').get(provider.id) as { count: number };
     if (count >= max) {
-      throw new AppError(`Tu plan ${PLANS[provider.subscription_plan].name} permite ${max} servicio${max === 1 ? '' : 's'}. Mejora tu plan para publicar más.`, 403);
+      throw new AppError(`Tu plan ${planName} permite ${max} oficio${max === 1 ? '' : 's'}. Mejora tu plan para publicar más.`, 403);
     }
   }
 
   const id = uuidv4();
   db.prepare(`
-    INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, images, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, duration_min, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, provider.id, data.category_id, data.title, data.description || null,
     data.price_type === 'negotiable' ? null : data.price_min ?? null,
     data.price_type === 'negotiable' ? null : data.price_max ?? null,
-    data.price_type, JSON.stringify(data.images ?? []), new Date().toISOString());
+    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), data.duration_min ?? null, new Date().toISOString());
 
   res.status(201).json({ service: { id } });
 }));
@@ -198,25 +226,26 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 function ownedService(req: AuthRequest) {
   const providerId = providerProfileIdFor(req.user!.id);
   if (!providerId) throw new AppError('Perfil de proveedor no encontrado', 404);
-  const service = db.prepare('SELECT id, provider_id, is_active, images FROM services WHERE id = ? AND provider_id = ?').get(req.params.id, providerId);
+  const service = db.prepare(`SELECT s.id, s.provider_id, s.is_active, s.images, pp.subscription_plan FROM services s
+    JOIN provider_profiles pp ON s.provider_id = pp.id WHERE s.id = ? AND s.provider_id = ?`).get(req.params.id, providerId);
   if (!service) throw new AppError('Servicio no encontrado', 404);
-  return service as { id: string; provider_id: string; is_active: number; images: string | null };
+  return service as { id: string; provider_id: string; is_active: number; images: string | null; subscription_plan: string };
 }
 
 router.put('/:id', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const current = ownedService(req);
   const data = serviceSchema.parse(req.body);
   assertPriceRange(data);
-  assertImages(data.images, req.user!.id, parseImages(current.images));
+  assertImages(data.images, req.user!.id, current.subscription_plan, parseImages(current.images));
   if (!db.prepare('SELECT 1 FROM categories WHERE id = ?').get(data.category_id)) throw new AppError('Categoría no válida', 400);
 
   const negotiable = data.price_type === 'negotiable';
   db.prepare(`
-    UPDATE services SET category_id = ?, title = ?, description = ?, price_min = ?, price_max = ?, price_type = ?, images = ?, updated_at = CURRENT_TIMESTAMP
+    UPDATE services SET category_id = ?, title = ?, description = ?, price_min = ?, price_max = ?, price_type = ?, price_currency = ?, images = ?, duration_min = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(data.category_id, data.title, data.description || null,
     negotiable ? null : data.price_min ?? null, negotiable ? null : data.price_max ?? null,
-    data.price_type, JSON.stringify(data.images ?? []), req.params.id);
+    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), data.duration_min ?? null, req.params.id);
 
   res.json({ service: { id: req.params.id } });
 }));
@@ -235,11 +264,10 @@ router.patch('/:id/toggle', authMiddleware, requireProvider, asyncHandler(async 
   const service = ownedService(req);
   const next = service.is_active ? 0 : 1;
   if (next === 1) {
-    const { subscription_plan: plan } = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(service.provider_id) as { subscription_plan: PlanId };
-    const max = PLANS[plan].maxServices;
+    const { maxServices: max, name: planName } = planDe(service.subscription_plan);
     const { count } = db.prepare('SELECT COUNT(*) AS count FROM services WHERE provider_id = ? AND is_active = 1').get(service.provider_id) as { count: number };
     if (max !== null && count >= max) {
-      throw new AppError(`Tu plan ${PLANS[plan].name} permite ${max} servicio${max === 1 ? '' : 's'} activo${max === 1 ? '' : 's'}. Pausa otro o mejora tu plan.`, 403);
+      throw new AppError(`Tu plan ${planName} permite ${max} oficio${max === 1 ? '' : 's'} activo${max === 1 ? '' : 's'}. Pausa otro o mejora tu plan.`, 403);
     }
   }
   db.prepare('UPDATE services SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(next, service.id);

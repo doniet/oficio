@@ -1,17 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Briefcase, CalendarDays, Mail, MapPin, Send, UserX, Wrench } from 'lucide-react';
+import { ArrowLeft, Briefcase, CalendarDays, Clock, Mail, MapPin, Send, UserX, Wrench, X } from 'lucide-react';
+import { useTasa } from '../hooks/useTasa';
 import { useAuth } from '../hooks/useAuth';
 import { providerApi, reviewApi, apiError } from '../services/api';
 import { memberSince, priceFrom } from '../lib/format';
 import type { Pagination, ProviderPublic, ProviderServiceItem, Review, ServiceArea } from '../types';
 import ContactActions from '../components/ContactActions';
+import ProviderCatalog from '../components/catalog/ProviderCatalog';
+import { NegocioChip } from '../components/cards';
 import { RatingBreakdown, ReviewItem } from '../components/ReviewList';
 import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, Spinner } from '../components/ui';
 
+const PlaceMap = lazy(() => import('../components/PlaceMap'));
+
 function ServiceRow({ service }: { service: ProviderServiceItem }) {
-  const price = priceFrom(service);
+  const tasa = useTasa();
+  const price = priceFrom(service, tasa);
   return (
     <Link to={`/servicio/${service.id}`} className="group card card-hover flex overflow-hidden">
       <div className="relative w-28 shrink-0 overflow-hidden bg-sand-100 sm:w-40">
@@ -25,9 +31,35 @@ function ServiceRow({ service }: { service: ProviderServiceItem }) {
           {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
           <span className="font-display text-lg font-bold text-ink-900">{price.amount}</span>
           {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
+          {price.alt && <span className="mt-1 block text-xs text-ink-400">{price.alt}</span>}
         </p>
       </div>
     </Link>
+  );
+}
+
+function GalleryGrid({ images, name }: { images: string[]; name: string }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <>
+      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {images.map((src, i) => (
+          <li key={src + i}>
+            <button onClick={() => setOpen(i)} className="block aspect-square w-full overflow-hidden rounded-xl bg-sand-100" aria-label={`Ampliar foto ${i + 1}`}>
+              <img src={src} alt={`${name} — foto ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full object-cover transition hover:scale-[1.04]" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open !== null && (
+        <div role="dialog" aria-modal="true" aria-label="Foto ampliada" className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/90 p-4" onClick={() => setOpen(null)}>
+          <button onClick={() => setOpen(null)} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-900" aria-label="Cerrar">
+            <X className="h-5 w-5" />
+          </button>
+          <img src={images[open]} alt={`${name} — foto ${open + 1}`} className="max-h-full max-w-full rounded-xl object-contain" />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -97,6 +129,9 @@ export default function ProviderProfile() {
   }, [load]);
 
   const name = provider ? provider.business_name || provider.owner_name : '';
+  const vendedor = useMemo(() => (provider
+    ? { id: provider.id, name, whatsapp: provider.whatsapp, contactMode: provider.contact_mode, hasChat: provider.has_chat }
+    : null), [provider, name]);
 
   useEffect(() => {
     if (name) document.title = `${name} · Oficios Cuba`;
@@ -178,12 +213,14 @@ export default function ProviderProfile() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-balance text-3xl font-bold leading-tight">{name}</h1>
               <PlanBadge plan={provider.subscription_plan} />
+              {provider.kind === 'negocio' && <NegocioChip />}
             </div>
             {provider.business_name && <p className="text-ink-500">{provider.owner_name}</p>}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-ink-500">
               <RatingInline rating={provider.rating} count={provider.review_count} />
               {place && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" aria-hidden="true" /> {place}</span>}
               {provider.years_experience > 0 && <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" aria-hidden="true" /> {provider.years_experience} años de oficio</span>}
+              {provider.kind === 'negocio' && provider.horario && <span className="flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" /> {provider.horario}</span>}
               <span className="flex items-center gap-1"><CalendarDays className="h-4 w-4" aria-hidden="true" /> En Oficios Cuba desde {memberSince(provider.created_at)}</span>
             </div>
           </div>
@@ -211,13 +248,36 @@ export default function ProviderProfile() {
               )}
             </section>
 
+            {provider.gallery?.length > 0 && (
+              <section aria-labelledby="gallery-title">
+                <h2 id="gallery-title" className="mb-4 text-xl font-bold">Fotos {provider.kind === 'negocio' ? 'del negocio' : 'de mis trabajos'}</h2>
+                <GalleryGrid images={provider.gallery} name={name} />
+              </section>
+            )}
+
+            {(provider.address || (provider.lat != null && provider.lng != null)) && (
+              <section aria-labelledby="where-title">
+                <h2 id="where-title" className="mb-3 text-xl font-bold">Dónde {provider.kind === 'negocio' ? 'estamos' : 'estoy'}</h2>
+                {provider.address && (
+                  <p className="mb-3 flex items-start gap-2 text-ink-700"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" aria-hidden="true" /> {[provider.address, place].filter(Boolean).join(', ')}</p>
+                )}
+                {provider.lat != null && provider.lng != null && (
+                  <Suspense fallback={<div className="skeleton h-56 w-full rounded-2xl" />}>
+                    <div className="relative z-0 overflow-hidden rounded-2xl border border-sand-200">
+                      <PlaceMap lat={provider.lat} lng={provider.lng} label={name} />
+                    </div>
+                  </Suspense>
+                )}
+              </section>
+            )}
+
             <section aria-labelledby="services-title">
               <h2 id="services-title" className="mb-4 text-xl font-bold">
                 Servicios <span className="font-sans text-base font-semibold text-ink-400">({services.length})</span>
               </h2>
               {services.length === 0 ? (
                 <EmptyState icon={<Wrench className="h-6 w-6" />} title="Sin servicios publicados">
-                  Puedes escribirle igualmente para consultar un trabajo.
+                  Puedes contactarle igualmente para consultar un trabajo.
                 </EmptyState>
               ) : (
                 <div className="grid gap-3 xl:grid-cols-2">
@@ -225,6 +285,8 @@ export default function ProviderProfile() {
                 </div>
               )}
             </section>
+
+            {vendedor && <ProviderCatalog vendedor={vendedor} />}
 
             {areas.length > 0 && (
               <section aria-labelledby="areas-title" className="lg:hidden">
@@ -241,7 +303,7 @@ export default function ProviderProfile() {
                 </div>
               )}
               {reviews.length === 0 ? (
-                <p className="py-6 text-center text-sm text-ink-400">Todavía no tiene reseñas. Los clientes que lo contacten por el chat podrán valorarlo.</p>
+                <p className="py-6 text-center text-sm text-ink-400">Todavía no tiene reseñas. Los clientes que lo contacten por WhatsApp, llamada, chat o cita podrán valorarlo.</p>
               ) : (
                 <>
                   <ul className="divide-y divide-sand-200">
@@ -263,7 +325,14 @@ export default function ProviderProfile() {
               {isOwnProfile ? (
                 <Link to="/dashboard/perfil" className="btn-secondary w-full">Editar mi perfil</Link>
               ) : (
-                <ContactActions providerId={provider.id} providerName={name} whatsapp={provider.whatsapp} phone={provider.whatsapp} />
+                <ContactActions
+                  providerId={provider.id}
+                  providerName={name}
+                  phone={provider.whatsapp}
+                  contactMode={provider.contact_mode}
+                  hasChat={provider.has_chat}
+                  hasAgenda={provider.has_agenda}
+                />
               )}
               {contactExtras}
             </div>
@@ -278,7 +347,17 @@ export default function ProviderProfile() {
         </div>
       </div>
 
-      {!isOwnProfile && <ContactActions variant="bar" providerId={provider.id} providerName={name} whatsapp={provider.whatsapp} />}
+      {!isOwnProfile && (
+        <ContactActions
+          variant="bar"
+          providerId={provider.id}
+          providerName={name}
+          phone={provider.whatsapp}
+          contactMode={provider.contact_mode}
+          hasChat={provider.has_chat}
+          hasAgenda={provider.has_agenda}
+        />
+      )}
     </div>
   );
 }

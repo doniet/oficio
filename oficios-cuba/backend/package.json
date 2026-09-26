@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "pagos": "tsx src/scripts/pagos.ts",
-    "push:prueba": "tsx src/scripts/push-prueba.ts"
+    "push:prueba": "tsx src/scripts/push-prueba.ts",
+    "admin": "tsx src/scripts/admin.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,6 +20,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",
+    "jose": "^5.10.0",
     "jsonwebtoken": "^9.0.2",
     "uuid": "^9.0.1",
     "zod": "^3.23.8"

@@ -36,7 +36,7 @@ export async function crearServicio(auth: Record<string, string>, extra: Record<
   return res;
 }
 
-export function ponerPlan(providerId: string, plan: 'free' | 'basic' | 'pro' | 'premium', expira: string | null = null) {
+export function ponerPlan(providerId: string, plan: 'free' | 'basic' | 'pro', expira: string | null = null) {
   db.prepare('UPDATE provider_profiles SET subscription_plan = ?, subscription_expires_at = ? WHERE id = ?').run(plan, expira, providerId);
 }
 

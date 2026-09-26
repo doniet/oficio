@@ -4,11 +4,12 @@ import { ArrowLeft, ImagePlus, Lock, Sparkles, Star, Trash2 } from 'lucide-react
 import { useToast } from '../../hooks/useToast';
 import { apiError, categoryApi, serviceApi, type ServiceInput } from '../../services/api';
 import { uploadImage } from '../../lib/image';
-import { planLabel, priceTypeLabel } from '../../lib/format';
-import type { Category, Plan, PriceType } from '../../types';
+import { planLabel, priceParts, priceTypeLabel } from '../../lib/format';
+import { useTasa } from '../../hooks/useTasa';
+import type { Category, Currency, Plan, PriceType } from '../../types';
 import { PageTitle } from '../../components/DashboardLayout';
 import { Alert, EmptyState, ErrorState, Field, PageLoader, Spinner, cn } from '../../components/ui';
-import { FormSection } from './parts';
+import { FormSection, PlanLock } from './parts';
 
 const MAX_IMAGES = 6;
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
@@ -21,10 +22,16 @@ interface FormState {
   price_type: PriceType;
   price_min: string;
   price_max: string;
+  price_currency: Currency;
   images: string[];
+  duration_min: string;
 }
 
-const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', images: [] };
+const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', price_currency: 'CUP', images: [], duration_min: '' };
+
+const DURACIONES: [number, string][] = [
+  [15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h'], [180, '3 h'], [240, '4 h'], [360, '6 h'], [480, '8 h'],
+];
 
 type Errors = Partial<Record<'category' | 'title' | 'price', string>>;
 
@@ -48,6 +55,9 @@ export default function ServiceForm() {
   const navigate = useNavigate();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const tasa = useTasa();
+  const [photosAllowed, setPhotosAllowed] = useState(true);
+  const [hasAgenda, setHasAgenda] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -63,10 +73,14 @@ export default function ServiceForm() {
     setLoading(true);
     setLoadError('');
     try {
-      const [cats, extra] = await Promise.all([
+      const [cats, mine, detail] = await Promise.all([
         categoryApi.getAll(),
-        isEdit ? serviceApi.getById(id!) : serviceApi.mine(),
+        serviceApi.mine(),
+        isEdit ? serviceApi.getById(id!) : Promise.resolve(null),
       ]);
+      setPhotosAllowed(mine.data.photos_allowed !== false);
+      setHasAgenda(mine.data.plan === 'pro');
+      const extra = detail ?? mine;
       const list: Category[] = cats.data.categories;
       setCategories(list);
 
@@ -82,7 +96,9 @@ export default function ServiceForm() {
           price_type: s.price_type,
           price_min: s.price_min != null ? String(s.price_min) : '',
           price_max: s.price_max != null ? String(s.price_max) : '',
+          price_currency: s.price_currency ?? 'CUP',
           images: s.images ?? [],
+          duration_min: s.duration_min != null ? String(s.duration_min) : '',
         });
       } else {
         const { services, plan, max_services } = extra.data;
@@ -151,7 +167,9 @@ export default function ServiceForm() {
       price_type: form.price_type,
       price_min: negotiable || form.price_min === '' ? null : Number(form.price_min),
       price_max: negotiable || form.price_max === '' ? null : Number(form.price_max),
+      price_currency: form.price_currency,
       images: form.images,
+      duration_min: form.duration_min === '' ? null : Number(form.duration_min),
     };
     setSaving(true);
     try {
@@ -160,7 +178,7 @@ export default function ServiceForm() {
         toast('Cambios guardados');
       } else {
         await serviceApi.create(payload);
-        toast('¡Servicio publicado!');
+        toast('¡Oficio publicado!');
       }
       navigate('/dashboard/servicios');
     } catch (err) {
@@ -173,7 +191,7 @@ export default function ServiceForm() {
 
   const back = (
     <Link to="/dashboard/servicios" className="link mb-3 inline-flex items-center gap-1 text-sm">
-      <ArrowLeft className="h-4 w-4" /> Mis servicios
+      <ArrowLeft className="h-4 w-4" /> Mis oficios
     </Link>
   );
 
@@ -194,7 +212,7 @@ export default function ServiceForm() {
             </div>
           }
         >
-          Tu plan {planLabel[limit.plan]} permite {limit.max} {limit.max === 1 ? 'servicio' : 'servicios'} (contando los pausados).
+          Tu plan {planLabel[limit.plan]} permite {limit.max} {limit.max === 1 ? 'oficio' : 'oficios'} (contando los pausados).
           Mejora tu plan para publicar más, o elimina uno que ya no ofrezcas.
         </EmptyState>
       </div>
@@ -202,12 +220,14 @@ export default function ServiceForm() {
   }
 
   const slots = form.images.length + uploading;
+  const toNum = (v: string) => (v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const preview = priceParts({ price_type: form.price_type, price_min: toNum(form.price_min), price_max: toNum(form.price_max), price_currency: form.price_currency }, tasa);
 
   return (
     <div className="max-w-3xl">
       {back}
       <PageTitle
-        title={isEdit ? 'Editar servicio' : 'Publicar un servicio'}
+        title={isEdit ? 'Editar oficio' : 'Publicar un oficio'}
         subtitle={isEdit ? 'Los cambios se ven al instante en tu anuncio.' : 'Un buen título, fotos reales y un precio claro atraen más clientes.'}
       />
 
@@ -295,23 +315,58 @@ export default function ServiceForm() {
             ))}
           </div>
           {form.price_type !== 'negotiable' && (
+            <fieldset>
+              <legend className="label">Moneda</legend>
+              <div className="inline-grid grid-cols-2 gap-2" role="radiogroup" aria-label="Moneda del precio">
+                {(['CUP', 'USD'] as const).map((c) => (
+                  <button key={c} type="button" role="radio" aria-checked={form.price_currency === c}
+                    onClick={() => set('price_currency', c)} className={cn('chip justify-center px-5', form.price_currency === c && 'chip-active')}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+          {form.price_type !== 'negotiable' && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Desde (USD)" htmlFor="pmin">
-                <input id="pmin" type="number" inputMode="decimal" min={0} step="0.01" value={form.price_min}
+              <Field label={`Desde (${form.price_currency})`} htmlFor="pmin">
+                <input id="pmin" type="number" inputMode="decimal" min={0} step={form.price_currency === 'CUP' ? '1' : '0.01'} value={form.price_min}
                   onChange={(e) => { set('price_min', e.target.value); setErrors((er) => ({ ...er, price: undefined })); }}
                   className={cn('input', errors.price && 'input-error')} aria-invalid={Boolean(errors.price)} />
               </Field>
               <Field label="Hasta (opcional)" htmlFor="pmax">
-                <input id="pmax" type="number" inputMode="decimal" min={0} step="0.01" value={form.price_max}
+                <input id="pmax" type="number" inputMode="decimal" min={0} step={form.price_currency === 'CUP' ? '1' : '0.01'} value={form.price_max}
                   onChange={(e) => { set('price_max', e.target.value); setErrors((er) => ({ ...er, price: undefined })); }}
                   className={cn('input', errors.price && 'input-error')} />
               </Field>
             </div>
           )}
           {errors.price && <p className="text-xs font-medium text-red-600">{errors.price}</p>}
+          {!preview.negotiable && (toNum(form.price_min) != null || toNum(form.price_max) != null) && (
+            <p className="rounded-xl bg-sand-50 px-3 py-2 text-sm text-ink-600" aria-live="polite">
+              Los clientes verán: <span className="font-semibold text-ink-900">{preview.main}{preview.suffix ? ` ${preview.suffix}` : ''}</span>{' '}
+              <span className="text-ink-400">{preview.alt}</span>
+              <span className="block text-xs text-ink-400">Conversión con la tasa informal de hoy: 1 USD = {tasa} CUP.</span>
+            </p>
+          )}
+          {(hasAgenda || form.duration_min !== '') && (
+            <Field label="Duración de la cita" htmlFor="dur" hint="Se usa en tu agenda para calcular los huecos libres cuando un cliente pide este servicio.">
+              <select id="dur" value={form.duration_min} onChange={(e) => set('duration_min', e.target.value)} className="input">
+                <option value="">La general de mi agenda</option>
+                {DURACIONES.map(([m, label]) => <option key={m} value={m}>{label}</option>)}
+                {form.duration_min !== '' && !DURACIONES.some(([m]) => String(m) === form.duration_min) && (
+                  <option value={form.duration_min}>{form.duration_min} min</option>
+                )}
+              </select>
+            </Field>
+          )}
         </FormSection>
 
-        <FormSection title="Fotos" description={`Hasta ${MAX_IMAGES} fotos de trabajos reales. La primera es la portada. Las reducimos antes de subirlas para ahorrar datos.`}>
+        <FormSection title="Fotos" description={photosAllowed ? `Hasta ${MAX_IMAGES} fotos de trabajos reales. La primera es la portada. Las reducimos antes de subirlas para ahorrar datos.` : undefined}>
+          {!photosAllowed && form.images.length === 0 ? (
+            <PlanLock plan="Básico">Añade fotos de tus trabajos a cada oficio.</PlanLock>
+          ) : (<>
+          {!photosAllowed && <Alert tone="info">Tu plan actual no muestra fotos: las que ya tenías se conservan pero los clientes no las ven.</Alert>}
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {form.images.map((url, i) => (
               <li key={url} className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-sand-100">
@@ -334,7 +389,7 @@ export default function ServiceForm() {
                 <Spinner className="h-6 w-6" />
               </li>
             ))}
-            {slots < MAX_IMAGES && (
+            {photosAllowed && slots < MAX_IMAGES && (
               <li>
                 <button
                   type="button"
@@ -349,13 +404,14 @@ export default function ServiceForm() {
             )}
           </ul>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onFiles} className="hidden" />
+          </>)}
         </FormSection>
 
         <div className="sticky bottom-20 z-10 flex flex-col-reverse gap-2 rounded-2xl border border-sand-200 bg-white/95 p-3 shadow-lift backdrop-blur sm:flex-row sm:justify-end md:bottom-4">
           <Link to="/dashboard/servicios" className="btn-secondary">Cancelar</Link>
           <button type="submit" disabled={saving || uploading > 0} className="btn-primary">
             {saving && <Spinner className="h-4 w-4" />}
-            {uploading > 0 ? 'Subiendo fotos…' : isEdit ? 'Guardar cambios' : 'Publicar servicio'}
+            {uploading > 0 ? 'Subiendo fotos…' : isEdit ? 'Guardar cambios' : 'Publicar oficio'}
           </button>
         </div>
       </form>
