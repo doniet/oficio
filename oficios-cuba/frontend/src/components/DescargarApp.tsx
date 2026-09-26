@@ -35,7 +35,9 @@ export function useInfoApk() {
 
 const esIphone = () => typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const megas = (bytes: number) => `${Math.round(bytes / 1_048_576)} MB`;
-const urlApk = (info: InfoApk) => `/descargas/${encodeURIComponent(info.archivo)}`;
+// Pasa por la API para contar la descarga (Cloudflare guarda el APK en caché: nginx no ve cada una)
+// y ésta redirige a /descargas/<archivo>.
+const urlApk = (info: InfoApk) => `/api/app/descargar?archivo=${encodeURIComponent(info.archivo)}`;
 
 const PASOS = [
   'Toca «Descargar APK» y espera a que termine (con datos móviles, mejor con buena cobertura).',

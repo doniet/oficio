@@ -464,6 +464,8 @@ export interface AdminSystem {
     users: number; clients: number; providers_free: number; providers_basic: number; providers_pro: number;
     services: number; catalog_items: number; appointments_upcoming: number; pending_payments: number;
   };
+  /** Descargas del APK desde la web (una por visitante y versión cada 24 h). */
+  app_downloads: { total: number; last7d: number; by_version: { version: string; n: number }[] };
 }
 
 export interface AdminTelegram {

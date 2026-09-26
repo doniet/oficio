@@ -374,6 +374,14 @@ CREATE TABLE IF NOT EXISTS push_outbox (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Descargas del APK desde la web (/api/app/descargar). visitante = hash con sal de la IP: nunca la IP.
+CREATE TABLE IF NOT EXISTS apk_descargas (
+  id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  visitante TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 -- Indexes
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
@@ -402,6 +410,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_client_provider ON reviews(client_id, pro
 CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
 CREATE INDEX IF NOT EXISTS idx_push_outbox_pendientes ON push_outbox(status, send_after);
+CREATE INDEX IF NOT EXISTS idx_apk_descargas ON apk_descargas(visitante, version, created_at);
 `;
 
 // Migraciones de bases ya existentes (la de producción nació sin control de versión = 0).
@@ -550,6 +559,18 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_push_outbox_pendientes ON push_outbox(status, send_after);
+    `);
+  },
+  // 9 — contador de descargas del APK (la tabla es nueva: mismo SQL que en `schema`).
+  (d) => {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS apk_descargas (
+        id TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        visitante TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_apk_descargas ON apk_descargas(visitante, version, created_at);
     `);
   },
 ];

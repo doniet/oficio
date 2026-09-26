@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
+import { clienteIp } from './lib/cliente.js';
+import appMovilRoutes from './routes/app-movil.js';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
@@ -25,10 +27,7 @@ const app = express();
 
 app.disable('x-powered-by');
 
-// Detrás de Cloudflare → cloudflared → Traefik → nginx. La IP real del visitante llega en
-// CF-Connecting-IP; el backend no tiene puertos publicados, así que no se puede falsificar.
-const clientKey = (req: express.Request) =>
-  (req.headers['cf-connecting-ip'] as string) || (req.headers['x-real-ip'] as string) || req.ip || 'unknown';
+const clientKey = clienteIp;
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -105,6 +104,7 @@ app.use('/api/catalog', catalogRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/app', appMovilRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);

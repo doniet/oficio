@@ -142,6 +142,11 @@ router.get('/system', asyncHandler(async (_req: AuthRequest, res) => {
       appointments_upcoming: contar(`SELECT COUNT(*) AS n FROM appointments WHERE status IN ('pending', 'confirmed') AND starts_at > '${new Date().toISOString()}'`),
       pending_payments: contar("SELECT COUNT(*) AS n FROM subscriptions WHERE status = 'pending'"),
     },
+    app_downloads: {
+      total: contar('SELECT COUNT(*) AS n FROM apk_descargas'),
+      last7d: contar(`SELECT COUNT(*) AS n FROM apk_descargas WHERE created_at > '${new Date(Date.now() - 7 * 86_400_000).toISOString()}'`),
+      by_version: db.prepare('SELECT version, COUNT(*) AS n FROM apk_descargas GROUP BY version ORDER BY MAX(created_at) DESC').all() as { version: string; n: number }[],
+    },
   });
 }));
 

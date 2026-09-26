@@ -29,6 +29,7 @@ export default function SistemaTab() {
 
   const libre = data.disk.total_bytes ? data.disk.free_bytes / data.disk.total_bytes : 1;
   const c = data.counts;
+  const d = data.app_downloads;
   const esquemaOk = data.schema_version === data.schema_expected;
 
   return (
@@ -71,6 +72,8 @@ export default function SistemaTab() {
           <Stat label="Citas próximas" value={c.appointments_upcoming} />
           <Stat label="Pagos pendientes" value={c.pending_payments} tone={c.pending_payments ? 'warn' : undefined}
             hint={c.pending_payments ? 'Se confirman con npm run pagos en el servidor' : undefined} />
+          <Stat label="Descargas de la app" value={d.total.toLocaleString('es-ES')}
+            hint={d.total ? `${d.last7d.toLocaleString('es-ES')} en 7 días${d.by_version.length > 1 ? ` · ${d.by_version.map((v) => `v${v.version}: ${v.n}`).join(' · ')}` : ` · v${d.by_version[0].version}`}` : 'APK de Android desde la web'} />
         </div>
       </div>
     </div>

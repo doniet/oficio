@@ -205,3 +205,10 @@
 - Security: sin cambios de red; `/descargas/` con lista blanca (solo `.apk` y `android.json`).
 - Next: primera instalación en un teléfono real.
 - Blockers: ninguno.
+
+## 2026-09-26 08:10 UTC — cc-jarvis-ubuntu — Contador de descargas del APK en el panel técnico
+- Changes: `GET /api/app/descargar?archivo=` (`routes/app-movil.ts`): valida `^oficios-cuba-X.Y.Z.apk$`, cuenta y redirige 302 (`no-store`) a `/descargas/<archivo>`. Se cuenta en la API y no en nginx porque Cloudflare cachea el APK (desde la 2.ª descarga no llega al servidor). Una por visitante+versión cada 24 h (reintentos de descargas cortadas); visitante = sha256 con sal (`JWT_SECRET`) de la IP, nunca la IP. Tabla `apk_descargas` (migración **9**). `/admin/system` → `app_downloads {total, last7d, by_version}` (versiones por descarga más reciente). Panel → Sistema → Contenido: tarjeta «Descargas de la app» (mismo `Stat`). El botón y el enlace del pie apuntan al contador. `lib/cliente.ts` (IP del cliente, antes dentro de `app.ts`).
+- Tests: pass — backend 113 (5 nuevos: redirige + no-store, deduplicado 24 h / por versión, sin IP en claro, nombres inválidos y sin redirección abierta, datos del panel; migración v0→v9). 5 mutaciones detectadas (la del ancla inicial de la regex sobrevivía: añadidos `../` y `x/`). E2E local: web + API, admin con 2FA en el navegador → tarjeta «3 · 3 en 7 días · v0.1.0»; el botón redirige al APK.
+- Security: endpoint público nuevo sin datos personales (hash con sal), rate limit general de `/api/`, redirección solo a una ruta fija del propio sitio.
+- Next: desplegar (migración 9).
+- Blockers: ninguno.
