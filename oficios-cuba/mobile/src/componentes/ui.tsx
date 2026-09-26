@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -95,7 +95,9 @@ function hash(seed: string, mult: number) {
 /** Avatar de la web: foto o iniciales sobre un tono estable por nombre. */
 export function Avatar({ src, nombre, tamano = 44, cuadrado, estilo }: { src?: string | null; nombre?: string | null; tamano?: number; cuadrado?: boolean; estilo?: StyleProp<ViewStyle> }) {
   const radio = cuadrado ? 16 : tamano / 2;
-  if (src) return <Image source={urlImagen(src)} style={[{ width: tamano, height: tamano, borderRadius: radio }, estilo as never]} contentFit="cover" cachePolicy="disk" />;
+  // Si la foto no carga (sin red, o un servidor que no sirve /demo), iniciales en vez de un hueco.
+  const [fallo, setFallo] = useState(false);
+  if (src && !fallo) return <Image source={urlImagen(src)} onError={() => setFallo(true)} style={[{ width: tamano, height: tamano, borderRadius: radio }, estilo as never]} contentFit="cover" cachePolicy="disk" />;
   const [fondo, texto] = TONOS_AVATAR[hash(nombre ?? '?', 31) % TONOS_AVATAR.length];
   return (
     <View style={[{ width: tamano, height: tamano, borderRadius: radio, backgroundColor: fondo, alignItems: 'center', justifyContent: 'center' }, estilo]}>

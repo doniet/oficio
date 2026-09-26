@@ -61,8 +61,10 @@ export default function Conversacion() {
     finally { setEnviando(false); }
   }
 
+  // "padding" también en Android: con la app de borde a borde (Expo 57) adjustResize ya no encoge la
+  // ventana y el teclado tapaba la fila de escribir.
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: paper }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: paper }} behavior="padding" keyboardVerticalOffset={90}>
       <FlatList
         data={mensajes}
         keyExtractor={(m) => m.id}
