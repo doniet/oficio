@@ -115,3 +115,15 @@
 - Security: sin cambios de red en marcha. Pendiente de OK: arrancar oficio_notifier (salida a internet desde un contenedor nuevo, solo hacia Telegram; ningún puerto ni ruta nueva hacia dentro). Token solo en el secreto de Docker.
 - Next: Dariel crea el bot (@BotFather), pega el token en `secrets/telegram_bot_token` y da el OK → `docker compose --profile telegram up -d`.
 - Blockers: token del bot y OK de red (Dariel).
+
+## 2026-09-26 03:20 UTC — claude-code (vps2) — Panel técnico /admin (2FA) y token de Telegram desde el panel; oficio_notifier arrancado
+- Changes (dc89324):
+  - Decisiones de Dariel: 2FA en la app (sin Cloudflare Access); token guardado cifrado para que solo lo lea el notificador; arrancar oficio_notifier.
+  - **Admin:** `users.is_admin` solo por CLI (`docker exec oficio_api node dist/scripts/admin.js dar|quitar|reset-2fa|listar`); `/api/admin` → 404 a quien no es admin. 2FA TOTP propio (`lib/totp.ts`, vectores RFC 6238 comprobados; sin reutilizar códigos; 5 fallos / 15 min) → sesión de administración de 30 min (`X-Admin-Token`, se invalida al cambiar contraseña o reiniciar el 2FA); acciones sensibles con código nuevo; registro en `admin_audit`. Migración 7.
+  - **Token:** el notificador genera su par RSA en `secrets/notifier/` (solo lo monta él, `600`) y publica la pública; la API cifra el token con ella (RSA-OAEP/SHA-256) y el panel solo muestra los 4 últimos. El notificador arranca sin token, lo relee cada 10 s, se reconecta y guarda `token_error` si no vale. Quitado el secreto de Docker `telegram_bot_token`.
+  - **Web /admin:** puerta 2FA con QR generado en local (`qrcode`), pestañas Sistema / Telegram / Registro; entrada "Técnico" en el menú solo para admins.
+  - Deploy: backup `data/oficios-2026-09-26-0313-pre-deploy.db`, build + up, migrada a v7; `docker compose --profile telegram up -d oficio_notifier` (healthy, esperando token).
+- Tests: pass — backend 80 (4 nuevos del panel + v7); mutaciones de reutilización de códigos y de sesión detectadas. Notificador real contra Telegram falso: sin token espera, con token cifrado se conecta en ≤10 s, al borrarlo se desconecta. E2E Playwright 390 px: cliente → 404, activar 2FA con QR, Sistema, pegar token → "Activo como @bot" sin que el token aparezca en la página, Registro; 0 errores. En prod: v7, `integrity_check` ok, FK limpias, conteos iguales; notifier llega a api.telegram.org, la API sigue sin salida, el notifier no escucha puertos (solo el DNS interno de Docker); `/api/admin/me` 404 cliente / 401 sin sesión.
+- Security: cambio de red aprobado por Dariel: oficio_notifier en net_dmz con salida (solo usa api.telegram.org), sin puertos ni rutas. Nueva superficie: /admin (rol por CLI + 2FA + registro). Token del bot nunca en claro fuera del notificador.
+- Next: Dariel se registra en la web (o dice su email) → `admin.js dar <email>` → activa 2FA en /admin → crea el bot en @BotFather y pega el token. Luego probar vinculando una cuenta.
+- Blockers: email de la cuenta de Dariel para darle el rol.
