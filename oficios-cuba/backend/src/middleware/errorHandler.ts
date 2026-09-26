@@ -4,10 +4,13 @@ import { ZodError } from 'zod';
 export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
+  /** Para que el frontend distinga un caso concreto sin depender del texto (p. ej. 'choque'). */
+  code?: string;
 
-  constructor(message: string, statusCode: number = 500) {
+  constructor(message: string, statusCode: number = 500, code?: string) {
     super(message);
     this.statusCode = statusCode;
+    this.code = code;
     this.isOperational = true;
     Error.captureStackTrace(this, this.constructor);
   }
@@ -35,7 +38,7 @@ export function errorHandler(err: Error & { status?: number; type?: string }, re
   }
 
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ error: err.message, ...(err.code && { code: err.code }) });
   }
 
   if (err.name === 'ValidationError') {

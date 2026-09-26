@@ -25,6 +25,7 @@ const Conversation = lazy(() => import('./pages/dashboard/Conversation'));
 const Favorites = lazy(() => import('./pages/dashboard/Favorites'));
 const Account = lazy(() => import('./pages/dashboard/Account'));
 const Agenda = lazy(() => import('./pages/dashboard/Agenda'));
+const AgendaAjustes = lazy(() => import('./pages/dashboard/AgendaAjustes'));
 const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="servicios/:id/editar" element={<RequireAuth only="provider"><ServiceForm /></RequireAuth>} />
             <Route path="suscripcion" element={<RequireAuth only="provider"><MySubscription /></RequireAuth>} />
             <Route path="agenda" element={<RequireAuth only="provider"><Agenda /></RequireAuth>} />
+            <Route path="agenda/ajustes" element={<RequireAuth only="provider"><AgendaAjustes /></RequireAuth>} />
             <Route path="citas" element={<RequireAuth only="client"><MisCitas /></RequireAuth>} />
           </Route>
           <Route path="*" element={<NotFound />} />

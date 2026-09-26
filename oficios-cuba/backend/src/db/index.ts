@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS services (
   price_type TEXT DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'hourly', 'daily', 'negotiable')),
   price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
   images TEXT, -- JSON array of image URLs
+  duration_min INTEGER, -- duración de la cita; NULL = la general de la agenda
   is_active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -218,21 +219,40 @@ CREATE TABLE IF NOT EXISTS uploads (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Citas agendadas (plan Profesional). provider_id = id del PERFIL.
+-- Citas agendadas (plan Profesional). provider_id = id del PERFIL. Las citas manuales (las apunta
+-- el profesional) pueden no tener cliente con cuenta: llevan client_name / client_phone.
 CREATE TABLE IF NOT EXISTS appointments (
   id TEXT PRIMARY KEY,
   provider_id TEXT NOT NULL,
-  client_id TEXT NOT NULL,
+  client_id TEXT,
   service_id TEXT,
   starts_at TEXT NOT NULL, -- ISO UTC
+  ends_at TEXT NOT NULL, -- ISO UTC, fijado al reservar
   duration_min INTEGER NOT NULL,
   note TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done')),
+  client_name TEXT,
+  client_phone TEXT,
+  origin TEXT NOT NULL DEFAULT 'online' CHECK (origin IN ('online', 'manual')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done', 'no_show')),
+  cancelled_by TEXT CHECK (cancelled_by IN ('client', 'provider')),
+  rescheduled_from TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT,
   FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL
+  FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
+  FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+-- Tiempo en que el profesional no acepta citas (almuerzo, un trámite, vacaciones).
+CREATE TABLE IF NOT EXISTS agenda_blocks (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  starts_at TEXT NOT NULL, -- ISO UTC
+  ends_at TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
 );
 
 -- Clientes con sesión que pulsaron WhatsApp o Llamar: sin chat, es la prueba de contacto para reseñar.
@@ -250,6 +270,7 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_agenda_blocks_provider ON agenda_blocks(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_services_provider ON services(provider_id);
 CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);
 CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
@@ -315,6 +336,46 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       UPDATE services SET price_currency = 'USD';
       UPDATE provider_profiles SET subscription_plan = 'pro' WHERE subscription_plan = 'premium';
       UPDATE subscriptions SET plan = 'pro' WHERE plan = 'premium';
+    `);
+  },
+  // 4 — agenda profesional: fin de la cita, citas manuales sin cuenta, "no vino", quién cancela y
+  //     reprogramaciones; duración por servicio. La tabla agenda_blocks la crea `schema`.
+  (d) => {
+    d.exec('ALTER TABLE services ADD COLUMN duration_min INTEGER');
+    // Las bases anteriores a la v3 no tenían appointments: la crea `schema` ya en su forma nueva.
+    if (!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'appointments'").get()) return;
+    d.exec(`
+      CREATE TABLE appointments_v4 (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        client_id TEXT,
+        service_id TEXT,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        duration_min INTEGER NOT NULL,
+        note TEXT,
+        client_name TEXT,
+        client_phone TEXT,
+        origin TEXT NOT NULL DEFAULT 'online' CHECK (origin IN ('online', 'manual')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'done', 'no_show')),
+        cancelled_by TEXT CHECK (cancelled_by IN ('client', 'provider')),
+        rescheduled_from TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE,
+        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL,
+        FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL
+      );
+      INSERT INTO appointments_v4 (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, status, created_at, updated_at)
+        SELECT id, provider_id, client_id, service_id, starts_at,
+          strftime('%Y-%m-%dT%H:%M:%fZ', starts_at, '+' || duration_min || ' minutes'),
+          duration_min, note, status, created_at, updated_at
+        FROM appointments;
+      DROP TABLE appointments;
+      ALTER TABLE appointments_v4 RENAME TO appointments;
+      CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
+      CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
     `);
   },
 ];

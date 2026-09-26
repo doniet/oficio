@@ -74,6 +74,8 @@ export interface ServiceSummary {
   price_currency: Currency;
   cover: string | null;
   image_count: number;
+  /** Duración de la cita para este servicio; null = la general de la agenda. */
+  duration_min?: number | null;
   is_active: boolean;
   created_at: string;
   category_id: string;
@@ -206,32 +208,87 @@ export interface PlanLimits {
   features: string[];
 }
 
+export interface Tramo { desde: string; hasta: string }
+
+/** Configuración de la agenda (formato 2). `semana[0]` = domingo. Horas de pared en Cuba. */
 export interface Agenda {
-  dias: number[];
-  desde: string;
-  hasta: string;
+  v: 2;
+  semana: Tramo[][];
+  excepciones: { fecha: string; tramos: Tramo[] }[];
   duracion: number;
+  intervalo: 15 | 30 | 60;
+  margen_antes: number;
+  margen_despues: number;
+  antelacion_min: number;
+  horizonte_dias: number;
+  max_por_dia: number | null;
+  confirmacion: 'manual' | 'auto';
+  cancelacion_horas: number;
 }
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'done';
+export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'done' | 'no_show';
 
 export interface Appointment {
   id: string;
   provider_id: string;
-  client_id: string;
+  /** null en las citas que apunta el profesional para alguien sin cuenta. */
+  client_id: string | null;
   service_id?: string | null;
   starts_at: string;
+  ends_at: string;
   duration_min: number;
   note?: string | null;
   status: AppointmentStatus;
+  origin: 'online' | 'manual';
+  cancelled_by?: 'client' | 'provider' | null;
+  rescheduled_from?: string | null;
   created_at: string;
   provider_name: string;
   provider_avatar?: string | null;
   client_name: string;
   client_avatar?: string | null;
+  service_title?: string | null;
   /** Solo lo recibe el profesional. */
   client_phone?: string | null;
-  service_title?: string | null;
+  /** Solo el profesional: veces que este cliente no vino a sus citas. */
+  no_shows?: number;
+  /** Solo el cliente. */
+  provider_whatsapp?: string | null;
+  cancel_until?: string;
+  can_change?: boolean;
+}
+
+export interface AgendaBlock { id: string; starts_at: string; ends_at: string; note?: string | null }
+
+export interface CalendarDay { date: string; excepcion: boolean; tramos: { inicio: string; fin: string }[] }
+
+export interface CalendarData {
+  zona: string;
+  enabled: boolean;
+  agenda: Agenda;
+  dias: CalendarDay[];
+  appointments: Appointment[];
+  blocks: AgendaBlock[];
+}
+
+export interface BookableService {
+  id: string;
+  title: string;
+  duration_min: number;
+  price_min: number | null;
+  price_max: number | null;
+  price_type: PriceType;
+  price_currency: Currency;
+}
+
+export interface SlotsResponse {
+  zona: string;
+  duracion: number;
+  confirmacion: 'manual' | 'auto';
+  cancelacion_horas: number;
+  horizonte_dias: number;
+  servicios: BookableService[];
+  days: { date: string; slots: string[] }[];
 }
 
 export interface Tasa {

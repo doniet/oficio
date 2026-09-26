@@ -22,10 +22,11 @@ const serviceSchema = z.object({
   price_type: z.enum(['fixed', 'hourly', 'daily', 'negotiable']).default('negotiable'),
   price_currency: z.enum(['CUP', 'USD']).default('CUP'),
   images: z.array(imageUrl).max(6, 'Máximo 6 fotos').optional(),
+  duration_min: z.preprocess((v) => (v === '' ? null : v), z.number().int().min(10).max(480).nullable().optional()),
 });
 
 const LIST_COLUMNS = `
-  s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.price_currency, s.images, s.is_active, s.created_at,
+  s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.price_currency, s.images, s.duration_min, s.is_active, s.created_at,
   s.category_id, c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug,
   parent.name AS parent_category_name, parent.slug AS parent_category_slug,
   pp.id AS provider_id, pp.business_name, pp.rating, pp.review_count, pp.subscription_plan, pp.kind, pp.contact_mode,
@@ -212,12 +213,12 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 
   const id = uuidv4();
   db.prepare(`
-    INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, duration_min, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, provider.id, data.category_id, data.title, data.description || null,
     data.price_type === 'negotiable' ? null : data.price_min ?? null,
     data.price_type === 'negotiable' ? null : data.price_max ?? null,
-    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), new Date().toISOString());
+    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), data.duration_min ?? null, new Date().toISOString());
 
   res.status(201).json({ service: { id } });
 }));
@@ -240,11 +241,11 @@ router.put('/:id', authMiddleware, requireProvider, asyncHandler(async (req: Aut
 
   const negotiable = data.price_type === 'negotiable';
   db.prepare(`
-    UPDATE services SET category_id = ?, title = ?, description = ?, price_min = ?, price_max = ?, price_type = ?, price_currency = ?, images = ?, updated_at = CURRENT_TIMESTAMP
+    UPDATE services SET category_id = ?, title = ?, description = ?, price_min = ?, price_max = ?, price_type = ?, price_currency = ?, images = ?, duration_min = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(data.category_id, data.title, data.description || null,
     negotiable ? null : data.price_min ?? null, negotiable ? null : data.price_max ?? null,
-    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), req.params.id);
+    data.price_type, data.price_currency, JSON.stringify(data.images ?? []), data.duration_min ?? null, req.params.id);
 
   res.json({ service: { id: req.params.id } });
 }));

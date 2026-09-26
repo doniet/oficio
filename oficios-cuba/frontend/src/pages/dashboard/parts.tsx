@@ -4,6 +4,7 @@ import { Lock, Sparkles } from 'lucide-react';
 import { Modal, Spinner, cn } from '../../components/ui';
 import { parseDate } from '../../lib/format';
 import type { AppointmentStatus } from '../../types';
+import { fechaLargaCuba, horaCuba } from '../../lib/cuba';
 
 // Miniatura para listas del panel: CategoryCover es para portadas grandes (emoji de 5xl).
 export function ServiceThumb({ src, icon, className = '' }: { src?: string | null; icon?: string | null; className?: string }) {
@@ -64,13 +65,13 @@ const CITA_ESTADO: Record<AppointmentStatus, { label: string; cls: string }> = {
   confirmed: { label: 'Confirmada', cls: 'bg-sea-100 text-sea-800' },
   cancelled: { label: 'Cancelada', cls: 'bg-sand-200 text-ink-500' },
   done: { label: 'Hecha', cls: 'bg-ink-900 text-white' },
+  no_show: { label: 'No vino', cls: 'bg-red-100 text-red-700' },
 };
 
 export function AppointmentStatusPill({ status }: { status: AppointmentStatus }) {
   return <span className={cn('badge', CITA_ESTADO[status].cls)}>{CITA_ESTADO[status].label}</span>;
 }
 
-export const citaFecha = (iso: string) =>
-  parseDate(iso).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-export const citaHora = (iso: string) =>
-  parseDate(iso).toLocaleTimeString('es-ES', { hour: 'numeric', minute: '2-digit', hour12: true });
+// Las citas se muestran siempre en hora de Cuba (lib/cuba.ts).
+export const citaFecha = (iso: string) => fechaLargaCuba(parseDate(iso));
+export const citaHora = (iso: string) => horaCuba(parseDate(iso));

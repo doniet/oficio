@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db, { refreshProviderRating } from './index.js';
+import { fechaLocal, instanteLocal, sumarDias } from '../lib/hora.js';
 
 export const DEMO_PASSWORD = 'Demo123!';
 
@@ -324,20 +325,32 @@ export async function seedDemo() {
         .run(uuidv4(), convId, sender, who, content, readAt, daysAgo(0, hoursAgo));
     }
 
-    // Citas en la agenda de ElectroHogar (plan Profesional): mañana confirmada y pasado mañana pendiente.
-    const aLas = (dias: number, hora: number) => {
-      const d = new Date();
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate() + dias, hora).toISOString();
-    };
-    const citas: [string, number, number, string, string][] = [
-      [laura, 1, 10, 'confirmed', 'Revisar el breaker de la cocina.'],
-      [clientIds[1], 2, 14, 'pending', 'Instalar dos ventiladores de techo.'],
-      [clientIds[2], -3, 9, 'done', 'Cambio de tomacorrientes.'],
+    // Agenda de ElectroHogar (plan Profesional): partido de 9 a 13 y de 14 a 18, sábado por la mañana.
+    const partido = [{ desde: '09:00', hasta: '13:00' }, { desde: '14:00', hasta: '18:00' }];
+    db.prepare('UPDATE provider_profiles SET agenda = ? WHERE id = ?').run(JSON.stringify({
+      v: 2, semana: [[], partido, partido, partido, partido, partido, [{ desde: '09:00', hasta: '13:00' }]], excepciones: [],
+      duracion: 60, intervalo: 30, margen_antes: 0, margen_despues: 30, antelacion_min: 120, horizonte_dias: 30,
+      max_por_dia: null, confirmacion: 'manual', cancelacion_horas: 12,
+    }), electro.profileId);
+    db.prepare('UPDATE services SET duration_min = 90 WHERE id = ?').run(electro.services[1]);
+
+    // Citas: mañana confirmada, pasado mañana pendiente, una hecha, un "no vino" y una apuntada a mano.
+    const aLas = (dias: number, hora: number) => new Date(instanteLocal(sumarDias(fechaLocal(Date.now()), dias), hora * 60, 'despues')!).toISOString();
+    const citas: [string | null, number, number, string, string, string | null][] = [
+      [laura, 1, 10, 'confirmed', 'Revisar el breaker de la cocina.', null],
+      [clientIds[1], 2, 14, 'pending', 'Instalar dos ventiladores de techo.', null],
+      [clientIds[2], -3, 9, 'done', 'Cambio de tomacorrientes.', null],
+      [clientIds[1], -6, 11, 'no_show', 'Revisar el calentador.', null],
+      [null, 1, 15, 'confirmed', 'Pasa por el taller con la batidora.', 'Mercedes (vecina)'],
     ];
-    for (const [cliente, dias, hora, status, note] of citas) {
-      db.prepare(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, duration_min, note, status, created_at)
-        VALUES (?, ?, ?, ?, ?, 60, ?, ?, ?)`).run(uuidv4(), electro.profileId, cliente, electro.services[0], aLas(dias, hora), note, status, daysAgo(4));
+    for (const [cliente, dias, hora, status, note, nombre] of citas) {
+      const inicio = aLas(dias, hora);
+      db.prepare(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 60, ?, ?, ?, ?, ?, ?)`).run(uuidv4(), electro.profileId, cliente, electro.services[0], inicio,
+        new Date(Date.parse(inicio) + 3_600_000).toISOString(), note, nombre, nombre ? '+53 5 555 0101' : null, nombre ? 'manual' : 'online', status, daysAgo(4));
     }
+    db.prepare('INSERT INTO agenda_blocks (id, provider_id, starts_at, ends_at, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(uuidv4(), electro.profileId, aLas(3, 9), aLas(3, 13), 'Compra de piezas', daysAgo(1));
 
     for (const idx of [0, 2, 3]) {
       db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)').run(uuidv4(), laura, providerRows[idx].profileId);

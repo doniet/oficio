@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AppointmentStatus, Currency, PriceType, Tasa, UserType } from '../types';
+import type { Agenda, AgendaBlock, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -53,6 +53,8 @@ export interface ServiceInput {
   price_type: PriceType;
   price_currency: Currency;
   images: string[];
+  /** Duración de la cita en la agenda; null = la general. */
+  duration_min?: number | null;
 }
 
 export type GoogleLogin =
@@ -78,13 +80,27 @@ export const tasaApi = {
 };
 
 export const appointmentApi = {
-  slots: (providerId: string) => api.get<{ duracion: number; days: { date: string; slots: string[] }[] }>(`/appointments/provider/${providerId}/slots`),
-  mine: () => api.get('/appointments/mine'),
-  create: (data: { provider_id: string; service_id?: string; starts_at: string; note?: string }) => api.post('/appointments', data),
-  setStatus: (id: string, status: Exclude<AppointmentStatus, 'pending'>) => api.patch(`/appointments/${id}`, { status }),
-  getConfig: () => api.get<{ agenda: Agenda; enabled: boolean }>('/appointments/config'),
-  saveConfig: (agenda: Agenda) => api.put('/appointments/config', agenda),
+  slots: (providerId: string, serviceId?: string) =>
+    api.get<SlotsResponse>(`/appointments/provider/${providerId}/slots`, { params: serviceId ? { service_id: serviceId } : undefined }),
+  mine: () => api.get<{ appointments: Appointment[] }>('/appointments/mine'),
+  create: (data: { provider_id: string; service_id?: string; starts_at: string; note?: string }) =>
+    api.post<{ appointment: Appointment }>('/appointments', data),
+  setStatus: (id: string, status: Exclude<AppointmentStatus, 'pending'>) => api.patch<{ appointment: Appointment }>(`/appointments/${id}`, { status }),
+  /** 409 con `code: 'choque'` si el profesional pisa otra cita o un bloqueo; se reintenta con `forzar`. */
+  reschedule: (id: string, starts_at: string, forzar?: boolean) =>
+    api.post<{ appointment: Appointment }>(`/appointments/${id}/reschedule`, { starts_at, forzar }),
+  getConfig: () => api.get<{ agenda: Agenda; enabled: boolean; zona: string }>('/appointments/config'),
+  saveConfig: (agenda: Agenda) => api.put<{ agenda: Agenda }>('/appointments/config', agenda),
+  /** Fechas YYYY-MM-DD (hora de Cuba), ambas incluidas, como mucho 62 días. */
+  calendar: (desde: string, hasta: string) => api.get<CalendarData>('/appointments/calendar', { params: { desde, hasta } }),
+  createManual: (data: { starts_at: string; duration_min: number; service_id?: string; client_name: string; client_phone?: string; note?: string; forzar?: boolean }) =>
+    api.post<{ appointment: Appointment }>('/appointments/manual', data),
+  createBlock: (data: { starts_at: string; ends_at: string; note?: string }) => api.post<{ block: AgendaBlock }>('/appointments/blocks', data),
+  deleteBlock: (id: string) => api.delete(`/appointments/blocks/${id}`),
 };
+
+/** El 409 de "choca con otra cita" que el profesional puede forzar. */
+export const esChoque = (err: unknown) => err instanceof AxiosError && err.response?.status === 409 && err.response.data?.code === 'choque';
 
 export const statsApi = {
   get: () => api.get('/stats'),

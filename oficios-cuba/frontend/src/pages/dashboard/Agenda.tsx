@@ -1,184 +1,141 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarDays, Check, CheckCheck, MessageCircle, Phone, Sparkles, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Globe2, List, Plus, Settings2, Sparkles } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { apiError, appointmentApi } from '../../services/api';
-import type { Agenda as AgendaConfig, Appointment, AppointmentStatus } from '../../types';
-import { parseDate, telLink, whatsappLink } from '../../lib/format';
+import { apiError, appointmentApi, serviceApi } from '../../services/api';
+import type { AgendaBlock, Appointment, CalendarData } from '../../types';
+import { diaSemana, fechaLargaCuba, fueraDeCuba, hoyCuba, instanteCuba, mediodia, sumarDias } from '../../lib/cuba';
 import { PageTitle } from '../../components/DashboardLayout';
-import { Alert, Avatar, EmptyState, ErrorState, Field, PageLoader, Spinner, cn } from '../../components/ui';
-import { AppointmentStatusPill, citaFecha, citaHora, FormSection } from './parts';
+import { Avatar, EmptyState, ErrorState, PageLoader, Spinner, cn } from '../../components/ui';
+import DayView from '../../components/agenda/DayView';
+import NewEntrySheet, { type ServicioAgenda } from '../../components/agenda/NewEntrySheet';
+import AppointmentSheet from '../../components/agenda/AppointmentSheet';
+import { ESTILO_CITA, activa, fechaDeCita, lunesDe, ms, rangoHoras } from '../../components/agenda/shared';
+import { AppointmentStatusPill } from './parts';
 
-const DIAS: { n: number; corto: string; largo: string }[] = [
-  { n: 1, corto: 'L', largo: 'Lunes' }, { n: 2, corto: 'M', largo: 'Martes' }, { n: 3, corto: 'X', largo: 'Miércoles' },
-  { n: 4, corto: 'J', largo: 'Jueves' }, { n: 5, corto: 'V', largo: 'Viernes' }, { n: 6, corto: 'S', largo: 'Sábado' },
-  { n: 0, corto: 'D', largo: 'Domingo' },
-];
-const DURACIONES: [number, string][] = [[30, '30 min'], [45, '45 min'], [60, '1 hora'], [90, '1 hora y media'], [120, '2 horas']];
+type Vista = 'dia' | 'lista';
+const LETRA = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+const DIAS_LISTA = 30;
 
-type Tab = 'proximas' | 'pasadas';
-
-function ConfigForm({ initial, onSaved }: { initial: AgendaConfig; onSaved: (a: AgendaConfig) => void }) {
-  const toast = useToast();
-  const [form, setForm] = useState(initial);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const toggleDia = (n: number) => setForm((f) => ({ ...f, dias: f.dias.includes(n) ? f.dias.filter((d) => d !== n) : [...f.dias, n].sort() }));
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (form.desde >= form.hasta) { setError('La hora de fin debe ser posterior a la de inicio'); return; }
-    setError('');
-    setSaving(true);
-    try {
-      const res = await appointmentApi.saveConfig(form);
-      onSaved(res.data.agenda);
-      toast('Horario guardado');
-    } catch (err) {
-      setError(apiError(err, 'No se pudo guardar el horario.'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} noValidate>
-      <FormSection title="Cuándo aceptas citas" description="Los clientes solo podrán pedir huecos libres dentro de este horario (próximos 14 días).">
-        {error && <Alert>{error}</Alert>}
-        <fieldset>
-          <legend className="label">Días</legend>
-          <div className="grid grid-cols-7 gap-1.5">
-            {DIAS.map((d) => (
-              <button key={d.n} type="button" onClick={() => toggleDia(d.n)} aria-pressed={form.dias.includes(d.n)} aria-label={d.largo}
-                className={cn('chip justify-center px-0', form.dias.includes(d.n) && 'chip-active')}>
-                {d.corto}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Field label="Desde" htmlFor="desde">
-            <input id="desde" type="time" value={form.desde} onChange={(e) => setForm((f) => ({ ...f, desde: e.target.value }))} className="input" />
-          </Field>
-          <Field label="Hasta" htmlFor="hasta">
-            <input id="hasta" type="time" value={form.hasta} onChange={(e) => setForm((f) => ({ ...f, hasta: e.target.value }))} className="input" />
-          </Field>
-          <Field label="Cada cita dura" htmlFor="dur">
-            <select id="dur" value={form.duracion} onChange={(e) => setForm((f) => ({ ...f, duracion: Number(e.target.value) }))} className="input">
-              {DURACIONES.map(([d, label]) => <option key={d} value={d}>{label}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="flex justify-end">
-          <button type="submit" disabled={saving} className="btn-primary w-full sm:w-auto">{saving && <Spinner className="h-4 w-4" />} Guardar horario</button>
-        </div>
-      </FormSection>
-    </form>
-  );
+function rangoDe(vista: Vista, fecha: string) {
+  if (vista === 'lista') { const hoy = hoyCuba(); return { desde: hoy, hasta: sumarDias(hoy, DIAS_LISTA - 1) }; }
+  const lunes = lunesDe(fecha);
+  return { desde: lunes, hasta: sumarDias(lunes, 6) };
 }
 
-function CitaItem({ cita, busy, onStatus }: { cita: Appointment; busy: boolean; onStatus: (s: Exclude<AppointmentStatus, 'pending'>) => void }) {
-  const phone = cita.client_phone;
+function ListaCitas({ citas, onSelect }: { citas: Appointment[]; onSelect?: (a: Appointment) => void }) {
+  const grupos = useMemo(() => {
+    const porDia = new Map<string, Appointment[]>();
+    for (const c of [...citas].sort((a, b) => ms(a.starts_at) - ms(b.starts_at))) {
+      const k = fechaDeCita(c);
+      porDia.set(k, [...(porDia.get(k) ?? []), c]);
+    }
+    return [...porDia.entries()];
+  }, [citas]);
+
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
-      <div className="w-20 shrink-0">
-        <p className="font-display text-lg font-bold text-ink-900">{citaHora(cita.starts_at)}</p>
-        <p className="text-xs text-ink-400">{cita.duration_min} min</p>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <Avatar src={cita.client_avatar} name={cita.client_name} size="xs" />
-          <p className="font-semibold">{cita.client_name}</p>
-          <AppointmentStatusPill status={cita.status} />
-        </div>
-        {cita.service_title && <p className="mt-1 truncate text-sm text-ink-500">{cita.service_title}</p>}
-        {cita.note && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink-700">“{cita.note}”</p>}
-        {phone && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            <a href={telLink(phone)} className="btn-ghost btn-sm"><Phone className="h-4 w-4" /> {phone}</a>
-            <a href={whatsappLink(phone, `Hola ${cita.client_name}, sobre tu cita del ${citaFecha(cita.starts_at)} a las ${citaHora(cita.starts_at)}.`)}
-              target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm"><MessageCircle className="h-4 w-4" /> WhatsApp</a>
-          </div>
-        )}
-      </div>
-      {(cita.status === 'pending' || cita.status === 'confirmed') && (
-        <div className="flex gap-2 sm:flex-col">
-          {cita.status === 'pending' && (
-            <button type="button" disabled={busy} onClick={() => onStatus('confirmed')} className="btn-primary btn-sm flex-1"><Check className="h-4 w-4" /> Confirmar</button>
-          )}
-          {cita.status === 'confirmed' && (
-            <button type="button" disabled={busy} onClick={() => onStatus('done')} className="btn-secondary btn-sm flex-1"><CheckCheck className="h-4 w-4" /> Hecha</button>
-          )}
-          <button type="button" disabled={busy} onClick={() => onStatus('cancelled')} className="btn-ghost btn-sm flex-1 text-red-600 hover:bg-red-50"><X className="h-4 w-4" /> Cancelar</button>
-        </div>
-      )}
-    </li>
+    <div className="space-y-4">
+      {grupos.map(([dia, lista]) => (
+        <section key={dia} className="card overflow-hidden">
+          <h2 className="border-b border-sand-200 bg-paper px-4 py-2 text-sm font-bold first-letter:uppercase text-ink-700">
+            {dia === hoyCuba() ? 'Hoy · ' : dia === sumarDias(hoyCuba(), 1) ? 'Mañana · ' : ''}{fechaLargaCuba(mediodia(dia))}
+          </h2>
+          <ul className="divide-y divide-sand-200">
+            {lista.map((c) => (
+              <li key={c.id}>
+                <button type="button" disabled={!onSelect} onClick={() => onSelect?.(c)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition enabled:hover:bg-paper">
+                  <span className={cn('h-10 w-1.5 shrink-0 rounded-full', ESTILO_CITA[c.status])} aria-hidden="true" />
+                  <div className="w-24 shrink-0 text-sm font-bold text-ink-900">{rangoHoras(c)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Avatar src={c.client_avatar} name={c.client_name} size="xs" />
+                      <span className="truncate font-semibold">{c.client_name}</span>
+                    </div>
+                    {c.service_title && <p className="truncate text-xs text-ink-500">{c.service_title}</p>}
+                  </div>
+                  <AppointmentStatusPill status={c.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }
 
 export default function Agenda() {
   const toast = useToast();
-  const [config, setConfig] = useState<AgendaConfig | null>(null);
-  const [enabled, setEnabled] = useState(false);
-  const [citas, setCitas] = useState<Appointment[]>([]);
+  const [vista, setVista] = useState<Vista>('dia');
+  const [fecha, setFecha] = useState(hoyCuba);
+  const [data, setData] = useState<CalendarData | null>(null);
+  const [pendientes, setPendientes] = useState(0);
+  const [viejas, setViejas] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('proximas');
-  const [busy, setBusy] = useState<string | null>(null);
+  const [verCanceladas, setVerCanceladas] = useState(false);
+  const [nuevo, setNuevo] = useState<number | null>(null);
+  const [seleccion, setSeleccion] = useState<Appointment | null>(null);
+  const [servicios, setServicios] = useState<ServicioAgenda[] | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const { desde, hasta } = rangoDe(vista, fecha);
+
+  const cargar = useCallback(async () => {
+    setRefreshing(true);
     setError('');
     try {
-      const [c, m] = await Promise.all([appointmentApi.getConfig(), appointmentApi.mine()]);
-      setConfig(c.data.agenda);
-      setEnabled(c.data.enabled);
-      setCitas(m.data.appointments);
+      const [cal, mias] = await Promise.all([appointmentApi.calendar(desde, hasta), appointmentApi.mine()]);
+      setData(cal.data);
+      const ahora = Date.now();
+      setPendientes(mias.data.appointments.filter((c) => c.status === 'pending' && ms(c.starts_at) >= ahora).length);
+      setViejas(mias.data.appointments);
     } catch (err) {
       setError(apiError(err, 'No se pudo cargar tu agenda.'));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [desde, hasta]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { cargar(); }, [cargar]);
 
-  const grupos = useMemo(() => {
-    const now = Date.now();
-    const lista = citas
-      .filter((c) => {
-        const futura = parseDate(c.starts_at).getTime() + c.duration_min * 60_000 >= now;
-        return tab === 'proximas' ? futura && c.status !== 'cancelled' && c.status !== 'done' : !futura || c.status === 'cancelled' || c.status === 'done';
-      })
-      .sort((a, b) => (tab === 'proximas' ? a.starts_at.localeCompare(b.starts_at) : b.starts_at.localeCompare(a.starts_at)));
-    const porDia = new Map<string, Appointment[]>();
-    for (const c of lista) {
-      const k = citaFecha(c.starts_at);
-      porDia.set(k, [...(porDia.get(k) ?? []), c]);
-    }
-    return [...porDia.entries()];
-  }, [citas, tab]);
+  // Los servicios solo hacen falta para apuntar una cita: se piden al abrir la hoja la primera vez.
+  useEffect(() => {
+    if (nuevo === null || servicios) return;
+    serviceApi.mine()
+      .then((r) => setServicios((r.data.services as ServicioAgenda[]).filter((s: ServicioAgenda & { is_active?: boolean }) => s.is_active !== false)))
+      .catch(() => setServicios([]));
+  }, [nuevo, servicios]);
 
-  const setStatus = async (cita: Appointment, status: Exclude<AppointmentStatus, 'pending'>) => {
-    setBusy(cita.id);
+  const cerrarNuevo = useCallback(() => setNuevo(null), []);
+  const cerrarCita = useCallback(() => setSeleccion(null), []);
+  const trasCambio = useCallback(() => { setNuevo(null); setSeleccion(null); cargar(); }, [cargar]);
+
+  const borrarBloqueo = async (b: AgendaBlock) => {
+    if (!window.confirm('¿Quitar este bloqueo? Volverás a aceptar citas en ese tiempo.')) return;
     try {
-      const res = await appointmentApi.setStatus(cita.id, status);
-      setCitas((list) => list.map((c) => (c.id === cita.id ? { ...c, ...res.data.appointment } : c)));
-      toast(status === 'confirmed' ? 'Cita confirmada' : status === 'done' ? 'Cita marcada como hecha' : 'Cita cancelada');
+      await appointmentApi.deleteBlock(b.id);
+      toast('Bloqueo quitado');
+      cargar();
     } catch (err) {
-      toast(apiError(err, 'No se pudo actualizar la cita.'), 'error');
-    } finally {
-      setBusy(null);
+      toast(apiError(err, 'No se pudo quitar el bloqueo.'), 'error');
     }
   };
 
-  if (loading) return <PageLoader />;
-  if (error || !config) return <ErrorState message={error || 'Sin datos'} onRetry={load} />;
+  const porDia = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of data?.appointments ?? []) if (activa(a)) m.set(fechaDeCita(a), (m.get(fechaDeCita(a)) ?? 0) + 1);
+    return m;
+  }, [data]);
 
-  if (!enabled) {
+  if (loading) return <PageLoader />;
+  if (!data) return <ErrorState message={error || 'Sin datos'} onRetry={cargar} />;
+
+  if (!data.enabled) {
+    const conservadas = viejas.filter((c) => c.status !== 'cancelled');
     return (
-      <div>
+      <div className="space-y-6">
         <PageTitle title="Agenda" />
         <EmptyState
           icon={<CalendarDays className="h-6 w-6" />}
@@ -187,44 +144,118 @@ export default function Agenda() {
         >
           Tus clientes eligen un hueco libre en tu horario y tú confirmas la cita. Sin llamadas de ida y vuelta.
         </EmptyState>
+        {conservadas.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-lg font-bold">Tus citas anteriores</h2>
+            <ListaCitas citas={conservadas} />
+          </section>
+        )}
       </div>
     );
   }
 
-  const pendientes = citas.filter((c) => c.status === 'pending' && parseDate(c.starts_at).getTime() >= Date.now()).length;
+  const lunes = lunesDe(fecha);
+  const semana = Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
+  const hoy = hoyCuba();
+  const delDia = (data.appointments ?? []).filter((a) => fechaDeCita(a) === fecha && (verCanceladas || activa(a)));
+  const inicioDia = instanteCuba(fecha, 0), finDia = instanteCuba(sumarDias(fecha, 1), 0);
+  const bloqueosDia = data.blocks.filter((b) => ms(b.starts_at) < finDia && ms(b.ends_at) > inicioDia);
+  const proximas = data.appointments.filter((a) => activa(a) && ms(a.ends_at) >= Date.now());
+  const canceladasDia = (data.appointments ?? []).filter((a) => fechaDeCita(a) === fecha && !activa(a)).length;
 
   return (
-    <div className="space-y-6">
-      <PageTitle title="Agenda" subtitle={pendientes ? `Tienes ${pendientes} ${pendientes === 1 ? 'cita' : 'citas'} por confirmar.` : 'Tus citas con clientes.'} />
+    <div className="space-y-4">
+      <PageTitle
+        title="Agenda"
+        subtitle={pendientes ? `Tienes ${pendientes} ${pendientes === 1 ? 'cita' : 'citas'} por confirmar.` : 'Toca una hora libre para apuntar una cita o bloquear tiempo.'}
+        action={<Link to="/dashboard/agenda/ajustes" className="btn-secondary btn-sm self-start"><Settings2 className="h-4 w-4" /> Horario y reglas</Link>}
+      />
 
-      <section>
-        <div className="mb-3 inline-grid grid-cols-2 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist">
-          {([['proximas', 'Próximas'], ['pasadas', 'Pasadas']] as const).map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-              className={cn('rounded-xl px-4 py-1.5 text-sm font-semibold transition', tab === k ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}>
-              {label}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-grid grid-cols-2 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Vista">
+          {([['dia', 'Día', CalendarDays], ['lista', 'Lista', List]] as const).map(([k, label, Icon]) => (
+            <button key={k} type="button" role="tab" aria-selected={vista === k} onClick={() => setVista(k)}
+              className={cn('flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition', vista === k ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}>
+              <Icon className="h-4 w-4" /> {label}
             </button>
           ))}
         </div>
-        {grupos.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-ink-400">
-            {tab === 'proximas' ? 'No tienes citas próximas. Cuando un cliente pida una, aparecerá aquí.' : 'Aún no hay citas pasadas.'}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {grupos.map(([dia, lista]) => (
-              <section key={dia} className="card overflow-hidden">
-                <h2 className="border-b border-sand-200 bg-sand-50 px-4 py-2 text-sm font-bold capitalize text-ink-700">{dia}</h2>
-                <ul className="divide-y divide-sand-200">
-                  {lista.map((c) => <CitaItem key={c.id} cita={c} busy={busy === c.id} onStatus={(s) => setStatus(c, s)} />)}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-      </section>
+        <div className="flex items-center gap-2">
+          {refreshing && <Spinner className="h-4 w-4 text-ink-400" />}
+          {fueraDeCuba() && <span className="badge bg-sand-100 text-ink-600"><Globe2 className="h-3.5 w-3.5" /> Horas de Cuba</span>}
+        </div>
+      </div>
 
-      <ConfigForm initial={config} onSaved={setConfig} />
+      {error && <ErrorState message={error} onRetry={cargar} />}
+
+      {vista === 'dia' ? (
+        <>
+          <div className="card p-2">
+            <div className="mb-1 flex items-center justify-between gap-2 px-1">
+              <button type="button" onClick={() => setFecha(sumarDias(fecha, -7))} className="btn-ghost btn-sm px-2" aria-label="Semana anterior"><ChevronLeft className="h-4 w-4" /></button>
+              <p className="text-sm font-semibold first-letter:uppercase text-ink-700">{fechaLargaCuba(mediodia(fecha))}</p>
+              <div className="flex items-center">
+                {fecha !== hoy && <button type="button" onClick={() => setFecha(hoy)} className="btn-ghost btn-sm">Hoy</button>}
+                <button type="button" onClick={() => setFecha(sumarDias(fecha, 7))} className="btn-ghost btn-sm px-2" aria-label="Semana siguiente"><ChevronRight className="h-4 w-4" /></button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {semana.map((d) => {
+                const n = porDia.get(d) ?? 0;
+                const cerrado = !(data.dias.find((x) => x.date === d)?.tramos.length);
+                return (
+                  <button key={d} type="button" onClick={() => setFecha(d)} aria-pressed={d === fecha}
+                    aria-label={`${fechaLargaCuba(mediodia(d))}${n ? `, ${n} ${n === 1 ? 'cita' : 'citas'}` : ''}`}
+                    className={cn('flex flex-col items-center rounded-xl py-1.5 transition',
+                      d === fecha ? 'bg-ink-900 text-white' : 'hover:bg-sand-100', cerrado && d !== fecha && 'text-ink-300')}>
+                    <span className="text-[11px] font-semibold">{LETRA[diaSemana(d)]}</span>
+                    <span className={cn('text-base font-bold', d === hoy && d !== fecha && 'text-brand-600')}>{Number(d.slice(8))}</span>
+                    <span className="flex h-1.5 gap-0.5" aria-hidden="true">
+                      {Array.from({ length: Math.min(n, 3) }, (_, i) => (
+                        <span key={i} className={cn('h-1.5 w-1.5 rounded-full', d === fecha ? 'bg-white' : 'bg-sea-500')} />
+                      ))}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <button type="button" onClick={() => setNuevo(instanteCuba(fecha, 9 * 60))} className="btn-primary btn-sm"><Plus className="h-4 w-4" /> Nueva</button>
+            {canceladasDia > 0 && (
+              <label className="flex items-center gap-2 text-sm text-ink-500">
+                <input type="checkbox" checked={verCanceladas} onChange={(e) => setVerCanceladas(e.target.checked)} className="h-4 w-4 rounded border-sand-300" />
+                Ver canceladas ({canceladasDia})
+              </label>
+            )}
+          </div>
+
+          <DayView
+            date={fecha}
+            dia={data.dias.find((d) => d.date === fecha)}
+            appointments={delDia}
+            blocks={bloqueosDia}
+            onSlot={setNuevo}
+            onAppointment={setSeleccion}
+            onDeleteBlock={borrarBloqueo}
+          />
+          <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-400">
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border-2 border-dashed border-amber-400" /> Por confirmar</span>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-sea-300" /> Confirmada</span>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-ink-800" /> Hecha</span>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-red-300" /> No vino</span>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-sand-300" /> Fuera de horario</span>
+          </p>
+        </>
+      ) : proximas.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-ink-400">No tienes citas en los próximos {DIAS_LISTA} días. Cuando un cliente pida una, aparecerá aquí.</div>
+      ) : (
+        <ListaCitas citas={proximas} onSelect={setSeleccion} />
+      )}
+
+      <NewEntrySheet instante={nuevo} duracionGeneral={data.agenda.duracion} servicios={servicios ?? []} onClose={cerrarNuevo} onSaved={trasCambio} />
+      <AppointmentSheet cita={seleccion} onClose={cerrarCita} onChanged={trasCambio} />
     </div>
   );
 }

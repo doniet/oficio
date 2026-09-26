@@ -48,7 +48,7 @@ oficios-cuba/
 | Auth | `POST /auth/register\|login\|google` (P, 30 intentos / 15 min) · `GET /auth/me`, `PUT /auth/profile\|password` (A) |
 | Catálogos | `/provinces[/:id[/municipalities]]`, `/categories[...]`, `/stats`, `/stats/categories` (P) |
 | Proveedores | `GET /providers`, `/providers/featured`, `/providers/:id` (P) · `POST /providers/:id/contact` (P; registra el contacto de un cliente con sesión) · `GET\|PUT /providers/me/profile` (Pr) |
-| Citas | `GET /appointments/provider/:id/slots` (P, solo Profesional) · `GET /appointments/mine`, `PATCH /:id` (A) · `POST /` (C) · `GET\|PUT /appointments/config` (Pr) |
+| Citas | `GET /appointments/provider/:id/slots?service_id=` (P, solo Profesional) · `GET /appointments/mine`, `PATCH /:id`, `POST /:id/reschedule` (A) · `POST /` (C) · `GET\|PUT /config`, `GET /calendar?desde&hasta`, `POST /manual`, `POST\|DELETE /blocks` (Pr) |
 | Servicios | `GET /services`, `/services/:id` (P; el dueño ve los inactivos) · `GET /services/mine`, `POST`, `PUT\|DELETE /:id`, `PATCH /:id/toggle` (Pr) |
 | Subidas | `POST /uploads` (Pr, base64, 1,5 MB, tipo por firma: jpg/png/webp) · `GET /uploads/*` (estático) |
 | Suscripciones | `GET /subscriptions/plans` (P) · `GET /me`, `POST /checkout\|confirm-manual\|cancel` (Pr) |
@@ -58,7 +58,7 @@ oficios-cuba/
 
 ### Modelo de datos
 
-`users` (client|provider) 1–1 `provider_profiles` (plan, `expires_at`, `rating`/`review_count` desnormalizados) 1–N `services` (`images` = JSON) · `service_areas` N–M `municipalities` · `provinces` 1–N `municipalities` · `categories` en 2 niveles (`parent_id`) · `reviews(service, client, provider)` · `conversations(client, provider, service?)` 1–N `messages` · `favorites(client, provider)` único · `subscriptions` 1–N `payments` · `appointments(provider, client, service?)` · `contacts(client, provider, via)`. `provider_profiles` lleva además `contact_mode`, `kind` (oficio|negocio), `horario`, `gallery` (JSON), `agenda` (JSON), `show_on_map`; `users.google_sub`. IDs UUID. 🚨 `conversations.provider_id` y `reviews.provider_id` son el id del **perfil**, no del usuario. `foreign_keys=ON` y WAL.
+`users` (client|provider) 1–1 `provider_profiles` (plan, `expires_at`, `rating`/`review_count` desnormalizados) 1–N `services` (`images` = JSON) · `service_areas` N–M `municipalities` · `provinces` 1–N `municipalities` · `categories` en 2 niveles (`parent_id`) · `reviews(service, client, provider)` · `conversations(client, provider, service?)` 1–N `messages` · `favorites(client, provider)` único · `subscriptions` 1–N `payments` · `appointments(provider, client?, service?, starts_at/ends_at UTC, origin online|manual, rescheduled_from)` · `agenda_blocks(provider, rango)` · `contacts(client, provider, via)`. `provider_profiles` lleva además `contact_mode`, `kind` (oficio|negocio), `horario`, `gallery` (JSON), `agenda` (JSON), `show_on_map`; `users.google_sub`. IDs UUID. 🚨 `conversations.provider_id` y `reviews.provider_id` son el id del **perfil**, no del usuario. `foreign_keys=ON` y WAL.
 
 ### Páginas
 
@@ -67,6 +67,7 @@ Públicas: `/`, `/buscar`, `/profesionales`, `/planes`, `/servicio/:id`, `/prove
 ## Reglas de negocio (con test)
 
 - **Planes** (`config.ts` → `PLANS`, `planDe()`): **Gratis** 1 oficio, sin fotos, contacto por WhatsApp/llamada · **Básico** $1/mes, 5 oficios, 10 fotos de galería · **Profesional** $10/mes, oficios ilimitados, 30 fotos, negocio + horario, agenda de citas, chat, enlace al punto de venta DardoVentas. `premium` ya no existe (la migración 3 lo pasa a `pro`). Al bajar de plan fotos/negocio no se borran: dejan de mostrarse.
+- **Agenda** (`lib/agenda.ts` + `lib/hora.ts`, JSON v2 en `provider_profiles.agenda`; el v1 se sigue leyendo): tramos por día, excepciones por fecha, bloqueos, duración por servicio (`services.duration_min`), márgenes, antelación, horizonte, máximo por día, confirmación manual/auto y plazo de cambio del cliente. Toda hora de pared es de Cuba vía tzdata (nunca desfases fijos; el cambio de hora cubano es a las 0:00). Un hueco está ocupado por **solape** con citas no canceladas (pendientes incluidas) o bloqueos; se revalida dentro de la transacción del insert. El profesional apunta citas manuales y reprograma a cualquier hora (409 `code: 'choque'` → reintento con `forzar`); "hecha"/"no vino" solo pasada la hora.
 - **Chat solo Profesional:** no se abren conversaciones con Gratis/Básico; las viejas se leen pero no se puede escribir.
 - **Precios:** cada servicio lleva `price_currency` (CUP por defecto, o USD); el frontend muestra la otra moneda con la tasa de `/api/tasas`.
 - **Google:** con `GOOGLE_CLIENT_ID` → verificación real del `id_token` (flujo de redirección, sin script de Google). Sin él y con `DEMO_MODE` → selector de cuentas ficticias. Una cuenta con contraseña no se toma con el Google simulado. Fuera de demo y con Google real, pedir cita exige cuenta de Google.

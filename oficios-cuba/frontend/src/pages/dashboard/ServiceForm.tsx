@@ -24,9 +24,14 @@ interface FormState {
   price_max: string;
   price_currency: Currency;
   images: string[];
+  duration_min: string;
 }
 
-const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', price_currency: 'CUP', images: [] };
+const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', price_currency: 'CUP', images: [], duration_min: '' };
+
+const DURACIONES: [number, string][] = [
+  [15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h'], [180, '3 h'], [240, '4 h'], [360, '6 h'], [480, '8 h'],
+];
 
 type Errors = Partial<Record<'category' | 'title' | 'price', string>>;
 
@@ -52,6 +57,7 @@ export default function ServiceForm() {
   const fileRef = useRef<HTMLInputElement>(null);
   const tasa = useTasa();
   const [photosAllowed, setPhotosAllowed] = useState(true);
+  const [hasAgenda, setHasAgenda] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -73,6 +79,7 @@ export default function ServiceForm() {
         isEdit ? serviceApi.getById(id!) : Promise.resolve(null),
       ]);
       setPhotosAllowed(mine.data.photos_allowed !== false);
+      setHasAgenda(mine.data.plan === 'pro');
       const extra = detail ?? mine;
       const list: Category[] = cats.data.categories;
       setCategories(list);
@@ -91,6 +98,7 @@ export default function ServiceForm() {
           price_max: s.price_max != null ? String(s.price_max) : '',
           price_currency: s.price_currency ?? 'CUP',
           images: s.images ?? [],
+          duration_min: s.duration_min != null ? String(s.duration_min) : '',
         });
       } else {
         const { services, plan, max_services } = extra.data;
@@ -161,6 +169,7 @@ export default function ServiceForm() {
       price_max: negotiable || form.price_max === '' ? null : Number(form.price_max),
       price_currency: form.price_currency,
       images: form.images,
+      duration_min: form.duration_min === '' ? null : Number(form.duration_min),
     };
     setSaving(true);
     try {
@@ -339,6 +348,17 @@ export default function ServiceForm() {
               <span className="text-ink-400">{preview.alt}</span>
               <span className="block text-xs text-ink-400">Conversión con la tasa informal de hoy: 1 USD = {tasa} CUP.</span>
             </p>
+          )}
+          {(hasAgenda || form.duration_min !== '') && (
+            <Field label="Duración de la cita" htmlFor="dur" hint="Se usa en tu agenda para calcular los huecos libres cuando un cliente pide este servicio.">
+              <select id="dur" value={form.duration_min} onChange={(e) => set('duration_min', e.target.value)} className="input">
+                <option value="">La general de mi agenda</option>
+                {DURACIONES.map(([m, label]) => <option key={m} value={m}>{label}</option>)}
+                {form.duration_min !== '' && !DURACIONES.some(([m]) => String(m) === form.duration_min) && (
+                  <option value={form.duration_min}>{form.duration_min} min</option>
+                )}
+              </select>
+            </Field>
           )}
         </FormSection>
 
