@@ -354,6 +354,26 @@ CREATE TABLE IF NOT EXISTS push_devices (
   UNIQUE (canal, token)
 );
 
+-- Bandeja de avisos push: la API apunta una fila por dispositivo (no tiene salida a internet) y
+-- oficio_notifier la envía por FCM. user_id = dueño del dispositivo AL APUNTAR: si el teléfono pasa
+-- a otra cuenta antes del envío, el aviso no se manda (llevaba nombres de la cuenta anterior).
+CREATE TABLE IF NOT EXISTS push_outbox (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  titulo TEXT NOT NULL,
+  cuerpo TEXT NOT NULL,
+  datos TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  send_after TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  sent_at TEXT,
+  FOREIGN KEY (device_id) REFERENCES push_devices(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indexes
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
@@ -381,6 +401,7 @@ CREATE INDEX IF NOT EXISTS idx_favorites_client ON favorites(client_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_client_provider ON reviews(client_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_outbox_pendientes ON push_outbox(status, send_after);
 `;
 
 // Migraciones de bases ya existentes (la de producción nació sin control de versión = 0).
@@ -496,7 +517,7 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
     `);
   },
-  // 8 — push_devices. La tabla es nueva: basta con crearla (mismo SQL que en `schema`).
+  // 8 — push_devices y su bandeja push_outbox. Tablas nuevas: basta con crearlas (mismo SQL que en `schema`).
   (d) => {
     d.exec(`
       CREATE TABLE IF NOT EXISTS push_devices (
@@ -512,6 +533,23 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
         UNIQUE (canal, token)
       );
       CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
+      CREATE TABLE IF NOT EXISTS push_outbox (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        titulo TEXT NOT NULL,
+        cuerpo TEXT NOT NULL,
+        datos TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        send_after TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        FOREIGN KEY (device_id) REFERENCES push_devices(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_outbox_pendientes ON push_outbox(status, send_after);
     `);
   },
 ];

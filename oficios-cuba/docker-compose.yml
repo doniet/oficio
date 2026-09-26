@@ -1,7 +1,7 @@
 # Oficios Cuba en vps2 — https://oficio.dardoit.com
 # Cloudflare (túnel de la cuenta Doniet) → traefik:80 → oficio_web (nginx) → oficio_api por red interna.
 # oficio_api no está en net_dmz ni publica puertos; su red es interna (sin salida a internet).
-# oficio_notifier (avisos por Telegram) va en el perfil "telegram": `docker compose up -d` no lo arranca.
+# oficio_notifier (avisos por Telegram y push de las apps) va en el perfil "telegram": `docker compose up -d` no lo arranca.
 #   Arrancarlo: `docker compose --profile telegram up -d`. El token se pega en /admin → Telegram.
 # Deploy: docker compose up -d --build
 services:
@@ -50,7 +50,8 @@ services:
   # Mismo código e imagen que la API, otro proceso. Es el ÚNICO que puede leer el token del bot (la API
   # lo guarda cifrado con la clave pública de este contenedor; la privada vive en secrets/notifier,
   # que solo monta él) y el único con salida a internet (net_dmz, como oficio_web), solo hacia
-  # api.telegram.org. Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
+  # api.telegram.org y, con la cuenta de Firebase en secrets/fcm/, oauth2/fcm.googleapis.com (push de
+  # las apps, que la API apunta en push_outbox). Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
   oficio_notifier:
     image: oficio-api:latest
     container_name: oficio_notifier
@@ -65,9 +66,12 @@ services:
       - DATABASE_PATH=/app/data/oficios.db
       - NOTIFIER_KEYS_DIR=/app/keys
       - TZ=America/Havana
+      # Push de las apps: si el archivo no existe, el push queda apagado y Telegram sigue igual.
+      - FCM_SERVICE_ACCOUNT_FILE=/app/fcm/cuenta.json
     volumes:
       - ./data:/app/data
       - ./secrets/notifier:/app/keys
+      - ./secrets/fcm:/app/fcm:ro
     networks:
       - net_dmz
     mem_limit: 128m

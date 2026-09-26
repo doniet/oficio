@@ -25,10 +25,6 @@ export function borrarDispositivosDe(userId: string) {
   db.prepare('DELETE FROM push_devices WHERE user_id = ?').run(userId);
 }
 
-export function borrarToken(canal: Canal, token: string) {
-  db.prepare('DELETE FROM push_devices WHERE canal = ? AND token = ?').run(canal, token);
-}
-
 export function dispositivosDe(userId: string): { canal: Canal; token: string }[] {
   return db.prepare('SELECT canal, token FROM push_devices WHERE user_id = ? ORDER BY created_at').all(userId) as { canal: Canal; token: string }[];
 }

@@ -1,38 +1,23 @@
+import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
-import { CanalPush, Notificacion } from './canal.js';
-import { borrarToken, Canal, dispositivosDe } from './registro.js';
+import { Notificacion } from './canal.js';
 
-export type { CanalPush, Notificacion } from './canal.js';
+export type { Notificacion } from './canal.js';
 
-const canales: Partial<Record<Canal, CanalPush>> = {};
-const pendientes = new Set<Promise<void>>();
-
-export function usarCanal(canal: Canal, impl: CanalPush | null) {
-  if (impl) canales[canal] = impl; else delete canales[canal];
-}
-
-export async function avisarUsuario(userId: string, n: Notificacion) {
-  for (const d of dispositivosDe(userId)) {
-    const canal = canales[d.canal];
-    if (!canal) continue;
-    try {
-      const r = await canal.enviar(d.token, n);
-      if (r === 'token_invalido') borrarToken(d.canal, d.token);
-      else if (r === 'error') console.warn(`push ${d.canal}: envío fallido a ${userId}`);
-    } catch (err) {
-      console.warn(`push ${d.canal}: ${(err as Error).message}`);
-    }
+// La API no tiene salida a internet: solo apunta el aviso en push_outbox, una fila por dispositivo
+// del usuario, y oficio_notifier lo envía por FCM (notifier/push.ts). Apuntar es una escritura local:
+// no retrasa la respuesta del chat, y si falla se registra y se sigue — un aviso perdido es mejor que
+// un mensaje sin guardar.
+export function avisarUsuario(userId: string, n: Notificacion) {
+  try {
+    const ahora = new Date().toISOString();
+    const insertar = db.prepare(`INSERT INTO push_outbox (id, device_id, user_id, titulo, cuerpo, datos, send_after, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const dispositivos = db.prepare('SELECT id FROM push_devices WHERE user_id = ?').all(userId) as { id: string }[];
+    for (const d of dispositivos) insertar.run(uuidv4(), d.id, userId, n.titulo, n.cuerpo, JSON.stringify(n.datos), ahora, ahora);
+  } catch (err) {
+    console.error('No se pudo apuntar el aviso push:', (err as Error).message);
   }
-}
-
-// Dispara y olvida: el push nunca retrasa ni rompe la respuesta del chat.
-function enSegundoPlano(tarea: () => Promise<void>) {
-  const p = tarea().catch((err) => console.warn('push:', (err as Error).message)).finally(() => pendientes.delete(p));
-  pendientes.add(p);
-}
-
-export async function esperarAvisosPendientes() {
-  while (pendientes.size) await Promise.allSettled([...pendientes]);
 }
 
 interface Participantes { client_id: string; provider_user_id: string; client_name: string; provider_name: string; service_title: string | null }
@@ -54,22 +39,18 @@ function participantes(conversationId: string) {
 const primerNombre = (nombre: string) => nombre.trim().split(/\s+/)[0];
 
 export function avisarNuevaSolicitud(conversationId: string) {
-  enSegundoPlano(async () => {
-    const p = participantes(conversationId);
-    if (!p) return;
-    await avisarUsuario(p.provider_user_id, {
-      titulo: `Nueva solicitud de ${primerNombre(p.client_name)}`,
-      cuerpo: p.service_title ? `Sobre: ${p.service_title}` : 'Toca para responder',
-      datos: { tipo: 'mensaje', conversation_id: conversationId },
-    });
+  const p = participantes(conversationId);
+  if (!p) return;
+  avisarUsuario(p.provider_user_id, {
+    titulo: `Nueva solicitud de ${primerNombre(p.client_name)}`,
+    cuerpo: p.service_title ? `Sobre: ${p.service_title}` : 'Toca para responder',
+    datos: { tipo: 'mensaje', conversation_id: conversationId },
   });
 }
 
 export function avisarNuevoMensaje(conversationId: string, remitente: 'client' | 'provider') {
-  enSegundoPlano(async () => {
-    const p = participantes(conversationId);
-    if (!p) return;
-    const [destino, nombre] = remitente === 'client' ? [p.provider_user_id, primerNombre(p.client_name)] : [p.client_id, p.provider_name];
-    await avisarUsuario(destino, { titulo: `Nuevo mensaje de ${nombre}`, cuerpo: 'Toca para leerlo', datos: { tipo: 'mensaje', conversation_id: conversationId } });
-  });
+  const p = participantes(conversationId);
+  if (!p) return;
+  const [destino, nombre] = remitente === 'client' ? [p.provider_user_id, primerNombre(p.client_name)] : [p.client_id, p.provider_name];
+  avisarUsuario(destino, { titulo: `Nuevo mensaje de ${nombre}`, cuerpo: 'Toca para leerlo', datos: { tipo: 'mensaje', conversation_id: conversationId } });
 }

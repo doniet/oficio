@@ -144,3 +144,10 @@
 - Security: N/A (sin cambios de red ni despliegue).
 - Next: adaptar la app al chat solo Profesional y a las fotos según plan; decidir si el push FCM lo envía `oficio_notifier` (ya tiene salida) en vez de la API; Task 7 (Firebase), 10, 11. Push a `origin` pendiente del OK de Dariel.
 - Blockers: ninguno.
+
+## 2026-09-26 01:40 UTC — cc-jarvis-ubuntu — Push de las apps enviado por oficio_notifier (bandeja push_outbox)
+- Changes: decisión de Dariel: el push FCM sale de `oficio_notifier` y no de la API, que sigue sin salida a internet. La API apunta en `push_outbox` (una fila por dispositivo, dentro de la migración 8, que aún no está en prod) y `notifier/push.ts` la envía: 5 intentos con espera exponencial, caduca a las 24 h, `token_invalido` borra el dispositivo, y se descarta si el teléfono cambió de cuenta antes del envío. Quitados de la API la carga de FCM, `usarCanal`, `esperarAvisosPendientes` y `borrarToken`. `push-prueba` corre ahora en `oficio_notifier`. Compose: el notificador monta `secrets/fcm/` (ro) con `FCM_SERVICE_ACCOUNT_FILE=/app/fcm/cuenta.json`. `DOCKER.md`, `CLAUDE.md` y `.env.example` al día.
+- Tests: pass — backend 108 (push-avisos reescrito: 4 de la bandeja + 6 del envío), mobile 27; `tsc` OK; 7 mutaciones (dueño, caducidad, destinatario, token inválido, tope de intentos, espera, sin canal) detectadas cada una por su test. Prueba de humo del `dist/` real: API arranca y el notificador sin cuenta o con cuenta rota dice "Push FCM desactivado" y sigue.
+- Security: sin cambio de red: `oficio_notifier` ya tenía salida (net_dmz). Nuevos destinos cuando haya cuenta de Firebase: `oauth2.googleapis.com` y `fcm.googleapis.com`. La cuenta de servicio solo la monta el notificador.
+- Next: la app debe respetar chat solo Profesional y fotos según plan; Task 7 (proyecto Firebase + `google-services.json`); prueba real con un teléfono en Cuba.
+- Blockers: ninguno.

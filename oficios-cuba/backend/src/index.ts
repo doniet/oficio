@@ -4,8 +4,6 @@ import { initDatabase, expireSubscriptions } from './db/index.js';
 import { seedBase } from './db/seed.js';
 import { seedDemo } from './db/seed-demo.js';
 import { DEMO_MODE } from './config.js';
-import { cargarCuentaFcm, crearCanalFcm } from './push/fcm.js';
-import { usarCanal } from './push/avisos.js';
 import { programarAvisos } from './lib/avisos.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -23,20 +21,7 @@ async function start() {
   programar();
   setInterval(programar, 5 * 60 * 1000).unref();
 
-  // El push es opcional: nunca debe tumbar el arranque de la API (igual que nunca
-  // retrasa ni rompe la respuesta del chat — ver push/avisos.ts).
-  let cuentaFcm: ReturnType<typeof cargarCuentaFcm> = null;
-  try {
-    cuentaFcm = cargarCuentaFcm();
-  } catch (err) {
-    console.log(`Push FCM desactivado: ${(err as Error).message}`);
-  }
-  if (cuentaFcm) {
-    usarCanal('fcm', crearCanalFcm(cuentaFcm));
-    console.log(`Push FCM activo (proyecto ${cuentaFcm.project_id})`);
-  } else if (!process.env.FCM_SERVICE_ACCOUNT_FILE) {
-    console.log('Push FCM desactivado: falta FCM_SERVICE_ACCOUNT_FILE');
-  }
+  // Los avisos push los envía oficio_notifier (notifier/push.ts): la API solo los apunta.
 
   app.listen(PORT, () => {
     console.log(`API escuchando en :${PORT} (demo=${DEMO_MODE})`);

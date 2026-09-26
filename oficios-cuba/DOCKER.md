@@ -59,3 +59,11 @@ Contenedor aparte, en el perfil `telegram` de compose: `docker compose up -d` **
 - Rotar: /revoke en @BotFather y pegar el nuevo en el panel. Quitarlo: botón "Quitar token".
 - Si se borra `secrets/notifier/`, el notificador crea claves nuevas y hay que volver a pegar el token.
 - Pararlo: `docker compose --profile telegram stop oficio_notifier`. Los avisos se siguen apuntando y caducan a las 24 h.
+
+### Push de las apps (FCM), también en oficio_notifier
+
+La API apunta los avisos push en `push_outbox` (una fila por teléfono) y el notificador los envía por FCM HTTP v1. Así la API sigue sin salida a internet.
+
+- Activarlo: `mkdir -p secrets/fcm && chmod 700 secrets/fcm`, dejar ahí la cuenta de servicio de Firebase como `cuenta.json` (`chmod 600`; nunca al repo) y `docker compose --profile telegram up -d oficio_notifier`. El log dice `Push FCM activo (proyecto …)`; sin el archivo, `Push FCM desactivado` y Telegram sigue igual.
+- Reintentos: 5, con espera exponencial; un aviso caduca a las 24 h; un token que FCM da por muerto (`UNREGISTERED`/404) borra el dispositivo. Si el teléfono pasó a otra cuenta antes del envío, el aviso de la anterior se descarta.
+- Prueba de campo (latencia real en un teléfono): `docker exec oficio_notifier node dist/scripts/push-prueba.js <email> [n] [segundos]`.

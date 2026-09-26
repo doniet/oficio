@@ -5,6 +5,8 @@ import { join, resolve } from 'path';
 import db from './db.js';
 import { clienteTelegram, enviarPendientes, estado, latido, presentarse, recibir, type Llamar } from './bot.js';
 import { descifrarToken } from '../lib/telegram-comun.js';
+import { cargarCuentaFcm, crearCanalFcm } from '../push/fcm.js';
+import { enviarPushPendientes, type CanalesPush } from './push.js';
 
 // Proceso del contenedor oficio_notifier. La base la migra la API: aquí solo se espera a que exista.
 // El token lo pega un admin en el panel; la API lo guarda cifrado con la clave pública que este
@@ -27,7 +29,8 @@ function clavePrivada() {
 
 async function esperarEsquema() {
   for (;;) {
-    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").get()) return;
+    const tablas = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('notifications', 'push_outbox')").get() as { n: number };
+    if (tablas.n === 2) return;
     console.log('Esperando a que la API cree la base…');
     await pausa(5000);
   }
@@ -81,13 +84,31 @@ async function bucle(nombre: string, vuelta: () => Promise<unknown>, descanso: n
   }
 }
 
+/** Push FCM: opcional. Sin cuenta de servicio (o ilegible) el notificador sigue con Telegram. */
+function canalesPush(): CanalesPush {
+  try {
+    const cuenta = cargarCuentaFcm();
+    if (!cuenta) {
+      console.log('Push FCM desactivado: falta FCM_SERVICE_ACCOUNT_FILE');
+      return {};
+    }
+    console.log(`Push FCM activo (proyecto ${cuenta.project_id})`);
+    return { fcm: crearCanalFcm(cuenta) };
+  } catch (err) {
+    console.log(`Push FCM desactivado: ${(err as Error).message}`);
+    return {};
+  }
+}
+
 async function main() {
   await esperarEsquema();
   const privada = clavePrivada();
   estado.poner('notifier_pubkey', createPublicKey(privada).export({ type: 'spki', format: 'pem' }) as string);
   latido();
   await sincronizarToken(privada);
+  const push = canalesPush();
   await Promise.all([
+    ...(push.fcm ? [bucle('push', () => enviarPushPendientes(push), 3000)] : []),
     bucle('token', () => sincronizarToken(privada), 10_000),
     bucle('recibir', async () => (llamar ? recibir(llamar) : (latido(), pausa(5000))), 0),
     bucle('enviar', async () => (llamar ? enviarPendientes(llamar) : latido()), 3000),
