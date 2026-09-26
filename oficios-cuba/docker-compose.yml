@@ -1,6 +1,9 @@
 # Oficios Cuba en vps2 — https://oficio.dardoit.com
 # Cloudflare (túnel de la cuenta Doniet) → traefik:80 → oficio_web (nginx) → oficio_api por red interna.
 # oficio_api no está en net_dmz ni publica puertos; su red es interna (sin salida a internet).
+# oficio_notifier (avisos por Telegram) va en el perfil "telegram": `docker compose up -d` no lo arranca.
+#   Activarlo (con OK de Dariel): token en secrets/telegram_bot_token (chmod 600) y
+#   `docker compose --profile telegram up -d --build`.
 # Deploy: docker compose up -d --build
 services:
   oficio_web:
@@ -44,6 +47,46 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Mismo código e imagen que la API, otro proceso. Es el ÚNICO con el token del bot y con salida a
+  # internet (net_dmz, como oficio_web), y solo habla con api.telegram.org. Recibe por long polling:
+  # no escucha ningún puerto ni tiene ruta en Traefik. La API sigue sin salida.
+  oficio_notifier:
+    image: oficio-api:latest
+    container_name: oficio_notifier
+    profiles: ["telegram"]
+    restart: unless-stopped
+    command: ["node", "dist/notifier/index.js"]
+    depends_on:
+      oficio_api:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/oficios.db
+      - TELEGRAM_BOT_TOKEN_FILE=/run/secrets/telegram_bot_token
+      - TZ=America/Havana
+    secrets:
+      - telegram_bot_token
+    volumes:
+      - ./data:/app/data
+    networks:
+      - net_dmz
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "const d=require('better-sqlite3')('/app/data/oficios.db',{readonly:true});const r=d.prepare(\"SELECT value FROM telegram_state WHERE key='heartbeat'\").get();process.exit(r&&Date.now()-Date.parse(r.value)<120000?0:1)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token
 
 networks:
   net_dmz:

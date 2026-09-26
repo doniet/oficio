@@ -10,6 +10,7 @@ import { memberSince } from '../../lib/format';
 import { PageTitle } from '../../components/DashboardLayout';
 import { Alert, Avatar, Field, Spinner, cn } from '../../components/ui';
 import { ConfirmDialog, FormSection } from './parts';
+import TelegramAvisos from '../../components/TelegramAvisos';
 
 function ProfileForm() {
   const { user, updateUser } = useAuth();
@@ -218,6 +219,7 @@ export default function Account() {
       ) : (
         <PasswordForm />
       )}
+      <TelegramAvisos />
       <section className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <h2 className="text-lg font-bold">Cerrar sesión</h2>

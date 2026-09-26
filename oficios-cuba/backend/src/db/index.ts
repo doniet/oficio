@@ -9,6 +9,8 @@ const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// La base la comparten dos procesos (la API y oficio_notifier): esperar en vez de fallar con SQLITE_BUSY.
+db.pragma('busy_timeout = 5000');
 
 export const schema = `
 -- Users table (both clients and providers)
@@ -23,6 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
   is_verified INTEGER DEFAULT 0,
   password_changed_at DATETIME,
   google_sub TEXT,
+  telegram_chat_id TEXT, -- chat privado con el bot (lo escribe oficio_notifier al vincular)
+  telegram_linked_at TEXT,
+  notify_prefs TEXT, -- JSON {grupo: false} con los avisos que el usuario apagó
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -264,6 +269,40 @@ CREATE TABLE IF NOT EXISTS catalog_items (
   FOREIGN KEY (provider_id) REFERENCES provider_profiles(id) ON DELETE CASCADE
 );
 
+-- Avisos por Telegram. La API solo los apunta aquí (no tiene salida a internet); los envía
+-- oficio_notifier, el único contenedor con el token del bot. dedupe_key evita repetir avisos
+-- programados (recordatorios, vencimiento del plan) y agrupa los del chat.
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  url TEXT,
+  dedupe_key TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  send_after TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  sent_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Códigos de un solo uso para vincular Telegram (t.me/<bot>?start=<código>). Se guarda el hash.
+CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Estado del bot que escribe oficio_notifier: usuario del bot, offset de getUpdates, latido.
+CREATE TABLE IF NOT EXISTS telegram_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Tiempo en que el profesional no acepta citas (almuerzo, un trámite, vacaciones).
 CREATE TABLE IF NOT EXISTS agenda_blocks (
   id TEXT PRIMARY KEY,
@@ -290,6 +329,8 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_id, starts_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_chat_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_pending ON notifications(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_catalog_provider ON catalog_items(provider_id, section, name);
 CREATE INDEX IF NOT EXISTS idx_uploads_purpose ON uploads(user_id, purpose, created_at);
 CREATE INDEX IF NOT EXISTS idx_agenda_blocks_provider ON agenda_blocks(provider_id, starts_at);
@@ -406,6 +447,14 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
     if (d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'uploads'").get()) {
       d.exec('ALTER TABLE uploads ADD COLUMN purpose TEXT');
     }
+  },
+  // 6 — avisos por Telegram: vinculación y preferencias por usuario (las tablas, en `schema`).
+  (d) => {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN telegram_chat_id TEXT;
+      ALTER TABLE users ADD COLUMN telegram_linked_at TEXT;
+      ALTER TABLE users ADD COLUMN notify_prefs TEXT;
+    `);
   },
 ];
 

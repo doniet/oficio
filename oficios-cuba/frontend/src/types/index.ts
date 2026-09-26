@@ -433,3 +433,16 @@ export interface CatalogSearchItem extends CatalogItem {
 }
 
 export interface CatalogSearchPage { items: CatalogSearchItem[]; total: number; page: number; pages: number }
+
+export type TelegramGroupId = 'citas' | 'recordatorios' | 'chat' | 'resenas' | 'plan';
+
+export interface TelegramStatus {
+  /** El notificador está en marcha y el bot tiene usuario. */
+  available: boolean;
+  bot_username: string | null;
+  linked: boolean;
+  linked_at: string | null;
+  prefs: Record<TelegramGroupId, boolean>;
+  /** Solo los grupos que aplican al tipo de cuenta. */
+  groups: { id: TelegramGroupId; label: string; description: string }[];
+}

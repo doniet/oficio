@@ -43,3 +43,6 @@ coverage/
 .cache/
 # Datos persistentes (SQLite + fotos subidas)
 /data/
+
+# Token del bot de Telegram (lo pega Dariel; nunca al repo)
+secrets/

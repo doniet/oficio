@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, UserType } from '../types';
+import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -180,6 +180,16 @@ export const favoriteApi = {
   ids: () => api.get<{ ids: string[] }>('/favorites/ids'),
   add: (provider_id: string) => api.post('/favorites', { provider_id }),
   remove: (providerId: string) => api.delete(`/favorites/${providerId}`),
+};
+
+export const telegramApi = {
+  status: () => api.get<TelegramStatus>('/telegram/status'),
+  /** 503 si el notificador no está en marcha. */
+  link: () => api.post<{ url: string; expires_at: string }>('/telegram/link'),
+  unlink: () => api.delete<TelegramStatus>('/telegram/link'),
+  setPrefs: (prefs: Partial<Record<TelegramGroupId, boolean>>) => api.put<TelegramStatus>('/telegram/prefs', prefs),
+  /** 202; 429 si ya se mandó una en el último minuto. */
+  test: () => api.post('/telegram/test'),
 };
 
 export default api;

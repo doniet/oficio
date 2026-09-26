@@ -4,6 +4,7 @@ import { z } from 'zod';
 import db, { planDelPerfil, providerProfileIdFor } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { avisarChat } from '../lib/avisos.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -107,7 +108,9 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
     return conv.id;
   });
 
-  res.status(201).json({ conversation: { id: tx() } });
+  const conversationId = tx();
+  avisarChat(conversationId, 'client');
+  res.status(201).json({ conversation: { id: conversationId } });
 }));
 
 router.get('/:id', asyncHandler(async (req: AuthRequest, res) => {
@@ -133,6 +136,7 @@ router.post('/:id/messages', asyncHandler(async (req: AuthRequest, res) => {
     .run(id, conversation.id, req.user!.id, req.user!.user_type, content, now);
   db.prepare('UPDATE conversations SET last_message = ?, last_message_at = ? WHERE id = ?').run(content, now, conversation.id);
   markRead(conversation.id, req.user!.user_type);
+  avisarChat(conversation.id, req.user!.user_type);
   res.status(201).json({ message: { id, sender_id: req.user!.id, sender_type: req.user!.user_type, content, read_at: null, created_at: now } });
 }));
 

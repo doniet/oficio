@@ -10,6 +10,7 @@ import {
   type AgendaConfig, type Intervalo,
 } from '../lib/agenda.js';
 import { fechaLocal, sumarDias, ZONA } from '../lib/hora.js';
+import { avisarCita } from '../lib/avisos.js';
 
 const router = Router();
 
@@ -282,6 +283,7 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
         data.note || null, status, iso(Date.now()));
   })();
 
+  avisarCita({ id, provider_id: providerId, client_id: req.user!.id, starts_at: iso(inicio), status }, 'nueva', 'client');
   res.status(201).json({ appointment: citaPara(req, id) });
 }));
 
@@ -336,6 +338,9 @@ router.patch('/:id', authMiddleware, asyncHandler(async (req: AuthRequest, res) 
 
   db.prepare('UPDATE appointments SET status = ?, cancelled_by = ?, updated_at = ? WHERE id = ?')
     .run(status, status === 'cancelled' ? (esCliente ? 'client' : 'provider') : null, iso(Date.now()), cita.id);
+  if (status === 'confirmed' || status === 'cancelled') {
+    avisarCita(cita, status === 'confirmed' ? 'confirmada' : 'cancelada', esCliente ? 'client' : 'provider');
+  }
   res.json({ appointment: citaPara(req, cita.id) });
 }));
 
@@ -369,6 +374,7 @@ router.post('/:id/reschedule', authMiddleware, asyncHandler(async (req: AuthRequ
       .run(id, cita.provider_id, cita.client_id, cita.service_id, iso(nueva.inicio), iso(nueva.fin), cita.duration_min, cita.note,
         cita.client_name, cita.client_phone, cita.origin, status, cita.id, ahora);
   })();
+  avisarCita({ id, provider_id: cita.provider_id, client_id: cita.client_id, starts_at: iso(nueva.inicio), status }, 'movida', esCliente ? 'client' : 'provider');
   res.status(201).json({ appointment: citaPara(req, id) });
 }));
 

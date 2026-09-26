@@ -54,6 +54,9 @@ describe('migraciones sobre una base existente', () => {
     // v5: catálogo y propósito de las subidas.
     expect((db.prepare('PRAGMA table_info(uploads)').all() as { name: string }[]).map((c) => c.name)).toContain('purpose');
     expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'catalog_items'").get()).toEqual({ n: 1 });
+    // v6: Telegram.
+    expect((db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name)).toEqual(expect.arrayContaining(['telegram_chat_id', 'notify_prefs']));
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('notifications', 'telegram_link_tokens', 'telegram_state')").get()).toEqual({ n: 3 });
 
     db.prepare('DELETE FROM services WHERE id = ?').run('s1');
     expect(db.prepare('SELECT service_id FROM reviews WHERE id = ?').get('r1')).toEqual({ service_id: null });

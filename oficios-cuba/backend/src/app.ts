@@ -14,6 +14,7 @@ import favoriteRoutes from './routes/favorites.js';
 import statsRoutes from './routes/stats.js';
 import appointmentRoutes from './routes/appointments.js';
 import catalogRoutes from './routes/catalog.js';
+import telegramRoutes from './routes/telegram.js';
 import uploadRoutes, { UPLOAD_DIR } from './routes/uploads.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { DEMO_MODE, googleClientId, TASA_CUP_USD } from './config.js';
@@ -99,6 +100,7 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/catalog', catalogRoutes);
+app.use('/api/telegram', telegramRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);

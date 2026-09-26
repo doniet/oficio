@@ -4,6 +4,7 @@ import { z } from 'zod';
 import db, { refreshProviderRating } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireClient } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { avisarResena } from '../lib/avisos.js';
 
 const router = Router();
 
@@ -53,6 +54,7 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
   db.prepare('INSERT INTO reviews (id, service_id, client_id, provider_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(id, data.service_id, req.user!.id, service.provider_id, data.rating, data.comment || null, new Date().toISOString());
   refreshProviderRating(service.provider_id);
+  avisarResena(service.provider_id, req.user!.id, data.rating);
 
   const review = db.prepare(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar
