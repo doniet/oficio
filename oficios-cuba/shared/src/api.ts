@@ -1,4 +1,4 @@
-import type { Conversation, DispositivoPush, Message, PaginaServicios, Review, ServiceDetail, ServiceSummary, SesionUsuario, User } from './tipos';
+import type { CategoryStat, Conversation, DispositivoPush, Message, PaginaServicios, ProviderCard, Review, ServiceDetail, ServiceSummary, SesionUsuario, User } from './tipos';
 import type { DatosLogin, DatosRegistro } from './validacion';
 
 export class ErrorApi extends Error {
@@ -69,7 +69,12 @@ export function crearCliente({ baseUrl, getToken, onUnauthorized, timeoutMs = 20
       listar: (q?: Query) => pedir<PaginaServicios>('GET', '/services', undefined, q),
       detalle: (id: string) => pedir<{ service: ServiceDetail; reviews: Review[]; related: ServiceSummary[] }>('GET', `/services/${encodeURIComponent(id)}`),
     },
+    /** Categorías principales con su nº de servicios (cuadrícula de la portada). */
+    categorias: {
+      estadisticas: () => pedir<{ categories: CategoryStat[] }>('GET', '/stats/categories'),
+    },
     proveedores: {
+      destacados: (limit = 6) => pedir<{ providers: ProviderCard[] }>('GET', '/providers/featured', undefined, { limit }),
       /** Deja constancia de que el cliente contactó por WhatsApp/llamada (vale para poder reseñar). 204. */
       contacto: (id: string, via: 'whatsapp' | 'call') => pedir<void>('POST', `/providers/${encodeURIComponent(id)}/contact`, { via }),
     },

@@ -48,6 +48,7 @@ export interface CategoryStat {
   name: string;
   slug: string;
   icon: string;
+  sort_order?: number;
   service_count: number;
   provider_count: number;
 }

@@ -50,6 +50,23 @@ export function formatPrice(s: ConPrecio, tasa: number = TASA_RESPALDO): string 
   return `${p.principal} (${p.alt})${p.sufijo ? ` ${p.sufijo}` : ''}`;
 }
 
+/** Para la ficha (como PriceBlock de la web): cifra en su moneda, unidad y conversión por separado. */
+export function precioDetalle(s: ConPrecio, tasa: number = TASA_RESPALDO) {
+  const p = partes(s, tasa);
+  if (!p) return { principal: 'A convenir', sufijo: '', alt: null as string | null };
+  return { principal: p.principal, sufijo: p.sufijo, alt: p.alt as string | null };
+}
+
+export const ETIQUETA_TIPO_PRECIO: Record<PriceType, string> = {
+  fixed: 'Precio fijo',
+  hourly: 'Por hora',
+  daily: 'Por día',
+  negotiable: 'A convenir',
+};
+
+/** Recuento de la cuadrícula de categorías, igual que la portada web. */
+export const textoNumServicios = (n: number) => (n ? `${n} ${n === 1 ? 'servicio' : 'servicios'}` : 'Sé el primero');
+
 /** Para tarjetas: "desde 3 000 CUP" y aparte "≈ $4 USD". */
 export function priceFrom(s: ConPrecio, tasa: number = TASA_RESPALDO) {
   const p = partes(s, tasa);

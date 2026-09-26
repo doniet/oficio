@@ -21,6 +21,14 @@ describe('crearCliente', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('https://x/api/services?sort=newest&page=2');
   });
 
+  it('destacados y estadísticas de categorías usan los endpoints de la portada web', async () => {
+    const fetchImpl = vi.fn((_url: string, _init?: RequestInit) => respuesta(200, { providers: [], categories: [] }));
+    const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl });
+    await api.proveedores.destacados(4);
+    await api.categorias.estadisticas();
+    expect(fetchImpl.mock.calls.map((c) => c[0])).toEqual(['https://x/api/providers/featured?limit=4', 'https://x/api/stats/categories']);
+  });
+
   it('convierte el error del backend en ErrorApi con su mensaje', async () => {
     const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl: () => respuesta(400, { error: 'Email inválido' }) });
     await expect(api.auth.login({ email: 'a', password: 'b' })).rejects.toMatchObject({ status: 400, message: 'Email inválido' });

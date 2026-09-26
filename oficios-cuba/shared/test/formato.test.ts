@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPrice, initials, nombreVisible, parseDate, priceFrom, relativeTime, TASA_RESPALDO, telLink, whatsappLink } from '../src/formato';
+import { ETIQUETA_TIPO_PRECIO, formatPrice, initials, precioDetalle, textoNumServicios, nombreVisible, parseDate, priceFrom, relativeTime, TASA_RESPALDO, telLink, whatsappLink } from '../src/formato';
 
 describe('formato', () => {
   it('parseDate acepta el formato de SQLite (UTC sin zona) y el ISO', () => {
@@ -27,6 +27,21 @@ describe('formato', () => {
       .toEqual({ prefix: 'desde', amount: '$10 USD', suffix: '', alt: '≈ 7\u00a0300 CUP' });
     expect(priceFrom({ price_type: 'daily', price_min: 3000 }, 730)).toEqual({ prefix: '', amount: '3\u00a0000 CUP', suffix: '/ día', alt: '≈ $4 USD' });
     expect(priceFrom({ price_type: 'negotiable' })).toEqual({ prefix: '', amount: 'A convenir', suffix: '', alt: null });
+  });
+
+  it('precioDetalle separa cifra, unidad y conversión (ficha del servicio)', () => {
+    expect(precioDetalle({ price_type: 'fixed', price_min: 5000, price_max: 40000 }, 730))
+      .toEqual({ principal: '5\u00a0000 – 40\u00a0000 CUP', sufijo: '', alt: '≈ $7 – $55 USD' });
+    expect(precioDetalle({ price_type: 'hourly', price_min: 10, price_currency: 'USD' }, 730))
+      .toEqual({ principal: '$10 USD', sufijo: '/ hora', alt: '≈ 7\u00a0300 CUP' });
+    expect(precioDetalle({ price_type: 'negotiable', price_min: 5 })).toEqual({ principal: 'A convenir', sufijo: '', alt: null });
+    expect(ETIQUETA_TIPO_PRECIO.fixed).toBe('Precio fijo');
+  });
+
+  it('textoNumServicios: singular, plural y vacío como la portada web', () => {
+    expect(textoNumServicios(0)).toBe('Sé el primero');
+    expect(textoNumServicios(1)).toBe('1 servicio');
+    expect(textoNumServicios(7)).toBe('7 servicios');
   });
 
   it('una tasa inválida (0, negativa, NaN) cae a la de respaldo', () => {
