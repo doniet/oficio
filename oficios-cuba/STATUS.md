@@ -161,3 +161,10 @@
 - Security: N/A.
 - Next: Task 7 (proyecto Firebase de Dariel + `google-services.json`), prueba de push real con un teléfono en Cuba; Parte 2 (proveedor: servicios con fotos según plan).
 - Blockers: Firebase (Dariel).
+
+## 2026-09-26 06:15 UTC — cc-jarvis-ubuntu — Task 7: Firebase configurado y push de punta a punta verificado
+- Changes: proyecto Firebase `oficios-cuba` en la cuenta **hdarielc** (decisión de Dariel), sin Analytics, app Android `com.dardoit.oficios`. `mobile/google-services.json` (600, gitignorado) y clave de cuenta de servicio en `~/.claude/.oficio-fcm.json` (600, fuera del repo; va a `secrets/fcm/cuenta.json` de vps2 al desplegar). `expo prebuild` + APK de desarrollo recompilado con el plugin de Google. `src/lib/push.ts`: fuera el filtro `Device.isDevice` (heredado de los tokens de Expo): un emulador con servicios de Google también tiene token FCM nativo; sin ellos, la llamada lanza y cae en el `catch` como antes.
+- Tests: pass — mobile 33 (el de estado ajustado). Clave validada contra Google sin enviar nada (OAuth 200; `messages:send` con `validate_only` → 400 INVALID_ARGUMENT = API activa). **E2E real en emulador:** backend demo local + `oficio_notifier` local con la clave → el profesional acepta el permiso, se registra su token (142 car.), un cliente le escribe → fila en `push_outbox` → enviada por FCM en ~2 s → notificación "Nueva solicitud de …" en Android → al tocarla abre esa conversación.
+- Security: la clave de la cuenta de servicio no está en el repo ni en el chat; solo en j-u (600). Pendiente llevarla a vps2 al desplegar.
+- Next: icono monocromo propio para la notificación (sale el genérico); desplegar a vps2 (merge a `master` + migración 8 + `secrets/fcm/cuenta.json`) con OK de Dariel; APK para la prueba en Cuba (Task 10).
+- Blockers: OK de Dariel para el despliegue y para mergear a `master` (repo de Doniet).

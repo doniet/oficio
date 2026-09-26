@@ -170,14 +170,15 @@ describe('estado de push para Cuenta', () => {
     jest.resetModules();
   });
 
-  it('activas / sin permiso / no disponibles (emulador o sin google-services.json), sin pedir permiso nunca', async () => {
+  it('activas / sin permiso / no disponibles (sin servicios de Google o sin google-services.json), sin pedir permiso nunca', async () => {
     let m = cargar({});
     await expect(m.estadoPush()).resolves.toBe('activas');
     m = cargar({ granted: false });
     await expect(m.estadoPush()).resolves.toBe('sin_permiso');
     expect(m.requestPermissionsAsync).not.toHaveBeenCalled();
+    // Un emulador con servicios de Google también tiene token: no se descarta por no ser "dispositivo".
     m = cargar({ isDevice: false });
-    await expect(m.estadoPush()).resolves.toBe('no_disponibles');
+    await expect(m.estadoPush()).resolves.toBe('activas');
     m = cargar({ token: async () => { throw new Error('Default FirebaseApp is not initialized'); } });
     await expect(m.estadoPush()).resolves.toBe('no_disponibles');
   });

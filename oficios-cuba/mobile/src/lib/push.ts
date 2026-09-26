@@ -1,4 +1,3 @@
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -10,7 +9,8 @@ import type { ClienteApi } from '@oficio/shared';
 // ya estaba concedido (cerrar sesión no debe preguntar nada).
 export async function obtenerTokenFcm({ pedirPermiso = true }: { pedirPermiso?: boolean } = {}): Promise<string | null> {
   try {
-    if (!Device.isDevice) return null;
+    // Sin filtro de emulador: con servicios de Google (AVD google_apis) el token FCM nativo funciona
+    // y sirve para probar; sin ellos getDevicePushTokenAsync lanza y cae en el catch.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('mensajes', { name: 'Mensajes', importance: Notifications.AndroidImportance.HIGH });
     }
@@ -34,10 +34,9 @@ export const TEXTO_ESTADO_PUSH: Record<EstadoPush, string> = {
 };
 
 // Estado para mostrar en Cuenta. Nunca pide permiso: solo lee el que hay.
-// "no disponibles" = emulador/simulador o build sin credenciales de Firebase (no hay token FCM).
+// "no disponibles" = sin servicios de Google o build sin credenciales de Firebase (no hay token FCM).
 export async function estadoPush(): Promise<EstadoPush> {
   try {
-    if (!Device.isDevice) return 'no_disponibles';
     if (!(await Notifications.getPermissionsAsync()).granted) return 'sin_permiso';
     return (await Notifications.getDevicePushTokenAsync()).data ? 'activas' : 'no_disponibles';
   } catch {
