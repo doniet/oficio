@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { Platform } from 'react-native';
-import { BricolageGrotesque_700Bold } from '@expo-google-fonts/bricolage-grotesque';
-import { Figtree_400Regular, Figtree_600SemiBold } from '@expo-google-fonts/figtree';
+import { BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
+import { Figtree_400Regular, Figtree_500Medium, Figtree_600SemiBold, Figtree_700Bold } from '@expo-google-fonts/figtree';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { fuentes, ink, paper } from '../src/lib/tema';
 import { ProveedorSesion, requiereSesion, useSesion } from '../src/lib/contexto';
 import { accionDeToque, crearGestorPush, obtenerTokenFcm, pendientesDeBorrar, ultimoTokenRegistrado } from '../src/lib/push';
 
@@ -82,7 +83,7 @@ function Push({ gestorRef }: { gestorRef: GestorRef }) {
 
 export default function Raiz() {
   // Las fuentes vienen empaquetadas en node_modules: no se descargan en el teléfono.
-  const [listas] = useFonts({ BricolageGrotesque_700Bold, Figtree_400Regular, Figtree_600SemiBold });
+  const [listas] = useFonts({ BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold, Figtree_400Regular, Figtree_500Medium, Figtree_600SemiBold, Figtree_700Bold });
   const gestorRef = useRef<ReturnType<typeof crearGestorPush> | null>(null);
   if (!listas) return null;
   return (
@@ -91,7 +92,15 @@ export default function Raiz() {
       <StatusBar style="dark" />
       <ProveedorSesion alSalir={() => gestorRef.current?.alSalir() ?? Promise.resolve()}>
         <Push gestorRef={gestorRef} />
-        <Stack screenOptions={{ headerTitleStyle: { fontFamily: 'Figtree_600SemiBold' } }}>
+        <Stack
+          screenOptions={{
+            headerTitleStyle: { fontFamily: fuentes.titulo, color: ink[900] },
+            headerTintColor: ink[900],
+            headerStyle: { backgroundColor: paper },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: paper },
+          }}
+        >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="(auth)/entrar" options={{ presentation: 'modal', title: 'Entrar' }} />
           <Stack.Screen name="(auth)/registro" options={{ presentation: 'modal', title: 'Crear cuenta' }} />
