@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS services (
   price_type TEXT DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'hourly', 'daily', 'negotiable')),
   price_currency TEXT DEFAULT 'CUP' CHECK (price_currency IN ('CUP', 'USD')),
   images TEXT, -- JSON array of image URLs
+  price_list TEXT, -- JSON: lista de precios renglón a renglón [{ name, price }] (Básico y Profesional)
   duration_min INTEGER, -- duración de la cita; NULL = la general de la agenda
   is_active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -573,6 +574,10 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       CREATE INDEX IF NOT EXISTS idx_apk_descargas ON apk_descargas(visitante, version, created_at);
     `);
   },
+  // 10 — lista de precios renglón a renglón de cada oficio.
+  (d) => {
+    d.exec('ALTER TABLE services ADD COLUMN price_list TEXT');
+  },
 ];
 
 export const ESQUEMA_VERSION = MIGRACIONES.length;
@@ -621,6 +626,20 @@ export function parseImages(raw: unknown): string[] {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Renglones de la lista de precios de un oficio, en la moneda del oficio. */
+export function parsePriceList(raw: unknown): { name: string; price: number }[] {
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x) => x && typeof x.name === 'string' && typeof x.price === 'number')
+      .map((x) => ({ name: x.name, price: x.price }));
   } catch {
     return [];
   }

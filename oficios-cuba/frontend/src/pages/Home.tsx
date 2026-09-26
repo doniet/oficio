@@ -239,7 +239,7 @@ export default function Home() {
             <div className="relative max-w-xl">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-100">Para profesionales</p>
               <h2 className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl">¿Tienes un oficio? Que te encuentren.</h2>
-              <p className="mt-3 text-brand-50/90">Anúnciate gratis entrando con tu cuenta de Google: tu nombre, tu logo, tu oficio y tu teléfono. Con el plan Básico ($1 USD/mes) sumas fotos y hasta 5 oficios; con el Profesional ($10 USD/mes), citas, chat y punto de venta.</p>
+              <p className="mt-3 text-brand-50/90">Anúnciate gratis entrando con tu cuenta de Google: tu nombre, tu logo, una foto, tu oficio y tu teléfono. Con el plan Básico ($1 USD/mes) sumas 5 fotos y una lista de precios en cada oficio, hasta 5 oficios; con el Profesional ($10 USD/mes), citas, chat y punto de venta.</p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 {user?.user_type === 'provider' ? (
                   <Link to="/dashboard/servicios/nuevo" className="btn-lg btn bg-white text-brand-700 hover:bg-brand-50">Publicar un servicio</Link>

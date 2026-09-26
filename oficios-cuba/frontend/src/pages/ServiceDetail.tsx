@@ -4,7 +4,7 @@ import { ArrowLeft, Briefcase, ChevronLeft, ChevronRight, Clock, EyeOff, MapPin,
 import { useTasa } from '../hooks/useTasa';
 import { useAuth } from '../hooks/useAuth';
 import { reviewApi, serviceApi, apiError } from '../services/api';
-import { priceParts, priceTypeLabel, relativeTime } from '../lib/format';
+import { priceParts, priceRow, priceTypeLabel, relativeTime } from '../lib/format';
 import type { Review, ServiceDetail as ServiceDetailType, ServiceSummary } from '../types';
 import ContactActions from '../components/ContactActions';
 import { NegocioChip, ServiceCard } from '../components/cards';
@@ -160,6 +160,32 @@ function PriceBlock({ service, big }: { service: ServiceDetailType; big?: boolea
   );
 }
 
+/** La lista de precios del oficio, como la carta de un menú: concepto a la izquierda, precio a la derecha. */
+function PriceList({ service }: { service: ServiceDetailType }) {
+  const tasa = useTasa();
+  if (!service.price_list?.length) return null;
+  return (
+    <section aria-labelledby="precios-title">
+      <h2 id="precios-title" className="mb-3 text-xl font-bold">Lista de precios</h2>
+      <ul className="divide-y divide-sand-200 rounded-2xl border border-sand-200 bg-white">
+        {service.price_list.map((renglon, i) => {
+          const precio = priceRow(renglon.price, service.price_currency, tasa);
+          return (
+            <li key={`${renglon.name}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
+              <span className="min-w-0 flex-1 text-ink-800">{renglon.name}</span>
+              <span className="shrink-0 text-right">
+                <span className="font-semibold text-ink-900">{precio.amount}</span>
+                {precio.alt && <span className="ml-1.5 text-xs text-ink-400">{precio.alt}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-xs text-ink-400">Precios orientativos puestos por el profesional. Confirma con él antes de empezar.</p>
+    </section>
+  );
+}
+
 export default function ServiceDetail() {
   const { id } = useParams<{ id: string }>();
   const [service, setService] = useState<ServiceDetailType | null>(null);
@@ -296,6 +322,8 @@ export default function ServiceDetail() {
               <p className="text-ink-400">El profesional no añadió una descripción. Escríbele para conocer los detalles.</p>
             )}
           </section>
+
+          <PriceList service={service} />
 
           <section aria-labelledby="pro-title" className="card p-5 sm:p-6">
             <h2 id="pro-title" className="sr-only">Sobre el profesional</h2>

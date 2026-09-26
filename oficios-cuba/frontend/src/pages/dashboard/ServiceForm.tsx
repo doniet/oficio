@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ImagePlus, Lock, Sparkles, Star, Trash2 } from 'lucide-react';
+import { ArrowLeft, ImagePlus, ListPlus, Lock, Sparkles, Star, Trash2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { apiError, categoryApi, serviceApi, type ServiceInput } from '../../services/api';
 import { uploadImage } from '../../lib/image';
@@ -11,7 +11,6 @@ import { PageTitle } from '../../components/DashboardLayout';
 import { Alert, EmptyState, ErrorState, Field, PageLoader, Spinner, cn } from '../../components/ui';
 import { FormSection, PlanLock } from './parts';
 
-const MAX_IMAGES = 6;
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
 
 interface FormState {
@@ -24,16 +23,21 @@ interface FormState {
   price_max: string;
   price_currency: Currency;
   images: string[];
+  /** Renglones de la lista de precios; el precio se edita como texto y se convierte al guardar. */
+  price_list: { name: string; price: string }[];
   duration_min: string;
 }
 
-const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', price_currency: 'CUP', images: [], duration_min: '' };
+const EMPTY: FormState = { parent_id: '', category_id: '', title: '', description: '', price_type: 'fixed', price_min: '', price_max: '', price_currency: 'CUP', images: [], price_list: [], duration_min: '' };
 
 const DURACIONES: [number, string][] = [
   [15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1 h'], [90, '1 h 30 min'], [120, '2 h'], [180, '3 h'], [240, '4 h'], [360, '6 h'], [480, '8 h'],
 ];
 
-type Errors = Partial<Record<'category' | 'title' | 'price', string>>;
+type Errors = Partial<Record<'category' | 'title' | 'price' | 'price_list', string>>;
+
+/** Un renglón en blanco (recién añadido y sin tocar) no se guarda ni se reclama. */
+const renglonVacio = (r: { name: string; price: string }) => r.name.trim() === '' && r.price.trim() === '';
 
 function validate(f: FormState): Errors {
   const e: Errors = {};
@@ -46,6 +50,9 @@ function validate(f: FormState): Errors {
     else if ((min != null && (Number.isNaN(min) || min < 0)) || (max != null && (Number.isNaN(max) || max < 0))) e.price = 'Los precios deben ser números positivos';
     else if (min != null && max != null && max < min) e.price = 'El precio máximo no puede ser menor que el mínimo';
   }
+  const renglones = f.price_list.filter((r) => !renglonVacio(r));
+  if (renglones.some((r) => r.name.trim() === '')) e.price_list = 'Cada renglón necesita un concepto';
+  else if (renglones.some((r) => r.price.trim() === '' || !(Number(r.price) >= 0))) e.price_list = 'Cada renglón necesita un precio (un número positivo)';
   return e;
 }
 
@@ -56,7 +63,8 @@ export default function ServiceForm() {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const tasa = useTasa();
-  const [photosAllowed, setPhotosAllowed] = useState(true);
+  const [maxImages, setMaxImages] = useState(1);
+  const [maxPriceRows, setMaxPriceRows] = useState(0);
   const [hasAgenda, setHasAgenda] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -78,7 +86,8 @@ export default function ServiceForm() {
         serviceApi.mine(),
         isEdit ? serviceApi.getById(id!) : Promise.resolve(null),
       ]);
-      setPhotosAllowed(mine.data.photos_allowed !== false);
+      setMaxImages(mine.data.max_service_photos ?? 1);
+      setMaxPriceRows(mine.data.max_price_rows ?? 0);
       setHasAgenda(mine.data.plan === 'pro');
       const extra = detail ?? mine;
       const list: Category[] = cats.data.categories;
@@ -98,6 +107,7 @@ export default function ServiceForm() {
           price_max: s.price_max != null ? String(s.price_max) : '',
           price_currency: s.price_currency ?? 'CUP',
           images: s.images ?? [],
+          price_list: (s.price_list ?? []).map((r: { name: string; price: number }) => ({ name: r.name, price: String(r.price) })),
           duration_min: s.duration_min != null ? String(s.duration_min) : '',
         });
       } else {
@@ -130,15 +140,15 @@ export default function ServiceForm() {
   const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    const room = MAX_IMAGES - form.images.length - uploading;
+    const room = maxImages - form.images.length - uploading;
     if (room <= 0) return;
     const batch = files.slice(0, room);
-    if (files.length > room) toast(`Solo caben ${MAX_IMAGES} fotos por servicio: se subirán ${room}.`, 'error');
+    if (files.length > room) toast(`Tu plan permite ${maxImages} foto${maxImages === 1 ? '' : 's'} en cada oficio: se subirá${room === 1 ? '' : 'n'} ${room}.`, 'error');
     setUploading((n) => n + batch.length);
     for (const file of batch) {
       try {
         const url = await uploadImage(file);
-        setForm((f) => ({ ...f, images: [...f.images, url].slice(0, MAX_IMAGES) }));
+        setForm((f) => ({ ...f, images: [...f.images, url].slice(0, maxImages) }));
       } catch (err) {
         toast(err instanceof Error && !('isAxiosError' in err) ? err.message : apiError(err, 'No se pudo subir una foto.'), 'error');
       } finally {
@@ -146,6 +156,13 @@ export default function ServiceForm() {
       }
     }
   };
+
+  const addRow = () => set('price_list', [...form.price_list, { name: '', price: '' }]);
+  const setRow = (i: number, campo: 'name' | 'price', valor: string) => {
+    setForm((f) => ({ ...f, price_list: f.price_list.map((r, j) => (j === i ? { ...r, [campo]: valor } : r)) }));
+    setErrors((er) => ({ ...er, price_list: undefined }));
+  };
+  const removeRow = (i: number) => set('price_list', form.price_list.filter((_, j) => j !== i));
 
   const removeImage = (url: string) => set('images', form.images.filter((x) => x !== url));
   const makeCover = (url: string) => set('images', [url, ...form.images.filter((x) => x !== url)]);
@@ -169,6 +186,7 @@ export default function ServiceForm() {
       price_max: negotiable || form.price_max === '' ? null : Number(form.price_max),
       price_currency: form.price_currency,
       images: form.images,
+      price_list: form.price_list.filter((r) => !renglonVacio(r)).map((r) => ({ name: r.name.trim(), price: Number(r.price) })),
       duration_min: form.duration_min === '' ? null : Number(form.duration_min),
     };
     setSaving(true);
@@ -314,7 +332,7 @@ export default function ServiceForm() {
               </button>
             ))}
           </div>
-          {form.price_type !== 'negotiable' && (
+          {(form.price_type !== 'negotiable' || form.price_list.length > 0) && (
             <fieldset>
               <legend className="label">Moneda</legend>
               <div className="inline-grid grid-cols-2 gap-2" role="radiogroup" aria-label="Moneda del precio">
@@ -362,16 +380,22 @@ export default function ServiceForm() {
           )}
         </FormSection>
 
-        <FormSection title="Fotos" description={photosAllowed ? `Hasta ${MAX_IMAGES} fotos de trabajos reales. La primera es la portada. Las reducimos antes de subirlas para ahorrar datos.` : undefined}>
-          {!photosAllowed && form.images.length === 0 ? (
-            <PlanLock plan="Básico">Añade fotos de tus trabajos a cada oficio.</PlanLock>
-          ) : (<>
-          {!photosAllowed && <Alert tone="info">Tu plan actual no muestra fotos: las que ya tenías se conservan pero los clientes no las ven.</Alert>}
+        <FormSection
+          title="Fotos"
+          description={`Hasta ${maxImages} foto${maxImages === 1 ? '' : 's'} de trabajos reales${maxImages > 1 ? '. La primera es la portada' : ''}. Las reducimos antes de subirlas para ahorrar datos.`}
+        >
+          {form.images.length > maxImages && (
+            <Alert tone="info">
+              Tu plan muestra {maxImages === 1 ? 'una sola foto' : `${maxImages} fotos`} de este oficio: las demás se conservan pero los clientes no las ven.
+            </Alert>
+          )}
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {form.images.map((url, i) => (
-              <li key={url} className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-sand-100">
+              <li key={url} className={cn('group relative aspect-[4/3] overflow-hidden rounded-2xl bg-sand-100', i >= maxImages && 'opacity-50')}>
                 <img src={url} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
-                {i === 0 && <span className="badge absolute left-2 top-2 bg-ink-900/80 text-white">Portada</span>}
+                {i >= maxImages
+                  ? <span className="badge absolute left-2 top-2 bg-ink-900/80 text-white">Oculta por tu plan</span>
+                  : i === 0 && form.images.length > 1 && <span className="badge absolute left-2 top-2 bg-ink-900/80 text-white">Portada</span>}
                 <div className="absolute inset-x-2 bottom-2 flex justify-end gap-1.5">
                   {i > 0 && (
                     <button type="button" onClick={() => makeCover(url)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-ink-700 shadow-sm hover:text-amber-600" aria-label={`Usar la foto ${i + 1} como portada`}>
@@ -389,7 +413,7 @@ export default function ServiceForm() {
                 <Spinner className="h-6 w-6" />
               </li>
             ))}
-            {photosAllowed && slots < MAX_IMAGES && (
+            {slots < maxImages && (
               <li>
                 <button
                   type="button"
@@ -397,13 +421,71 @@ export default function ServiceForm() {
                   className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-sand-300 text-sm font-semibold text-ink-500 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
                 >
                   <ImagePlus className="h-6 w-6" />
-                  Añadir fotos
-                  <span className="text-xs font-normal text-ink-400">{form.images.length}/{MAX_IMAGES}</span>
+                  {maxImages === 1 ? 'Añadir una foto' : 'Añadir fotos'}
+                  <span className="text-xs font-normal text-ink-400">{form.images.length}/{maxImages}</span>
                 </button>
               </li>
             )}
           </ul>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onFiles} className="hidden" />
+        </FormSection>
+
+        <FormSection
+          title="Lista de precios"
+          description="Opcional, como la carta de un menú: un renglón por cada cosa que haces, con su precio."
+        >
+          {maxPriceRows === 0 && form.price_list.length === 0 ? (
+            <PlanLock plan="Básico">Pon tus precios renglón a renglón en cada oficio.</PlanLock>
+          ) : (<>
+            {maxPriceRows === 0 && (
+              <Alert tone="info">Tu plan actual no muestra la lista de precios: se conserva, pero los clientes no la ven.</Alert>
+            )}
+            {form.price_list.length > 0 && (
+              <ul className="space-y-2">
+                {form.price_list.map((renglon, i) => (
+                  <li key={i} className={cn('flex items-start gap-2', i >= maxPriceRows && 'opacity-50')}>
+                    <input
+                      value={renglon.name}
+                      onChange={(e) => setRow(i, 'name', e.target.value)}
+                      maxLength={80}
+                      placeholder="Concepto (ej.: corte de pelo)"
+                      aria-label={`Concepto del renglón ${i + 1}`}
+                      className="input flex-1"
+                    />
+                    <input
+                      value={renglon.price}
+                      onChange={(e) => setRow(i, 'price', e.target.value)}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={form.price_currency === 'CUP' ? '1' : '0.01'}
+                      placeholder={form.price_currency}
+                      aria-label={`Precio del renglón ${i + 1} en ${form.price_currency}`}
+                      className="input w-28 shrink-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeRow(i)}
+                      className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-red-600 transition hover:bg-red-50"
+                      aria-label={`Quitar el renglón ${i + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {errors.price_list && <p className="text-xs font-medium text-red-600">{errors.price_list}</p>}
+            {form.price_list.length > maxPriceRows && (
+              <p className="text-xs text-ink-400">Los renglones en gris pasan del tope de tu plan: se guardan, pero no se muestran.</p>
+            )}
+            {form.price_list.length < maxPriceRows && (
+              <button type="button" onClick={addRow} className="btn-secondary btn-sm self-start">
+                <ListPlus className="h-4 w-4" /> Añadir renglón
+                <span className="text-xs font-normal text-ink-400">{form.price_list.length}/{maxPriceRows}</span>
+              </button>
+            )}
+            <p className="text-xs text-ink-400">Los precios van en {form.price_currency}; el cliente ve también el equivalente aproximado en la otra moneda.</p>
           </>)}
         </FormSection>
 

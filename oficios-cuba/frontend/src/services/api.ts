@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
+import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -53,6 +53,8 @@ export interface ServiceInput {
   price_type: PriceType;
   price_currency: Currency;
   images: string[];
+  /** Lista de precios renglón a renglón; solo la guardan los planes de pago. */
+  price_list: PriceRow[];
   /** Duración de la cita en la agenda; null = la general. */
   duration_min?: number | null;
 }

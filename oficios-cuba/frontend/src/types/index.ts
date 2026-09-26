@@ -101,8 +101,16 @@ export interface ServiceSummary {
   municipality_name?: string | null;
 }
 
+/** Un renglón de la lista de precios de un oficio, en la moneda del oficio. */
+export interface PriceRow {
+  name: string;
+  price: number;
+}
+
 export interface ServiceDetail extends Omit<ServiceSummary, 'cover' | 'image_count'> {
   images: string[];
+  /** Lista de precios renglón a renglón (planes Básico y Profesional). */
+  price_list: PriceRow[];
   provider_description?: string | null;
   province_id: string;
   municipality_id?: string | null;
@@ -202,7 +210,12 @@ export interface PlanLimits {
   name: string;
   price: number;
   maxServices: number | null;
+  /** Fotos de cada oficio. */
+  maxServicePhotos: number;
+  /** Fotos del negocio (galería del perfil). */
   maxPhotos: number;
+  /** Renglones de la lista de precios de cada oficio. */
+  maxPriceRows: number;
   chat: boolean;
   agenda: boolean;
   negocio: boolean;

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { ErrorApi, esquemaMensaje, ETIQUETA_TIPO_PRECIO, precioDetalle, relativeTime, Review, ServiceDetail } from '@oficio/shared';
+import { ErrorApi, esquemaMensaje, ETIQUETA_TIPO_PRECIO, precioDetalle, precioRenglon, relativeTime, Review, ServiceDetail } from '@oficio/shared';
 import { Campo } from '../../src/componentes/Campo';
 import { Boton } from '../../src/componentes/Boton';
 import { Avatar, EstadoError, EstadoVacio, Estrellas, Insignia, InsigniaPlan, Portada, Tarjeta, u, Valoracion } from '../../src/componentes/ui';
@@ -28,6 +28,32 @@ function BloquePrecio({ service }: { service: ServiceDetail }) {
         {p.sufijo ? <Text style={e.sufijo}> {p.sufijo}</Text> : null}
       </Text>
       {p.alt ? <Text style={[u.suave, { marginTop: 2 }]}>{p.alt} <Text style={{ color: ink[400] }}>· tasa informal</Text></Text> : null}
+    </View>
+  );
+}
+
+/** La lista de precios del oficio, como la carta de un menú. */
+function ListaPrecios({ service }: { service: ServiceDetail }) {
+  const tasa = useTasa();
+  if (!service.price_list?.length) return null;
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={u.h3}>Lista de precios</Text>
+      <Tarjeta estilo={{ padding: 0 }}>
+        {service.price_list.map((renglon, i) => {
+          const precio = precioRenglon(renglon.price, service.price_currency, tasa);
+          return (
+            <View key={`${renglon.name}-${i}`} style={[e.renglon, i > 0 && e.renglonConLinea]}>
+              <Text style={[u.texto, { flex: 1, minWidth: 0 }]}>{renglon.name}</Text>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={e.renglonPrecio}>{precio.principal}</Text>
+                {precio.alt ? <Text style={[u.tenue, { fontSize: 12 }]}>{precio.alt}</Text> : null}
+              </View>
+            </View>
+          );
+        })}
+      </Tarjeta>
+      <Text style={[u.tenue, { fontSize: 12 }]}>Precios orientativos puestos por el profesional. Confirma con él antes de empezar.</Text>
     </View>
   );
 }
@@ -174,6 +200,8 @@ export default function Servicio() {
             : <Text style={[u.texto, { color: ink[400] }]}>El profesional no añadió una descripción. Escríbele para conocer los detalles.</Text>}
         </View>
 
+        <ListaPrecios service={service} />
+
         <Tarjeta estilo={{ padding: 20 }}>
           <View style={{ flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
             <Avatar src={service.avatar_url} nombre={nombre} tamano={64} cuadrado />
@@ -243,6 +271,9 @@ const e = StyleSheet.create({
   tipoPrecio: { fontFamily: fuentes.textoFuerte, fontSize: 12, letterSpacing: 0.6, color: ink[400] },
   cifra: { fontFamily: fuentes.titulo, fontSize: 24, lineHeight: 30, color: ink[900] },
   sufijo: { fontFamily: fuentes.textoFuerte, fontSize: 16, color: ink[400] },
+  renglon: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  renglonConLinea: { borderTopWidth: 1, borderTopColor: sand[200] },
+  renglonPrecio: { fontFamily: fuentes.textoFuerte, fontSize: 15, color: ink[900] },
   acciones: { flexDirection: 'row', gap: 8, marginTop: 16 },
   cuadrado: { width: 48, paddingHorizontal: 0 },
   nombreProfesional: { fontFamily: fuentes.textoNegrita, fontSize: 18, lineHeight: 23, color: ink[900] },

@@ -53,6 +53,12 @@ export function priceParts(s: Priced, tasa: number = TASA_RESPALDO) {
   };
 }
 
+/** Un renglón de la lista de precios de un oficio: cifra en su moneda y la conversión aparte. */
+export function priceRow(price: number, currency: Currency, tasa?: number) {
+  const p = priceParts({ price_min: price, price_type: 'fixed', price_currency: currency }, tasa);
+  return { amount: p.main, alt: p.alt };
+}
+
 /** Texto de una línea: "15 000 – 60 000 CUP (≈ $21 – $82 USD) / hora". */
 export function formatPrice(s: Priced, tasa?: number): string {
   const p = priceParts(s, tasa);

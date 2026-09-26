@@ -17,6 +17,7 @@ interface DemoService {
   price_type: PriceType;
   price_currency?: 'CUP' | 'USD';
   images?: string[];
+  price_list?: { name: string; price: number }[];
 }
 
 interface DemoProvider {
@@ -89,7 +90,15 @@ const providers: DemoProvider[] = [
     province: 'Villa Clara', municipality: 'Santa Clara',
     address: 'Calle Independencia #58', whatsapp: '+5352000013', years: 9, plan: 'basic',
     services: [
-      { category: 'peluqueria-barberia', title: 'Corte, color y peinado', description: 'Corte a la moda, tinte o mechas y secado con peinado. Uso productos profesionales y te asesoro según tu tipo de pelo.', price_min: 1500, price_max: 10000, price_type: 'fixed', images: [img('salon-1')] },
+      { category: 'peluqueria-barberia', title: 'Corte, color y peinado', description: 'Corte a la moda, tinte o mechas y secado con peinado. Uso productos profesionales y te asesoro según tu tipo de pelo.', price_min: 1500, price_max: 10000, price_type: 'fixed', images: [img('salon-1')],
+        price_list: [
+          { name: 'Corte de pelo (mujer)', price: 1500 },
+          { name: 'Corte de pelo (hombre)', price: 800 },
+          { name: 'Secado y peinado', price: 1200 },
+          { name: 'Tinte raíz', price: 4500 },
+          { name: 'Mechas', price: 10000 },
+          { name: 'Tratamiento de keratina', price: 8000 },
+        ] },
       { category: 'maquillaje', title: 'Maquillaje para bodas y quinces', description: 'Prueba previa incluida, maquillaje de larga duración y retoque. Paquetes para la novia o quinceañera y acompañantes.', price_min: 8000, price_max: 20000, price_type: 'fixed', images: [img('maquillaje-1')] },
     ],
   },
@@ -102,7 +111,13 @@ const providers: DemoProvider[] = [
     address: 'Carretera Central km 3', whatsapp: '+5352000014', years: 17, plan: 'pro',
     services: [
       { category: 'mecanica-general', title: 'Reparación de motor y ajuste', description: 'Ajuste de motor, cambio de juntas, puesta a punto y adaptación de motores diésel. Te muestro las piezas cambiadas.', price_type: 'negotiable', images: [img('mecanica-1'), img('mecanica-3')] },
-      { category: 'mecanica-general', title: 'Cambio de aceite y revisión general', description: 'Cambio de aceite y filtros, revisión de frenos, luces y suspensión con informe por escrito.', price_min: 4000, price_max: 8000, price_type: 'fixed', images: [img('mecanica-2')] },
+      { category: 'mecanica-general', title: 'Cambio de aceite y revisión general', description: 'Cambio de aceite y filtros, revisión de frenos, luces y suspensión con informe por escrito.', price_min: 4000, price_max: 8000, price_type: 'fixed', images: [img('mecanica-2')],
+        price_list: [
+          { name: 'Cambio de aceite y filtro', price: 4000 },
+          { name: 'Pastillas de freno (delanteras)', price: 6500 },
+          { name: 'Revisión de suspensión', price: 2500 },
+          { name: 'Alineación y balanceo', price: 3000 },
+        ] },
     ],
   },
   {
@@ -267,10 +282,11 @@ export async function seedDemo() {
 
       const serviceIds = p.services.map((s, j) => {
         const sid = uuidv4();
-        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, is_active, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, price_list, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
           .run(sid, profileId, categoryId(s.category), s.title, s.description, s.price_min ?? null, s.price_max ?? null,
-            s.price_type, s.price_currency ?? 'CUP', JSON.stringify(s.images ?? []), daysAgo(300 - i * 20 - j * 7));
+            s.price_type, s.price_currency ?? 'CUP', JSON.stringify(s.images ?? []), JSON.stringify(s.price_list ?? []),
+            daysAgo(300 - i * 20 - j * 7));
         return sid;
       });
 

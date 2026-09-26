@@ -57,6 +57,12 @@ export function precioDetalle(s: ConPrecio, tasa: number = TASA_RESPALDO) {
   return { principal: p.principal, sufijo: p.sufijo, alt: p.alt as string | null };
 }
 
+/** Un renglón de la lista de precios de un oficio: cifra en su moneda y la conversión aparte. */
+export function precioRenglon(price: number, moneda: Currency, tasa: number = TASA_RESPALDO) {
+  const p = partes({ price_min: price, price_type: 'fixed', price_currency: moneda }, tasa);
+  return { principal: p?.principal ?? '', alt: (p?.alt ?? null) as string | null };
+}
+
 export const ETIQUETA_TIPO_PRECIO: Record<PriceType, string> = {
   fixed: 'Precio fijo',
   hourly: 'Por hora',

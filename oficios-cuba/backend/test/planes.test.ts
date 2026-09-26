@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { activos, api, crearServicio, db, ponerPlan, registrar } from './helpers.js';
+import { activos, api, categoriaId, crearServicio, db, ponerPlan, registrar } from './helpers.js';
 
 const FOTO = '/demo/electricidad-1.webp';
+const FOTO2 = '/demo/electricidad-2.webp';
+const PRECIOS = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `Trabajo ${i + 1}`, price: 500 + i }));
 
 async function perfilBase(auth: Record<string, string>, extra: Record<string, unknown> = {}) {
   const provincia = (db.prepare("SELECT id FROM provinces WHERE name = 'La Habana'").get() as { id: string }).id;
@@ -9,15 +11,23 @@ async function perfilBase(auth: Record<string, string>, extra: Record<string, un
 }
 
 describe('plan Gratis', () => {
-  it('publica un solo oficio y sin fotos', async () => {
+  it('publica un solo oficio con una sola foto', async () => {
     const p = await registrar('provider');
-    expect((await crearServicio(p.auth)).status).toBe(201);
+    expect((await crearServicio(p.auth, { images: [FOTO] })).status).toBe(201);
     const segundo = await crearServicio(p.auth);
     expect(segundo.status).toBe(403);
     expect(segundo.body.error).toMatch(/1 oficio/);
 
-    const conFoto = await crearServicio(p.auth, { images: [FOTO] });
-    expect(conFoto.status).toBe(403);
+    const dosFotos = await crearServicio((await registrar('provider')).auth, { images: [FOTO, FOTO2] });
+    expect(dosFotos.status).toBe(403);
+    expect(dosFotos.body.error).toMatch(/1 foto/);
+  });
+
+  it('no incluye lista de precios', async () => {
+    const p = await registrar('provider');
+    const res = await crearServicio(p.auth, { price_list: PRECIOS(1) });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/lista de precios/i);
   });
 
   it('elige cómo lo contactan y no puede subir galería ni registrar negocio', async () => {
@@ -33,13 +43,19 @@ describe('plan Gratis', () => {
     expect(publico.body.provider).toMatchObject({ contact_mode: 'call', has_chat: false, has_agenda: false, lat: 23.13 });
   });
 
-  it('al bajar a Gratis las fotos que tenía dejan de verse, pero no se borran', async () => {
+  it('al bajar a Gratis las fotos de más y la lista de precios dejan de verse, pero no se borran', async () => {
     const p = await registrar('provider');
     ponerPlan(p.providerId!, 'basic');
-    const s = (await crearServicio(p.auth, { images: [FOTO] })).body.service.id;
+    const s = (await crearServicio(p.auth, { images: [FOTO, FOTO2], price_list: PRECIOS(3) })).body.service.id;
     ponerPlan(p.providerId!, 'free');
-    expect((await api.get(`/api/services/${s}`)).body.service.images).toEqual([]);
-    expect((await api.get(`/api/services/${s}`).set(p.auth)).body.service.images).toEqual([FOTO]);
+
+    const publico = (await api.get(`/api/services/${s}`)).body.service;
+    expect(publico.images).toEqual([FOTO]);
+    expect(publico.price_list).toEqual([]);
+
+    const propio = (await api.get(`/api/services/${s}`).set(p.auth)).body.service;
+    expect(propio.images).toEqual([FOTO, FOTO2]);
+    expect(propio.price_list).toHaveLength(3);
   });
 });
 
@@ -53,6 +69,42 @@ describe('plan Básico', () => {
 
     expect((await perfilBase(p.auth, { gallery: Array(10).fill(FOTO) })).status).toBe(200);
     expect((await perfilBase(p.auth, { gallery: Array(11).fill(FOTO) })).status).toBe(403);
+  });
+
+  it('hasta 5 fotos en cada oficio', async () => {
+    const p = await registrar('provider');
+    ponerPlan(p.providerId!, 'basic');
+    const cinco = await crearServicio(p.auth, { images: Array(5).fill(FOTO) });
+    expect(cinco.status).toBe(201);
+    expect((await api.get(`/api/services/${cinco.body.service.id}`)).body.service.images).toHaveLength(5);
+
+    const seis = await crearServicio(p.auth, { images: Array(6).fill(FOTO) });
+    expect(seis.status).toBe(403);
+    expect(seis.body.error).toMatch(/5 fotos/);
+  });
+
+  it('pone una lista de precios renglón a renglón, hasta 30 renglones', async () => {
+    const p = await registrar('provider');
+    ponerPlan(p.providerId!, 'basic');
+    const s = (await crearServicio(p.auth, { price_list: [{ name: 'Corte de pelo', price: 500 }] })).body.service.id;
+    expect((await api.get(`/api/services/${s}`)).body.service.price_list).toEqual([{ name: 'Corte de pelo', price: 500 }]);
+
+    // Editar la lista la reemplaza completa.
+    const editar = (price_list: unknown) => api.put(`/api/services/${s}`).set(p.auth)
+      .send({ category_id: categoriaId(), title: 'Servicio de prueba', price_type: 'negotiable', price_list });
+    expect((await editar(PRECIOS(30))).status).toBe(200);
+    expect((await api.get(`/api/services/${s}`)).body.service.price_list).toHaveLength(30);
+    expect((await editar(PRECIOS(31))).status).toBe(403);
+    expect((await editar([{ name: '  ', price: 100 }])).status).toBe(400);
+  });
+});
+
+describe('plan Profesional', () => {
+  it('admite hasta 100 renglones en la lista de precios', async () => {
+    const p = await registrar('provider');
+    ponerPlan(p.providerId!, 'pro');
+    expect((await crearServicio(p.auth, { price_list: PRECIOS(100) })).status).toBe(201);
+    expect((await crearServicio(p.auth, { price_list: PRECIOS(101) })).status).toBe(403);
   });
 });
 
