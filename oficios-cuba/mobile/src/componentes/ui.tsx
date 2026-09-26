@@ -154,6 +154,16 @@ export function EstadoVacio({ icono, titulo, texto, accion }: { icono: React.Com
   );
 }
 
+/** Alert de la web (error / éxito / info). */
+export function Aviso({ tono, children }: { tono: 'error' | 'exito' | 'info'; children: ReactNode }) {
+  const c = { error: ['#fecaca', '#fef2f2', '#991b1b'], exito: [sea[200], sea[50], sea[800]], info: [sand[300], sand[100], ink[700]] }[tono];
+  return (
+    <View style={{ borderRadius: 12, borderWidth: 1, borderColor: c[0], backgroundColor: c[1], paddingHorizontal: 16, paddingVertical: 12 }} accessibilityRole={tono === 'error' ? 'alert' : undefined}>
+      <Text style={{ fontFamily: fuentes.texto, fontSize: 14, lineHeight: 20, color: c[2] }}>{children}</Text>
+    </View>
+  );
+}
+
 /** ErrorState de la web (caja roja con "Reintentar"). */
 export function EstadoError({ mensaje, alReintentar }: { mensaje: string; alReintentar?: () => void }) {
   return (

@@ -1,13 +1,14 @@
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { relativeTime } from '@oficio/shared';
+import { ErrorApi, relativeTime } from '@oficio/shared';
 import { Pantalla } from '../../src/componentes/Pantalla';
 import { Boton } from '../../src/componentes/Boton';
 import { BannerSinRed } from '../../src/componentes/BannerSinRed';
+import { Avatar, EstadoError, EstadoVacio, u } from '../../src/componentes/ui';
 import { requiereSesion, useSesion } from '../../src/lib/contexto';
 import { estadoSesion } from '../../src/lib/estadoSesion';
-import { colores, espacio, fuentes } from '../../src/lib/tema';
+import { brand, colores, fuentes, ink, sand } from '../../src/lib/tema';
 
 export default function Mensajes() {
   const { usuario, api, cargando, sinRed, reintentar } = useSesion();
@@ -19,11 +20,15 @@ export default function Mensajes() {
     refetchOnWindowFocus: true,
   });
   const estado = estadoSesion({ cargando, sinRed, usuario });
+  const esProfesional = usuario?.user_type === 'provider';
+  const subtitulo = usuario
+    ? esProfesional ? 'Conversaciones con clientes interesados en tus oficios. El chat es del plan Profesional.' : 'Tus conversaciones con profesionales.'
+    : undefined;
 
   // Mientras se comprueba el token guardado, no se flashea "Entra para ver tus mensajes".
   if (estado === 'cargando') {
     return (
-      <Pantalla titulo="Mensajes">
+      <Pantalla cabecera titulo="Mensajes">
         <ActivityIndicator color={colores.acento} />
       </Pantalla>
     );
@@ -31,10 +36,11 @@ export default function Mensajes() {
 
   if (!usuario) {
     return (
-      <Pantalla titulo="Mensajes">
+      <Pantalla cabecera titulo="Mensajes">
         {estado === 'sinRed' ? <BannerSinRed onReintentar={reintentar} /> : null}
-        <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>Entra para ver tus mensajes</Text>
-        <Boton titulo="Entrar" onPress={() => requiereSesion(router, null, '/mensajes')} />
+        <EstadoVacio icono="chatbubble-outline" titulo="Entra para ver tus mensajes"
+          texto="Tus conversaciones con los profesionales aparecen aquí."
+          accion={<Boton titulo="Entrar" onPress={() => requiereSesion(router, null, '/mensajes')} />} />
       </Pantalla>
     );
   }
@@ -42,36 +48,67 @@ export default function Mensajes() {
   const conversaciones = consulta.data?.conversations ?? [];
 
   return (
-    <Pantalla titulo="Mensajes" scroll={false}>
-      <FlatList
-        style={{ flex: 1 }}
-        data={conversaciones}
-        keyExtractor={(c) => c.id}
-        contentContainerStyle={{ gap: espacio(2) }}
-        refreshing={consulta.isRefetching}
-        onRefresh={() => consulta.refetch()}
-        ListEmptyComponent={!consulta.isLoading ? <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>Todavía no tienes mensajes.</Text> : null}
-        renderItem={({ item }) => {
-          const otro = usuario.user_type === 'client' ? item.provider_name : item.client_name;
-          return (
-            <Pressable onPress={() => router.push(`/conversacion/${item.id}`)} style={{ flexDirection: 'row', gap: espacio(3), padding: espacio(3), backgroundColor: colores.superficie, borderRadius: 16, borderWidth: 1, borderColor: colores.borde, alignItems: 'center' }}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ fontFamily: fuentes.textoFuerte, color: colores.tinta }} numberOfLines={1}>{otro}</Text>
-                {item.service_title ? <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave, fontSize: 13 }} numberOfLines={1}>{item.service_title}</Text> : null}
-                <Text style={{ fontFamily: fuentes.texto, color: colores.tintaTenue, fontSize: 13 }} numberOfLines={1}>{item.last_message ?? ''}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Text style={{ fontFamily: fuentes.texto, color: colores.tintaTenue, fontSize: 12 }}>{relativeTime(item.last_message_at)}</Text>
-                {item.unread_count ? (
-                  <View style={{ backgroundColor: colores.acento, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
-                    <Text style={{ color: colores.acentoTexto, fontSize: 12, fontFamily: fuentes.textoFuerte }}>{item.unread_count}</Text>
+    <Pantalla cabecera titulo="Mensajes" subtitulo={subtitulo} scroll={false}>
+      {consulta.isLoading ? <ActivityIndicator color={colores.acento} /> : null}
+      {consulta.isError ? (
+        <EstadoError mensaje={consulta.error instanceof ErrorApi ? consulta.error.message : 'No pudimos cargar tus mensajes.'} alReintentar={() => consulta.refetch()} />
+      ) : null}
+      {!consulta.isLoading && !consulta.isError && conversaciones.length === 0 ? (
+        <EstadoVacio icono="chatbubble-outline" titulo="Aún no tienes mensajes"
+          texto={esProfesional
+            ? 'Cuando un cliente te escriba desde uno de tus servicios, la conversación aparecerá aquí.'
+            : 'Escribe por el chat a un profesional con plan Profesional y sigue la conversación aquí.'}
+          accion={esProfesional ? undefined : <Boton titulo="Buscar profesionales" onPress={() => router.navigate('/buscar')} />} />
+      ) : null}
+      {conversaciones.length > 0 ? (
+        <View style={[u.tarjeta, s.lista]}>
+          <FlatList
+            data={conversaciones}
+            keyExtractor={(c) => c.id}
+            refreshing={consulta.isRefetching}
+            onRefresh={() => consulta.refetch()}
+            ItemSeparatorComponent={() => <View style={s.separador} />}
+            renderItem={({ item }) => {
+              const nombre = esProfesional ? item.client_name : item.provider_name;
+              const avatar = esProfesional ? item.client_avatar : item.provider_avatar;
+              const noLeidos = item.unread_count ?? 0;
+              return (
+                <Pressable onPress={() => router.push(`/conversacion/${item.id}`)} style={({ pressed }) => [s.fila, pressed && { backgroundColor: sand[100] }]}>
+                  <Avatar src={avatar} nombre={nombre} tamano={44} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={s.cabezaFila}>
+                      <Text style={[s.nombre, noLeidos ? { fontFamily: fuentes.textoNegrita, color: ink[900] } : null]} numberOfLines={1}>{nombre}</Text>
+                      <Text style={[s.hora, noLeidos ? { fontFamily: fuentes.textoFuerte, color: brand[700] } : null]}>{relativeTime(item.last_message_at)}</Text>
+                    </View>
+                    {item.service_title ? <Text style={s.servicio} numberOfLines={1}>{item.service_title}</Text> : null}
+                    <View style={s.cabezaFila}>
+                      <Text style={[s.ultimo, noLeidos ? { color: ink[800] } : null]} numberOfLines={1}>{item.last_message ?? ''}</Text>
+                      {noLeidos ? (
+                        <View style={s.contador} accessibilityLabel={`${noLeidos} sin leer`}>
+                          <Text style={s.contadorTexto}>{noLeidos}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                ) : null}
-              </View>
-            </Pressable>
-          );
-        }}
-      />
+                </Pressable>
+              );
+            }}
+          />
+        </View>
+      ) : null}
     </Pantalla>
   );
 }
+
+const s = StyleSheet.create({
+  lista: { flexShrink: 1, overflow: 'hidden' },
+  separador: { height: 1, backgroundColor: sand[200] },
+  fila: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  cabezaFila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  nombre: { flex: 1, fontFamily: fuentes.textoFuerte, fontSize: 15, color: ink[800] },
+  hora: { fontFamily: fuentes.texto, fontSize: 12, color: ink[400] },
+  servicio: { fontFamily: fuentes.textoMedio, fontSize: 12, color: ink[400] },
+  ultimo: { flex: 1, fontFamily: fuentes.texto, fontSize: 14, color: ink[500] },
+  contador: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, backgroundColor: brand[600], alignItems: 'center', justifyContent: 'center' },
+  contadorTexto: { fontFamily: fuentes.textoNegrita, fontSize: 11, color: '#ffffff' },
+});

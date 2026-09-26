@@ -102,8 +102,8 @@ export default function Raiz() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)/entrar" options={{ presentation: 'modal', title: 'Entrar' }} />
-          <Stack.Screen name="(auth)/registro" options={{ presentation: 'modal', title: 'Crear cuenta' }} />
+          <Stack.Screen name="(auth)/entrar" options={{ presentation: 'modal', title: '' }} />
+          <Stack.Screen name="(auth)/registro" options={{ presentation: 'modal', title: '' }} />
           <Stack.Screen name="servicio/[id]" options={{ title: '' }} />
           <Stack.Screen name="conversacion/[id]" options={{ title: 'Conversación' }} />
         </Stack>

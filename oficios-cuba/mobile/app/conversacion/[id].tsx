@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, FlatList, KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native';
+import { AppState, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorApi, esquemaMensaje, Message, shortTime } from '@oficio/shared';
 import { Boton } from '../../src/componentes/Boton';
 import { chatVacio, trasEnviar, trasSondeo } from '../../src/lib/chat';
 import { useSesion } from '../../src/lib/contexto';
-import { colores, espacio, fuentes } from '../../src/lib/tema';
+import { brand, colores, espacio, fuentes, ink, paper, sand } from '../../src/lib/tema';
 
 export default function Conversacion() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -61,7 +62,7 @@ export default function Conversacion() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colores.fondo }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: paper }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
       <FlatList
         data={mensajes}
         keyExtractor={(m) => m.id}
@@ -69,25 +70,38 @@ export default function Conversacion() {
         renderItem={({ item }) => {
           const mio = item.sender_type === usuario?.user_type;
           return (
-            <View style={{ alignSelf: mio ? 'flex-end' : 'flex-start', maxWidth: '80%', backgroundColor: mio ? colores.acento : colores.superficie, borderRadius: 16, padding: espacio(3) }}>
-              <Text style={{ fontFamily: fuentes.texto, color: mio ? colores.acentoTexto : colores.tinta }}>{item.content}</Text>
-              <Text style={{ fontSize: 11, marginTop: 2, color: mio ? colores.acentoTexto : colores.tintaTenue }}>{shortTime(item.created_at)}</Text>
+            <View style={[s.burbuja, mio ? s.mia : s.suya]}>
+              <Text style={[s.texto, { color: mio ? '#ffffff' : ink[900] }]}>{item.content}</Text>
+              <Text style={[s.hora, { color: mio ? brand[100] : ink[400] }]}>{shortTime(item.created_at)}</Text>
             </View>
           );
         }}
       />
-      {error ? <Text style={{ color: colores.error, paddingHorizontal: espacio(4) }}>{error}</Text> : null}
+      {error ? <Text style={s.error}>{error}</Text> : null}
       {cerrado ? (
-        <View style={{ padding: espacio(4), paddingBottom: espacio(4) + abajo, borderTopWidth: 1, borderColor: colores.borde, backgroundColor: colores.superficie }}>
-          <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>{cerrado}</Text>
+        <View style={[s.barra, { flexDirection: 'row', gap: espacio(3), padding: espacio(4), paddingBottom: espacio(4) + abajo }]}>
+          <Ionicons name="lock-closed-outline" size={16} color={ink[400]} style={{ marginTop: 2 }} />
+          <Text style={{ flex: 1, fontFamily: fuentes.texto, fontSize: 14, color: ink[600] }}>{cerrado}</Text>
         </View>
       ) : (
-      <View style={{ flexDirection: 'row', gap: espacio(2), padding: espacio(3), paddingBottom: espacio(3) + abajo, borderTopWidth: 1, borderColor: colores.borde, backgroundColor: colores.superficie }}>
-        <TextInput value={texto} onChangeText={setTexto} placeholder="Escribe un mensaje" multiline maxLength={2000} accessibilityLabel="Mensaje"
-          style={{ flex: 1, minHeight: 44, maxHeight: 120, fontFamily: fuentes.texto, fontSize: 16, color: colores.tinta }} />
-        <Boton titulo="Enviar" onPress={enviar} cargando={enviando} deshabilitado={!texto.trim()} />
+      <View style={[s.barra, { flexDirection: 'row', alignItems: 'flex-end', gap: espacio(2), padding: espacio(3), paddingBottom: espacio(3) + abajo }]}>
+        <TextInput value={texto} onChangeText={setTexto} placeholder="Escribe un mensaje…" placeholderTextColor={ink[300]} multiline maxLength={2000} accessibilityLabel="Mensaje"
+          style={s.entrada} />
+        <Boton icono="send" etiquetaAccesible="Enviar mensaje" onPress={enviar} cargando={enviando} deshabilitado={!texto.trim()} estilo={s.enviar} />
       </View>
       )}
     </KeyboardAvoidingView>
   );
 }
+
+const s = StyleSheet.create({
+  burbuja: { maxWidth: '82%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8, boxShadow: '0px 1px 2px rgba(0,0,0,0.05)' },
+  mia: { alignSelf: 'flex-end', backgroundColor: brand[600], borderBottomRightRadius: 6 },
+  suya: { alignSelf: 'flex-start', backgroundColor: '#ffffff', borderBottomLeftRadius: 6 },
+  texto: { fontFamily: fuentes.texto, fontSize: 15, lineHeight: 20 },
+  hora: { alignSelf: 'flex-end', fontFamily: fuentes.texto, fontSize: 11, marginTop: 2 },
+  error: { color: colores.error, fontFamily: fuentes.texto, paddingHorizontal: espacio(4), paddingBottom: espacio(2) },
+  barra: { borderTopWidth: 1, borderColor: sand[200], backgroundColor: '#ffffff' },
+  entrada: { flex: 1, minHeight: 44, maxHeight: 140, borderWidth: 1, borderColor: sand[300], borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontFamily: fuentes.texto, fontSize: 15, color: ink[900], backgroundColor: '#ffffff' },
+  enviar: { width: 44, minHeight: 44, paddingHorizontal: 0 },
+});

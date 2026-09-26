@@ -5,8 +5,8 @@ import { ErrorApi, esquemaLogin } from '@oficio/shared';
 import { Pantalla } from '../../src/componentes/Pantalla';
 import { Campo } from '../../src/componentes/Campo';
 import { Boton } from '../../src/componentes/Boton';
+import { Aviso, u } from '../../src/componentes/ui';
 import { useSesion } from '../../src/lib/contexto';
-import { colores } from '../../src/lib/tema';
 
 export default function Entrar() {
   const { volver } = useLocalSearchParams<{ volver?: string }>();
@@ -30,12 +30,15 @@ export default function Entrar() {
   }
 
   return (
-    <Pantalla titulo="Entrar">
-      <Campo etiqueta="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
+    <Pantalla titulo="Entra a tu cuenta">
+      <Text style={[u.subtitulo, { marginTop: -12 }]}>
+        ¿No tienes cuenta? <Link href={{ pathname: '/(auth)/registro', params: { volver } }} style={u.enlace}>Regístrate gratis</Link>
+      </Text>
+      {volver ? <Aviso tono="info">Entra para continuar. Te llevaremos de vuelta a donde estabas.</Aviso> : null}
+      {error ? <Aviso tono="error">{error}</Aviso> : null}
+      <Campo etiqueta="Correo electrónico" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" placeholder="tu@correo.com" />
       <Campo etiqueta="Contraseña" value={password} onChangeText={setPassword} secureTextEntry autoComplete="password" />
-      {error ? <Text style={{ color: colores.error }}>{error}</Text> : null}
-      <Boton titulo="Entrar" onPress={enviar} cargando={enviando} />
-      <Link href={{ pathname: '/(auth)/registro', params: { volver } }} style={{ color: colores.acento, textAlign: 'center' }}>¿No tienes cuenta? Crear cuenta</Link>
+      <Boton titulo="Entrar" icono="log-in-outline" onPress={enviar} cargando={enviando} />
     </Pantalla>
   );
 }

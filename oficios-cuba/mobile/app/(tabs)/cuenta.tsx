@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Pantalla } from '../../src/componentes/Pantalla';
 import { Boton } from '../../src/componentes/Boton';
 import { BannerSinRed } from '../../src/componentes/BannerSinRed';
+import { Avatar, Insignia, Tarjeta, u } from '../../src/componentes/ui';
 import { useSesion } from '../../src/lib/contexto';
 import { estadoSesion } from '../../src/lib/estadoSesion';
 import { estadoPush, EstadoPush, TEXTO_ESTADO_PUSH } from '../../src/lib/push';
-import { colores, espacio, fuentes } from '../../src/lib/tema';
+import { colores, fuentes, ink, sand } from '../../src/lib/tema';
 
 const TIPO_TEXTO = { client: 'Cliente', provider: 'Profesional' } as const;
 
@@ -35,38 +37,55 @@ export default function Cuenta() {
   // Mientras se comprueba el token guardado, no se flashea la vista de invitado.
   if (estado === 'cargando') {
     return (
-      <Pantalla titulo="Cuenta">
+      <Pantalla cabecera titulo="Cuenta">
         <ActivityIndicator color={colores.acento} />
       </Pantalla>
     );
   }
 
   return (
-    <Pantalla titulo="Cuenta">
+    <Pantalla cabecera titulo="Cuenta" subtitulo={usuario ? 'Tus datos de acceso.' : undefined}>
       {estado === 'sinRed' ? <BannerSinRed onReintentar={reintentar} /> : null}
       {usuario ? (
-        <View style={{ gap: espacio(1) }}>
-          <Text style={{ fontFamily: fuentes.textoFuerte, fontSize: 18, color: colores.tinta }}>{usuario.full_name}</Text>
-          <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>{usuario.email}</Text>
-          <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>{TIPO_TEXTO[usuario.user_type]}</Text>
-          {push ? <Text style={{ fontFamily: fuentes.texto, color: colores.tintaTenue, fontSize: 13 }}>{TEXTO_ESTADO_PUSH[push]}</Text> : null}
-        </View>
+        <Tarjeta estilo={s.tarjeta}>
+          <View style={s.perfil}>
+            <Avatar src={usuario.avatar_url} nombre={usuario.full_name} tamano={56} />
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text style={s.nombre} numberOfLines={2}>{usuario.full_name}</Text>
+              <Text style={u.suave} numberOfLines={1}>{usuario.email}</Text>
+              <View style={{ marginTop: 4 }}><Insignia tipo="suave" texto={TIPO_TEXTO[usuario.user_type]} /></View>
+            </View>
+          </View>
+          {push ? (
+            <View style={s.push}>
+              <Ionicons name="notifications-outline" size={16} color={ink[400]} />
+              <Text style={[u.tenue, { flex: 1 }]}>{TEXTO_ESTADO_PUSH[push]}</Text>
+            </View>
+          ) : null}
+        </Tarjeta>
       ) : (
-        <Text style={{ fontFamily: fuentes.texto, color: colores.tintaSuave }}>Entra o crea una cuenta para publicar servicios, escribir a profesionales y guardar tus favoritos.</Text>
+        <Tarjeta estilo={s.tarjeta}>
+          <Text style={u.h3}>Entra o crea tu cuenta</Text>
+          <Text style={[u.suave, { marginTop: 6, lineHeight: 20 }]}>Entra o crea una cuenta para publicar servicios, escribir a profesionales y guardar tus favoritos.</Text>
+          <View style={{ gap: 8, marginTop: 20 }}>
+            <Boton titulo="Entrar" icono="log-in-outline" onPress={() => router.push('/(auth)/entrar')} />
+            <Boton titulo="Crear cuenta gratis" variante="secundario" onPress={() => router.push('/(auth)/registro')} />
+          </View>
+        </Tarjeta>
       )}
 
-      {usuario ? (
-        <Boton titulo="Cerrar sesión" variante="secundario" onPress={cerrarSesion} cargando={saliendo} />
-      ) : (
-        <View style={{ gap: espacio(2) }}>
-          <Boton titulo="Entrar" onPress={() => router.push('/(auth)/entrar')} />
-          <Boton titulo="Crear cuenta" variante="secundario" onPress={() => router.push('/(auth)/registro')} />
-        </View>
-      )}
+      {usuario ? <Boton titulo="Cerrar sesión" icono="log-out-outline" variante="secundario" onPress={cerrarSesion} cargando={saliendo} /> : null}
 
-      <Text style={{ fontFamily: fuentes.texto, color: colores.tintaTenue, fontSize: 12, textAlign: 'center' }}>
+      <Text style={[u.tenue, { fontSize: 12, textAlign: 'center' }]}>
         Versión {Constants.expoConfig?.version}
       </Text>
     </Pantalla>
   );
 }
+
+const s = StyleSheet.create({
+  tarjeta: { padding: 20 },
+  perfil: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  nombre: { fontFamily: fuentes.textoNegrita, fontSize: 18, color: ink[900] },
+  push: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: sand[200] },
+});
