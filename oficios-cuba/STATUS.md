@@ -103,3 +103,15 @@
 - Security: sin cambios de red, túnel, CORS ni `.env`. Endpoints de escritura solo para el dueño; imágenes solo propias o demo. Disco de vps2 al 83 % (14 GB libres): con 1000 fotos por Profesional (~60 KB c/u) conviene vigilarlo.
 - Next: la base de prod no tiene catálogos demo (la semilla solo corre en base nueva). Opcional: importar catálogo desde CSV, ordenar artículos a mano.
 - Blockers: ninguno.
+
+## 2026-09-26 01:40 UTC — claude-code (vps2) — Avisos por Telegram: terreno preparado (notificador sin arrancar)
+- Changes (13c66e1):
+  - Decisiones de Dariel: envío desde un contenedor aparte (la API sigue sin salida); avisos de citas, recordatorios, chat, reseñas y plan, y cada usuario elige cuáles.
+  - **API:** `lib/avisos.ts` apunta en `notifications` (si hay Telegram vinculado y el grupo está encendido): cita nueva/confirmada/cancelada/movida a la otra parte, recordatorios 24 h y 2 h al cliente, resumen de mañana al profesional a las 20:00, vencimiento del plan a 3 días (programados cada 5 min con `dedupe_key`), chat sin texto y agrupado cada 10 min, reseña nueva. `routes/telegram.ts`: estado, código de vinculación de un solo uso (hash, 10 min), preferencias, prueba, desvincular. Migración 6 (users.telegram_chat_id/linked_at/notify_prefs; tablas notifications, telegram_link_tokens, telegram_state). `busy_timeout` por compartir la base entre dos procesos.
+  - **oficio_notifier** (`src/notifier/`, misma imagen): long polling, `/start <código>` vincula y `/stop` desvincula; envía la bandeja con botón a la web; 429 espera, 403 desvincula, 5 intentos, caduca a las 24 h; el token nunca sale en errores; no carga `config.ts` (no necesita `JWT_SECRET`). En compose con `profiles: ["telegram"]`, secreto `secrets/telegram_bot_token` (creado vacío, `chmod 600`, en `.gitignore`), red net_dmz, healthcheck por latido.
+  - **Web:** sección "Avisos por Telegram" en Cuenta (muy pronto / conectar con sondeo hasta vincular / conectado con interruptores, prueba y desconectar). `DOCKER.md`: pasos de activación.
+  - Deploy: backup `data/oficios-2026-09-26-0135-pre-deploy.db`, build + up de api/web, migrada a v6. oficio_notifier NO arrancado.
+- Tests: pass — backend 76 (9 nuevos de Telegram + v6); prueba de mutación (quitar preferencias o el ocultado del token → sus tests fallan). Notificador real contra un Telegram falso local: getMe, `/start` vincula, contesta y envía un aviso de la bandeja con botón. Migración probada antes sobre copia de prod. E2E Playwright 390 px de la sección en sus tres estados, 0 errores. En prod: v6, `integrity_check` ok, FK limpias, conteos iguales; `/api/telegram/status` → available:false y `link` → 503 (correcto sin bot).
+- Security: sin cambios de red en marcha. Pendiente de OK: arrancar oficio_notifier (salida a internet desde un contenedor nuevo, solo hacia Telegram; ningún puerto ni ruta nueva hacia dentro). Token solo en el secreto de Docker.
+- Next: Dariel crea el bot (@BotFather), pega el token en `secrets/telegram_bot_token` y da el OK → `docker compose --profile telegram up -d`.
+- Blockers: token del bot y OK de red (Dariel).
