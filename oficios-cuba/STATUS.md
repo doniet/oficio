@@ -198,3 +198,10 @@
 - Security: superficie pública nueva pedida por Dariel: `/descargas/` solo sirve el APK y su JSON (lista blanca por extensión), carpeta en solo lectura para nginx.
 - Next: publicar y desplegar; primera instalación en un teléfono real.
 - Blockers: ninguno.
+
+## 2026-09-26 07:55 UTC — cc-jarvis-ubuntu — Despliegue del botón de descarga + index.html sin caché
+- Changes: APK 0.1.0 publicado con `publicar-apk.sh` en `descargas/` de vps2 (se quitó la carpeta provisional `~/docker/oficio/apk`). Desplegado `36d31c1` (backup previo). Arreglo descubierto al verificar: `location /` hace `try_files … /index.html` y la redirección interna caía en la regex de extensiones → **el HTML salía sin `Cache-Control`** y el navegador seguía cargando el bundle viejo tras un despliegue (le pasó a Playwright con el botón nuevo). Nueva `location = /index.html` con `no-cache` y todas las cabeceras de seguridad.
+- Tests: pass — por Cloudflare: APK 200 `application/vnd.android.package-archive` + `attachment` + mismo SHA-256 que el original; `android.json` 200 `no-cache`; listado, otro archivo y APK inexistente → 404. En la web de producción a 390 px: sección «App para Android», botón y enlace del pie visibles con «Versión 0.1.0 · 59 MB · Android 7.0 o superior». nginx 1.27 local: `/`, `/buscar`, `/servicio/x`, `/index.html` → `no-cache` + CSP + X-Frame-Options.
+- Security: sin cambios de red; `/descargas/` con lista blanca (solo `.apk` y `android.json`).
+- Next: primera instalación en un teléfono real.
+- Blockers: ninguno.
