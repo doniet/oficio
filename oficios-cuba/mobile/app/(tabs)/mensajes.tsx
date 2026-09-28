@@ -58,7 +58,7 @@ export default function Mensajes() {
           texto={esProfesional
             ? 'Cuando un cliente te escriba desde uno de tus servicios, la conversación aparecerá aquí.'
             : 'Escribe por el chat a un profesional con plan Profesional y sigue la conversación aquí.'}
-          accion={esProfesional ? undefined : <Boton titulo="Buscar profesionales" onPress={() => router.navigate('/buscar')} />} />
+          accion={esProfesional ? undefined : <Boton titulo="Buscar profesionales" onPress={() => router.navigate('/explorar')} />} />
       ) : null}
       {conversaciones.length > 0 ? (
         <View style={[u.tarjeta, s.lista]}>
