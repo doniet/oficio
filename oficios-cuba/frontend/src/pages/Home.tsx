@@ -190,7 +190,7 @@ export default function Home() {
               eyebrow="Destacados"
               title="Profesionales con buena mano"
               subtitle="Los mejor valorados por sus clientes."
-              action={<Link to="/profesionales" className="link inline-flex items-center gap-1 text-sm">Ver todos <ArrowRight className="h-4 w-4" /></Link>}
+              action={<Link to="/explorar" className="link inline-flex items-center gap-1 text-sm">Ver todos <ArrowRight className="h-4 w-4" /></Link>}
             />
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {loading.featured

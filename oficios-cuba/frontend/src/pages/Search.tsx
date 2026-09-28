@@ -578,7 +578,7 @@ export default function Search() {
               action={chips.length > 0 ? (
                 <button onClick={clearAll} className="btn-secondary">Quitar todos los filtros</button>
               ) : (
-                <Link to="/profesionales" className="btn-secondary">Ver profesionales</Link>
+                <Link to="/explorar" className="btn-secondary">Ver todos los servicios</Link>
               )}
             >
               Prueba con otra palabra, amplía la zona a toda la provincia o quita el límite de precio.

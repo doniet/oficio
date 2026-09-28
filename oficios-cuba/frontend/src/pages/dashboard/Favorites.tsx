@@ -61,7 +61,7 @@ export default function Favorites() {
         <EmptyState
           icon={<Heart className="h-6 w-6" />}
           title="Aún no tienes favoritos"
-          action={<Link to="/profesionales" className="btn-primary">Explorar profesionales</Link>}
+          action={<Link to="/explorar" className="btn-primary">Explorar servicios</Link>}
         >
           Toca el corazón en el perfil de un profesional para guardarlo y encontrarlo rápido después.
         </EmptyState>

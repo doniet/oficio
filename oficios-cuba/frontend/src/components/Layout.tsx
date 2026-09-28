@@ -194,7 +194,6 @@ export default function Layout() {
                 <h4 className="mb-3 font-sans text-sm font-bold text-white">Para clientes</h4>
                 <ul className="space-y-2 text-sm">
                   <li><Link to="/explorar" className="hover:text-white">Explorar</Link></li>
-                  <li><Link to="/profesionales" className="hover:text-white">Ver profesionales</Link></li>
                   <li><Link to="/registro" className="hover:text-white">Crear cuenta gratis</Link></li>
                   <EnlaceApp className="hover:text-white" />
                 </ul>

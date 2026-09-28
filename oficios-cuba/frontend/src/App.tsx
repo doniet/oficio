@@ -9,7 +9,6 @@ import type { UserType } from './types';
 
 // La portada va en el bundle inicial; el resto se descarga al navegar.
 const Search = lazy(() => import('./pages/Search'));
-const Providers = lazy(() => import('./pages/Providers'));
 const Plans = lazy(() => import('./pages/Plans'));
 const ServiceDetail = lazy(() => import('./pages/ServiceDetail'));
 const ProviderProfile = lazy(() => import('./pages/ProviderProfile'));
@@ -66,7 +65,6 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="explorar" element={<Search />} />
           <Route path="buscar" element={<RedirigirAExplorar />} />
-          <Route path="profesionales" element={<Providers />} />
           <Route path="planes" element={<Plans />} />
           <Route path="servicio/:id" element={<ServiceDetail />} />
           <Route path="proveedor/:id" element={<ProviderProfile />} />

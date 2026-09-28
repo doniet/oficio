@@ -153,7 +153,7 @@ export default function MisCitas() {
         <EmptyState
           icon={<CalendarDays className="h-6 w-6" />}
           title="Aún no tienes citas"
-          action={<Link to="/profesionales" className="btn-primary"><Compass className="h-4 w-4" /> Buscar profesionales</Link>}
+          action={<Link to="/explorar" className="btn-primary"><Compass className="h-4 w-4" /> Buscar servicios</Link>}
         >
           Los profesionales con plan Profesional tienen agenda: elige un hueco libre desde su perfil.
         </EmptyState>
