@@ -379,3 +379,24 @@
 - Blockers: los `+N` siguen siendo decorativos (esos 126 son inalcanzables) — lo arregla la entrega
   de ubicación aproximada, cuya spec está aprobada y pendiente de plan. APK 0.2.0 pendiente de que
   Dariel apruebe los pasos en la sesión de j-u.
+
+## 2026-09-28 22:35 UTC — claude-code (vps2) — Cabecera del perfil legible y «Precio acordado»
+- Changes: la cabecera del perfil subía ENTERA sobre la portada (`-mt-12`/`-mt-14`), así que en
+  escritorio la miga de pan y el nombre del negocio caían sobre la foto, con el `h1` partido por el
+  borde de la imagen. Eran dos decisiones peleadas: el degradado oscurecía el fondo para texto
+  CLARO, pero el que aterrizaba ahí es oscuro (`ink-900`). Ahora solo el avatar pisa la portada y el
+  texto empieza bajo ella; en móvil nunca hubo problema porque la cabecera es columna. Segundo
+  hallazgo del mismo vistazo: `CoverImage` no era absoluta, ocupaba el alto completo en flujo y
+  empujaba el botón «Profesionales» fuera de la caja, donde `overflow-hidden` lo recortaba —
+  llevaba ahí invisible, y en móvil es la única forma de volver atrás. El degradado baja de 60 % a
+  30 %: ya no protege texto. Y «A convenir» pasa a «Precio acordado» en los cuatro paquetes.
+- Tests: pass — backend 165/165, web 19/19, app 44/44, typechecks y build. **Verificado mirando**:
+  capturas a 1280 y 390 px antes/después contra la página real, y de nuevo contra producción.
+- Security: N/A en el resultado, pero un apunte: al levantar la web local para las capturas usé
+  `--host 0.0.0.0` por descuido y el servidor de desarrollo quedó escuchando en la interfaz pública
+  menos de un minuto. Cerrado y rehecho atado a `127.0.0.1`, con el contenedor de Playwright en la
+  red del host. Queda anotado porque exponer un puerto exige consultar antes, no después.
+- Next: Playwright funciona en vps2 sin instalar nada ni pedir sudo — el chromium del `~/.cache` no
+  tiene sus librerías de sistema, pero la imagen `mcr.microsoft.com/playwright:v1.63.0-noble` ya
+  está en el host y con `--network host` alcanza un servidor local. Es la vía para verificar UI aquí.
+- Blockers: ninguno nuevo. Sigue pendiente decidir el alcance del aviso de `pp.address`.
