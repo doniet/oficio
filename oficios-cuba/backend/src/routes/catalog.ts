@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { enforcePlanLimit, planDelPerfil, PLAN_WEIGHT_SQL, providerProfileIdFor } from '../db/index.js';
+import db, { CON_CATALOGO_SQL, enforcePlanLimit, planDelPerfil, PLAN_WEIGHT_SQL, providerProfileIdFor } from '../db/index.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -12,7 +12,7 @@ const router = Router();
 // Catálogo de productos o servicios (Básico 50, Profesional 1000). Lo público solo muestra
 // artículos dentro del límite del plan actual (hidden_by_plan = 0) de perfiles con catálogo.
 const POR_PAGINA = 24;
-const CON_CATALOGO = "pp.is_active = 1 AND pp.subscription_plan IN ('basic', 'pro', 'premium') AND ci.hidden_by_plan = 0";
+const CON_CATALOGO = `pp.is_active = 1 AND ${CON_CATALOGO_SQL}`;
 
 const itemSchema = z.object({
   name: z.string().trim().min(2, 'El nombre es muy corto').max(120),

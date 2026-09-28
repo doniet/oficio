@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CON_NEGOCIO_SQL, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -32,16 +32,20 @@ const providerProfileSchema = z.object({
   service_area_ids: z.array(z.string().uuid()).max(60).optional(),
 });
 
+// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil. Compartida con
+// el resumen del mapa (pestaña Negocios) para que los dos digan la misma categoría principal.
+export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
+     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
+     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3))`;
+
 const PUBLIC_COLUMNS = `
   pp.id, pp.business_name, pp.description, pp.province_id, pp.municipality_id, pp.years_experience,
   pp.rating, pp.review_count, pp.subscription_plan, pp.created_at, pp.kind, pp.contact_mode, pp.gallery,
   p.name AS province_name, m.name AS municipality_name,
   u.full_name AS owner_name, u.avatar_url,
   (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) AS service_count,
-  (SELECT json_group_array(name) FROM (
-     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
-     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3)) AS categories,
+  ${CATEGORIAS_SQL} AS categories,
   (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) AS cover_images
 `;
 
@@ -83,11 +87,8 @@ router.get('/', asyncHandler(async (req, res) => {
 
   let where = 'WHERE pp.is_active = 1';
   const params: unknown[] = [];
-  // El plan manda: segunPlan() muestra como oficio a quien no lo tenga incluido, así que el
-  // SQL tiene que decir lo mismo o un perfil que bajó de plan saldría en la pestaña equivocada.
-  const CON_NEGOCIO = "pp.subscription_plan IN ('pro', 'premium')";
-  if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO}`;
-  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO})`;
+  if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
+  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO_SQL})`;
   else if (kind) throw new AppError('Tipo de perfil no válido', 400);
   if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
   if (category) {

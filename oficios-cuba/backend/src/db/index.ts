@@ -626,6 +626,15 @@ export function initDatabase() {
 
 export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 2 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
 
+// El plan manda: segunPlan() muestra como oficio a quien no lo tenga incluido, así que todo SQL
+// que separe negocios de oficios tiene que decir lo mismo. Una sola definición, importada, para
+// que la lista y el mapa no puedan contradecirse.
+export const CON_NEGOCIO_SQL = "pp.subscription_plan IN ('pro', 'premium')";
+
+// Lo mismo para el catálogo: qué artículo se ve depende del plan del perfil y del tope que ese
+// plan permite (`hidden_by_plan`). `catalog_items` no tiene `is_active`.
+export const CON_CATALOGO_SQL = "pp.subscription_plan IN ('basic', 'pro', 'premium') AND ci.hidden_by_plan = 0";
+
 export function planDelPerfil(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   return planDe(row?.subscription_plan);
