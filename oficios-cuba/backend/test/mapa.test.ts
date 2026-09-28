@@ -246,3 +246,17 @@ describe('GET /api/mapa', () => {
     expect(r.body.celda).toBeCloseTo(0.2); // 1° / 5, no 2° / 5
   });
 });
+
+describe('PUT /api/providers/me/profile — map_precision', () => {
+  it('acepta map_precision y rechaza un valor inventado', async () => {
+    const pro = await registrar('provider');
+    const perfil = { business_name: 'Perfil De Prueba Precision', province_id: provinciaId(), contact_mode: 'whatsapp' };
+
+    const ok = await api.put('/api/providers/me/profile').set(pro.auth).send({ ...perfil, map_precision: 'zona' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.provider.map_precision).toBe('zona');
+
+    const mal = await api.put('/api/providers/me/profile').set(pro.auth).send({ ...perfil, map_precision: 'aproximada' });
+    expect(mal.status).toBe(400);
+  });
+});

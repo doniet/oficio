@@ -34,6 +34,11 @@ export default function Register() {
   const next = safeNext(params.get('next'));
   const [type, setType] = useState<UserType>(['profesional', 'provider'].includes(params.get('tipo') ?? '') ? 'provider' : 'client');
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '' });
+  // El registro no pide ubicación (no hay mapa aquí, solo nombre/correo/teléfono): esta casilla
+  // no manda nada a /api/auth/register (esa ruta no acepta show_on_map ni tiene punto que guardar).
+  // Sirve para preguntar y explicar YA, y para guiar el mensaje de bienvenida — activarlo de
+  // verdad, con la elección de precisión, se hace en el panel una vez tenga un punto marcado.
+  const [wantsMap, setWantsMap] = useState(false);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -60,7 +65,9 @@ export default function Register() {
         user_type: type,
       });
       if (type === 'provider') {
-        toast('¡Cuenta creada! Completa tu perfil para aparecer en las búsquedas.');
+        toast(wantsMap
+          ? '¡Cuenta creada! Marca tu ubicación en el panel para aparecer también en el mapa.'
+          : '¡Cuenta creada! Completa tu perfil para aparecer en las búsquedas.');
         navigate('/dashboard/perfil', { replace: true });
       } else {
         toast('¡Te damos la bienvenida a Encuentrauno!');
@@ -103,9 +110,21 @@ export default function Register() {
         </fieldset>
 
         {type === 'provider' && (
-          <p className="rounded-xl bg-sand-100 px-3.5 py-2.5 text-sm text-ink-600">
-            <strong className="text-ink-900">Empieza gratis:</strong> nombre, logo, descripción, dirección y teléfono. Mejora cuando quieras.
-          </p>
+          <>
+            <p className="rounded-xl bg-sand-100 px-3.5 py-2.5 text-sm text-ink-600">
+              <strong className="text-ink-900">Empieza gratis:</strong> nombre, logo, descripción, dirección y teléfono. Mejora cuando quieras.
+            </p>
+
+            <label className="flex items-start gap-3 rounded-xl border border-sand-200 bg-white p-3.5 text-sm">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-600" checked={wantsMap} onChange={(e) => setWantsMap(e.target.checked)} />
+              <span>
+                <span className="font-semibold text-ink-800">¿Quieres aparecer en el mapa de Encuentrauno?</span>
+                <span className="block text-ink-500">
+                  En el mapa se ve un punto tuyo que cualquiera puede tocar: puede ser tu local exacto, o solo tu zona (un radio de más o menos 1 000 metros) si trabajas desde tu casa y no quieres mostrar dónde vives. Sigue apagado hasta que lo actives: eso lo terminas de elegir en tu panel, después de crear la cuenta y marcar tu ubicación.
+                </span>
+              </span>
+            </label>
+          </>
         )}
 
         {googleMode && (

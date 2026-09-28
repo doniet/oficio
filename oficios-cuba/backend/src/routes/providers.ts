@@ -26,6 +26,7 @@ const providerProfileSchema = z.object({
   horario: optionalText(120),
   gallery: z.array(z.string().max(500)).max(30).optional(),
   show_on_map: z.boolean().default(false),
+  map_precision: z.enum(['exacta', 'zona']).default('exacta'),
   telegram: optionalText(40),
   email_contact: z.preprocess(blankToUndefined, z.string().trim().email('Email de contacto no válido').optional()),
   years_experience: z.number().int().min(0).max(70).optional(),
@@ -179,12 +180,12 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     db.prepare(`
       UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
         lat = ?, lng = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
-        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, updated_at = CURRENT_TIMESTAMP
+        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, map_precision = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
       data.lat ?? null, data.lng ?? null, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
       data.years_experience ?? 0, data.contact_mode, data.kind, data.kind === 'negocio' ? data.horario ?? null : null,
-      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, provider.id);
+      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, data.map_precision, provider.id);
 
     if (data.service_area_ids) {
       db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
