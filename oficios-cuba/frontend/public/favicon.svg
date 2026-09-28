@@ -1,7 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-  <g fill="none" stroke="#FF7A00" stroke-linecap="round">
-    <circle cx="17" cy="17" r="11.5" stroke-width="5"/>
-    <path d="M25.6 25.6 34.3 34.3" stroke-width="6"/>
-    <path d="M13.4 14.2 17.6 10.6V23.4" stroke-width="4.6" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF4EA"/>
+      <stop offset="1" stop-color="#FFE3CC"/>
+    </linearGradient>
+    <linearGradient id="gl" x1="0" y1="20" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF9A3A"/>
+      <stop offset="1" stop-color="#F26A00"/>
+    </linearGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#bg)"/>
+  <!-- El pin dibujado mide 61 y su centro cae en (51,5 · 49,5); este grupo lo lleva al centro del
+       cuadro y lo agranda hasta 84, que es el aire que quiere un favicon con fondo a sangre.
+       Se escala aquí y no en el trazado para que las coordenadas sigan siendo las de glifo.svg. -->
+  <g transform="translate(54 54) scale(1.377) translate(-51.5 -49.5)">
+  <g transform="rotate(-45 49 47)">
+    <path d="M49 19 C64.5 19 77 31.5 77 47 C77 60 68 70 58 82 L49 94 L40 82 C30 70 21 60 21 47 C21 31.5 33.5 19 49 19 Z" fill="url(#gl)"/>
+  </g>
+  <circle cx="49" cy="47" r="19" fill="#FFFFFF"/>
+  <path d="M44 41 L50.5 37 V57.5" fill="none" stroke="#F26A00" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

@@ -1,7 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="1024" height="1024">
-  <g fill="none" stroke="#FF7A00" stroke-linecap="round">
-    <circle cx="17" cy="17" r="11.5" stroke-width="5"/>
-    <path d="M25.6 25.6 34.3 34.3" stroke-width="6"/>
-    <path d="M13.4 14.2 17.6 10.6V23.4" stroke-width="4.6" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="15.5 12.25 76 76" width="1024" height="1024">
+  <!-- Ronda 4, opción 4b «Pin buscador»: un pin de ubicación inclinado cuya punta hace de mango
+       de la lupa. El pin gira −45° alrededor del centro de la lente, así que la lente y el «1»
+       quedan derechos sin necesidad de contrarrotarlos. Sin fondo: lo pone generar-iconos.mjs.
+       El viewBox no arranca en 0,0: ciñe la tinta (sombra incluida) para que sea cuadrado y centrado.
+       generar-iconos.mjs escala por el viewBox, así que si sobrara aire aquí, sus proporciones
+       mentirían y el icono saldría más pequeño de lo pedido. -->
+  <defs>
+    <linearGradient id="gl" x1="0" y1="20" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF9A3A"/>
+      <stop offset="1" stop-color="#F26A00"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#A5480A" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#sh)" transform="rotate(-45 49 47)">
+    <path d="M49 19 C64.5 19 77 31.5 77 47 C77 60 68 70 58 82 L49 94 L40 82 C30 70 21 60 21 47 C21 31.5 33.5 19 49 19 Z" fill="url(#gl)"/>
   </g>
+  <circle cx="49" cy="47" r="19" fill="#FFFFFF"/>
+  <path d="M44 41 L50.5 37 V57.5" fill="none" stroke="#F26A00" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

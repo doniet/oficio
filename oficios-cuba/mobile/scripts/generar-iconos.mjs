@@ -11,15 +11,30 @@ const salidaWeb = resolve(raiz, '../frontend/public');
 const PAPER = { r: 0xfa, g: 0xf6, b: 0xef, alpha: 1 };
 
 const glifo = readFileSync(resolve(raiz, 'assets/marca/glifo.svg'), 'utf8');
-/** El mismo glifo pintado de otro color, para las capas monocromas. */
-const teñido = (color) => Buffer.from(glifo.replaceAll('#FF7A00', color));
 
-/** Dibuja el glifo centrado ocupando `proporcion` del lienzo, sobre `fondo` (null = transparente). */
-async function pieza(archivo, lado, proporcion, fondo, color = '#FF7A00', destino = salida) {
+/**
+ * El glifo como silueta plana de un solo color, para las capas monocromas de Android.
+ * Funde la lente y el «1» con el pin a propósito: un monocromo ES una silueta, y Android solo
+ * usa su canal alfa. Quita la sombra porque su desenfoque ensucia el borde de esa silueta.
+ * No se aplica a las capas a color: ahí el glifo va tal como se diseñó, con su degradado.
+ */
+const silueta = (color) =>
+  Buffer.from(
+    glifo
+      .replaceAll('#FF9A3A', color)
+      .replaceAll('#F26A00', color)
+      .replaceAll('#FFFFFF', color)
+      .replace(' filter="url(#sh)"', ''),
+  );
+
+/** Dibuja el glifo centrado ocupando `proporcion` del lienzo, sobre `fondo` (null = transparente).
+ *  `color` null = el glifo como se diseñó; un color = silueta plana de ese color. */
+async function pieza(archivo, lado, proporcion, fondo, color = null, destino = salida) {
   const capas = [];
   if (proporcion > 0) {
     const dentro = Math.round(lado * proporcion);
-    capas.push({ input: await sharp(teñido(color)).resize(dentro, dentro).png().toBuffer(), gravity: 'center' });
+    const fuente = color ? silueta(color) : Buffer.from(glifo);
+    capas.push({ input: await sharp(fuente).resize(dentro, dentro).png().toBuffer(), gravity: 'center' });
   }
   const png = await sharp({
     create: { width: lado, height: lado, channels: 4, background: fondo ?? { r: 0, g: 0, b: 0, alpha: 0 } },
@@ -41,4 +56,4 @@ await pieza('android-icon-background.png', 1024, 0, PAPER);
 await pieza('android-icon-monochrome.png', 1024, 0.5, null, '#FFFFFF');
 await pieza('notification-icon.png', 96, 0.8, null, '#FFFFFF');
 // Icono de la app en la portada web (DescargarApp.tsx): mismo fondo y proporción que icon.png.
-await pieza('app-icono.png', 320, 0.72, PAPER, '#FF7A00', salidaWeb);
+await pieza('app-icono.png', 320, 0.72, PAPER, null, salidaWeb);
