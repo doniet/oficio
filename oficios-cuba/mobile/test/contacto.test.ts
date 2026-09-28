@@ -8,7 +8,7 @@ describe('opcionesContacto', () => {
   it('Profesional: chat además de WhatsApp', () => {
     const o = opcionesContacto({ ...base, has_chat: true }, cliente);
     expect(o.chat).toBe(true);
-    expect(o.whatsapp).toBe('https://wa.me/5351234567?text=' + encodeURIComponent('Hola, vi tu servicio «Arreglo de neveras» en Oficios Cuba y me interesa.'));
+    expect(o.whatsapp).toBe('https://wa.me/5351234567?text=' + encodeURIComponent('Hola, vi tu servicio «Arreglo de neveras» en Encuentrauno y me interesa.'));
     expect(o.llamar).toBeNull();
   });
 
