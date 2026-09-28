@@ -113,6 +113,21 @@ encima da 2,6:1 y **no cumple WCAG AA**. Los botones rellenos y los enlaces usan
 `brand-700` (`#B85400`, 4,9:1 sobre blanco). Donde se quiera el naranja vivo de
 fondo, el texto va en `ink-950` (6,8:1).
 
+> **Nota (Entrega 1, tanda de arreglos):** la escala de arriba es la propuesta
+> original; en la ejecución se desplazó para no romper el contraste ya
+> existente en 11 sitios que usaban texto blanco sobre `bg-brand-600`
+> (`.btn-primary`, insignias, burbujas de chat, huecos de agenda). Los valores
+> vigentes en `frontend/tailwind.config.js` son:
+> ```
+> brand: 500 #FF7A00 · 600 #B85400 · 700 #9A4600 · 800 #7C3800 · 900 #5E2A00
+> ```
+> `brand-600` (4,88:1 con blanco, 4,53:1 sobre paper) es ahora el tono de todo
+> lo que lleva texto o hace de indicador encima — botones rellenos, enlaces,
+> anillos de foco — y no el `brand-700` que proponía esta sección. `brand-500`
+> sigue siendo solo el naranja vivo decorativo (nunca texto ni indicador sobre
+> fondo claro, 2,43:1, por debajo del 3:1 de WCAG 1.4.11). Ver
+> `docs/superpowers/sdd/2026-09-28-encuentrauno-1-marca-explorar/progress.md`.
+
 ### 1.2 Logo
 
 `Logo` en `frontend/src/components/ui.tsx:11` pasa a ser una lupa con el «1»

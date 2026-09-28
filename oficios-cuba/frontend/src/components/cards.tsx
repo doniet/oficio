@@ -115,7 +115,7 @@ export function ProviderCard({ provider }: { provider: ProviderCardType }) {
         )}
         <div className="mt-auto flex items-center justify-between pt-4 text-sm">
           <RatingInline rating={provider.rating} count={provider.review_count} />
-          <span className="text-ink-400">{provider.years_experience} años de oficio</span>
+          {!!provider.years_experience && <span className="text-ink-400">{provider.years_experience} años de trabajo</span>}
         </div>
       </div>
     </Link>

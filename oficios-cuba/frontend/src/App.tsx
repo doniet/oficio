@@ -32,10 +32,10 @@ const Admin = lazy(() => import('./pages/admin/Admin'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-// /buscar era la ruta vieja: se conserva la query entera para no romper enlaces compartidos.
+// /buscar era la ruta vieja: se conserva la query y el hash enteros para no romper enlaces compartidos.
 function RedirigirAExplorar() {
-  const { search } = useLocation();
-  return <Navigate to={`/explorar${search}`} replace />;
+  const { search, hash } = useLocation();
+  return <Navigate to={`/explorar${search}${hash}`} replace />;
 }
 
 function RequireAuth({ children, only }: { children: ReactNode; only?: UserType }) {

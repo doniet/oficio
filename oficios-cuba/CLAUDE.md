@@ -65,7 +65,7 @@ oficios-cuba/
 
 ### Páginas
 
-Públicas: `/`, `/buscar`, `/profesionales`, `/planes`, `/servicio/:id`, `/proveedor/:id`, `/login`, `/registro`. Panel `/dashboard`: `mensajes`, `cuenta` (todos); `favoritos` (cliente); `perfil`, `servicios`, `servicios/nuevo`, `servicios/:id/editar`, `catalogo`, `suscripcion`, `agenda`, `agenda/ajustes` (proveedor); `citas` (cliente). `/auth/google` = vuelta del login real de Google. `/dashboard/mensajes/:id` va fuera del layout del panel.
+Públicas: `/`, `/explorar` (con tres pestañas: servicios, productos, negocios; `/buscar` redirige), `/profesionales`, `/planes`, `/servicio/:id`, `/proveedor/:id`, `/login`, `/registro`. Panel `/dashboard`: `mensajes`, `cuenta` (todos); `favoritos` (cliente); `perfil`, `servicios`, `servicios/nuevo`, `servicios/:id/editar`, `catalogo`, `suscripcion`, `agenda`, `agenda/ajustes` (proveedor); `citas` (cliente). `/auth/google` = vuelta del login real de Google. `/dashboard/mensajes/:id` va fuera del layout del panel.
 
 ## Reglas de negocio (con test)
 

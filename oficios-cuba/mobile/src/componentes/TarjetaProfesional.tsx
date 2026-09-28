@@ -35,7 +35,7 @@ export function TarjetaProfesional({ p }: { p: ProviderCard }) {
         ) : null}
         <View style={e.pie}>
           <Valoracion rating={p.rating} count={p.review_count} />
-          <Text style={[u.suave, { color: ink[400] }]}>{p.years_experience} años de oficio</Text>
+          {!!p.years_experience && <Text style={[u.suave, { color: ink[400] }]}>{p.years_experience} años de trabajo</Text>}
         </View>
       </View>
     </View>
