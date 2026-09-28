@@ -47,6 +47,7 @@ oficios-cuba/
 | Sistema+ | `GET /tasas` (P; en prod lo sirve nginx desde `dardoventas.com/tasas.json`, la API da el respaldo) |
 | Auth | `POST /auth/register\|login\|google` (P, 30 intentos / 15 min) · `GET /auth/me`, `PUT /auth/profile\|password` (A) |
 | Catálogos | `/provinces[/:id[/municipalities]]`, `/categories[...]`, `/stats`, `/stats/categories` (P) |
+| Mapa | `GET /mapa?bbox=sur,oeste,norte,este&tab=servicios\|productos\|negocios&q=&category=` (P; un perfil por celda, el de mejor plan, con `detras` = cuántos más hay en esa celda. La celda sale del rectángulo VISIBLE (`min(alto,ancho)/5`) y el servidor infla un 50 % por su cuenta: no hay parámetro `zoom`. `bbox` inválido, invertido o fuera de Cuba → 400; `tab` inventada → 400) |
 | Proveedores | `GET /providers`, `/providers/featured`, `/providers/:id` (P) · `POST /providers/:id/contact` (P; registra el contacto de un cliente con sesión) · `GET\|PUT /providers/me/profile` (Pr) |
 | Citas | `GET /appointments/provider/:id/slots?service_id=` (P, solo Profesional) · `GET /appointments/mine`, `PATCH /:id`, `POST /:id/reschedule` (A) · `POST /` (C) · `GET\|PUT /config`, `GET /calendar?desde&hasta`, `POST /manual`, `POST\|DELETE /blocks` (Pr) |
 | Catálogo | `GET /catalog/provider/:id?q&section&page`, `GET /catalog/search?q&province_id&municipality_id&page` (P) · `GET /catalog/mine`, `POST`, `PUT\|DELETE /:id`, `PATCH /:id/available` (Pr) |
@@ -65,7 +66,7 @@ oficios-cuba/
 
 ### Páginas
 
-Públicas: `/`, `/explorar` (con tres pestañas: servicios, productos, negocios; `/buscar` redirige), `/profesionales`, `/planes`, `/servicio/:id`, `/proveedor/:id`, `/login`, `/registro`. Panel `/dashboard`: `mensajes`, `cuenta` (todos); `favoritos` (cliente); `perfil`, `servicios`, `servicios/nuevo`, `servicios/:id/editar`, `catalogo`, `suscripcion`, `agenda`, `agenda/ajustes` (proveedor); `citas` (cliente). `/auth/google` = vuelta del login real de Google. `/dashboard/mensajes/:id` va fuera del layout del panel.
+Públicas: `/`, `/explorar` (tres pestañas: servicios, productos, negocios; `/buscar` redirige. `&vista=mapa` cambia de la lista al mapa — la lista es la vista por defecto — y en mapa se ocultan los filtros que el endpoint no honra: provincia, municipio, precio, tipo de precio y orden), `/profesionales`, `/planes`, `/servicio/:id`, `/proveedor/:id`, `/login`, `/registro`. Panel `/dashboard`: `mensajes`, `cuenta` (todos); `favoritos` (cliente); `perfil`, `servicios`, `servicios/nuevo`, `servicios/:id/editar`, `catalogo`, `suscripcion`, `agenda`, `agenda/ajustes` (proveedor); `citas` (cliente). `/auth/google` = vuelta del login real de Google. `/dashboard/mensajes/:id` va fuera del layout del panel.
 
 ## Reglas de negocio (con test)
 
