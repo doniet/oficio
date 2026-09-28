@@ -39,6 +39,7 @@
     "@types/react": "~19.2.2",
     "jest": "~29.7.0",
     "jest-expo": "~57.0.5",
+    "sharp": "^0.35.5",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -48,7 +49,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "iconos": "node scripts/generar-iconos.mjs"
   },
   "private": true
 }

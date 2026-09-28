@@ -13,7 +13,7 @@ if (process.env.REQUIRE_PUSH === '1' && !existsSync(googleServicesFile)) {
 }
 
 const config: ExpoConfig = {
-  name: 'Oficios Cuba',
+  name: 'Encuentrauno',
   slug: 'oficios-cuba',
   scheme: 'oficio',
   version: '0.1.0',
@@ -25,7 +25,7 @@ const config: ExpoConfig = {
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
-      backgroundColor: '#c8472b',
+      backgroundColor: '#FAF6EF',
     },
     package: 'com.dardoit.oficios',
     ...(existsSync(googleServicesFile) ? { googleServicesFile } : {}),
@@ -34,11 +34,12 @@ const config: ExpoConfig = {
   ios: { bundleIdentifier: 'com.dardoit.oficios' },
   plugins: [
     'expo-router',
+    ['expo-splash-screen', { image: './assets/images/splash-icon.png', backgroundColor: '#FAF6EF', imageWidth: 200 }],
     'expo-secure-store',
     // Firma de release con la llave de Oficios Cuba (ver plugins/firma-release.js).
     './plugins/firma-release',
     // Android pinta el icono de la notificación solo con su canal alfa: blanco sobre transparente.
-    ['expo-notifications', { defaultChannel: 'mensajes', icon: './assets/images/notification-icon.png', color: '#c8472b' }],
+    ['expo-notifications', { defaultChannel: 'mensajes', icon: './assets/images/notification-icon.png', color: '#FF7A00' }],
   ],
   experiments: { typedRoutes: true },
 };
