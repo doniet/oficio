@@ -6,12 +6,12 @@ import { brand, fuentes, ink, paper, sand } from '../lib/tema';
 
 const ICONO = require('../../assets/images/icon.png');
 
-/** Logo de la web: el cuadro terracota con la casa y la estrella + "Oficios" en tinta y "Cuba" en brand. */
+/** Logo de la web: la lupa con el 1 + "Encuentra" en tinta y "uno" en brand. */
 export function Logo() {
   return (
-    <View style={s.logo} accessibilityRole="header" accessibilityLabel="Oficios Cuba">
+    <View style={s.logo} accessibilityRole="header" accessibilityLabel="Encuentrauno">
       <Image source={ICONO} style={s.icono} contentFit="cover" />
-      <Text style={s.nombre}>Oficios<Text style={{ color: brand[500] }}>Cuba</Text></Text>
+      <Text style={s.nombre}>Encuentra<Text style={{ color: brand[500] }}>uno</Text></Text>
     </View>
   );
 }
@@ -21,7 +21,7 @@ export function Cabecera() {
   const { usuario, cargando } = useSesion();
   return (
     <View style={s.cabecera}>
-      <Pressable onPress={() => router.navigate('/')} accessibilityRole="link" accessibilityLabel="Oficios Cuba, inicio" hitSlop={6}>
+      <Pressable onPress={() => router.navigate('/')} accessibilityRole="link" accessibilityLabel="Encuentrauno, inicio" hitSlop={6}>
         <Logo />
       </Pressable>
       {!usuario && !cargando ? (

@@ -12,13 +12,14 @@ export function Logo({ light = false, className = '' }: { light?: boolean; class
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
       <svg viewBox="0 0 40 40" className="h-9 w-9 shrink-0" aria-hidden="true">
-        <rect width="40" height="40" rx="11" fill="#C8472B" />
-        <path d="M8 20.5 20 10l12 10.5" fill="none" stroke="#FAF6EF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M12 19v11.5h16V19" fill="none" stroke="#FAF6EF" strokeWidth="3" strokeLinejoin="round" />
-        <path d="m20 20.2 1.5 3 3.3.5-2.4 2.3.6 3.3-3-1.6-3 1.6.6-3.3-2.4-2.3 3.3-.5z" fill="#F2B33D" />
+        <g fill="none" stroke="#FF7A00" strokeLinecap="round">
+          <circle cx="17" cy="17" r="11.5" strokeWidth="5" />
+          <path d="M25.6 25.6 34.3 34.3" strokeWidth="6" />
+          <path d="M13.4 14.2 17.6 10.6V23.4" strokeWidth="4.6" strokeLinejoin="round" />
+        </g>
       </svg>
       <span className={cn('font-display text-[1.2rem] font-bold leading-none tracking-tight', light ? 'text-white' : 'text-ink-900')}>
-        Oficios<span className="text-brand-500">Cuba</span>
+        Encuentra<span className="text-brand-500">uno</span>
       </span>
     </span>
   );
