@@ -125,17 +125,20 @@ router.get('/', asyncHandler(async (req, res) => {
     where += ` AND EXISTS (SELECT 1 FROM services s
       LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
       WHERE s.provider_id = pp.id AND s.is_active = 1`;
-    if (termino) where += ' AND (s.title LIKE ? OR s.description LIKE ? OR c.name LIKE ? OR parent.name LIKE ?)';
+    // pp.business_name igual que services.ts:109 — el nombre del negocio es un término válido
+    // en la lista, y sin él aquí el mismo término vacía el mapa al cambiar de vista.
+    if (termino) where += ' AND (s.title LIKE ? OR s.description LIKE ? OR c.name LIKE ? OR parent.name LIKE ? OR pp.business_name LIKE ?)';
     where += ')';
-    if (termino) params.push(termino, termino, termino, termino);
+    if (termino) params.push(termino, termino, termino, termino, termino);
   }
   if (tab === 'productos') {
     // `catalog_items` NO tiene `is_active`: la visibilidad es `available` más el tope del plan.
     where += ` AND EXISTS (SELECT 1 FROM catalog_items ci
       WHERE ci.provider_id = pp.id AND ci.available = 1 AND ${CON_CATALOGO_SQL}`;
-    if (termino) where += ' AND (ci.name LIKE ? OR ci.description LIKE ? OR ci.section LIKE ?)';
+    // pp.business_name igual que catalog.ts:78 (/catalog/search, la que usa la pestaña Productos).
+    if (termino) where += ' AND (ci.name LIKE ? OR ci.description LIKE ? OR ci.section LIKE ? OR pp.business_name LIKE ?)';
     where += ')';
-    if (termino) params.push(termino, termino, termino);
+    if (termino) params.push(termino, termino, termino, termino);
   }
   if (category) {
     where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id

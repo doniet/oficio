@@ -275,10 +275,12 @@ export default function ProviderProfile() {
                   <p className="mb-3 flex items-start gap-2 text-ink-700"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" aria-hidden="true" /> {[provider.address, place].filter(Boolean).join(', ')}</p>
                 )}
                 {provider.lat != null && provider.lng != null && (
+                  // El borde/recorte del mapa vive DENTRO de PlaceMap, alrededor solo del
+                  // MapContainer: PlaceMap también pinta una leyenda debajo cuando la ubicación es
+                  // aproximada, y si el borde se pusiera aquí (envolviendo a PlaceMap entero) esa
+                  // leyenda quedaría dibujada dentro de la caja del mapa en vez de debajo.
                   <Suspense fallback={<div className="skeleton h-56 w-full rounded-2xl" />}>
-                    <div className="relative z-0 overflow-hidden rounded-2xl border border-sand-200">
-                      <PlaceMap lat={provider.lat} lng={provider.lng} label={name} precision={isOwnProfile ? ownPrecision : undefined} />
-                    </div>
+                    <PlaceMap lat={provider.lat} lng={provider.lng} label={name} precision={isOwnProfile ? ownPrecision : undefined} />
                   </Suspense>
                 )}
               </section>

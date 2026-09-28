@@ -96,15 +96,22 @@ const LNG_TERCERA_REDONDA = Math.round(LNG_TERCERO / CELDA_ZONA) * CELDA_ZONA;
 const BBOX_TERCER_VALOR = `${LAT_TERCERO - 0.05},${LNG_TERCERO - 0.05},${LAT_TERCERO + 0.05},${LNG_TERCERO + 0.05}`;
 // Nunca debe salir, tenga o no coordenadas válidas.
 const LAT_OCULTO = 19.5, LNG_OCULTO = -84.5;
+// Para la prueba de paridad de q en Servicios (más abajo): sembrado aquí, en beforeAll, y no
+// dentro del propio `it`, para que TOTAL_VISIBLES lo cuente desde el principio sin depender del
+// orden de declaración de las pruebas (con --sequence.shuffle, o con una prueba de conteo añadida
+// después, un sembrado a mitad de suite rompía TOTAL_VISIBLES sin que nada lo avisara).
+const LAT_PROGRESO = 21.3, LNG_PROGRESO = -78.3;
+const TERMINO_SERVICIO = 'Destornillador'; // no aparece en el nombre del negocio ni en el del dueño
 
 let ID_NEGOCIO_A: string;
 let ID_NEGOCIO_B: string;
 let ID_NEGOCIO_SIN_PLAN: string;
 let ID_PERFIL_ZONA: string;
 let ID_PERFIL_TERCERO: string;
-// Los cinco perfiles con show_on_map = 1 y un oficio activo: la suma de "1 + detras" de la
+let ID_PROGRESO: string;
+// Los seis perfiles con show_on_map = 1 y un oficio activo: la suma de "1 + detras" de la
 // pestaña por defecto (servicios) sobre toda Cuba tiene que dar este número.
-const TOTAL_VISIBLES = 5;
+const TOTAL_VISIBLES = 6;
 
 // Todo perfil sembrado lleva un oficio activo (default tab='servicios' lo exige): así, salvo en
 // el caso de show_on_map=0, ningún filtro además de privacidad decide si aparece o no.
@@ -156,6 +163,18 @@ beforeAll(async () => {
   db.prepare("UPDATE provider_profiles SET map_precision = 'aproximada' WHERE id = ?").run(tercero.providerId);
   db.pragma('ignore_check_constraints = OFF');
   ID_PERFIL_TERCERO = tercero.providerId!;
+
+  // Perfil para la paridad de q en Servicios: nombre de negocio que NO contiene TERMINO_SERVICIO,
+  // con un oficio cuyo título sí lo contiene.
+  const progreso = await registrar('provider');
+  const perfilProgreso = await api.put('/api/providers/me/profile').set(progreso.auth).send({
+    business_name: 'Taller El Progreso', province_id: provinciaId(), contact_mode: 'whatsapp',
+    lat: LAT_PROGRESO, lng: LNG_PROGRESO, show_on_map: true,
+  });
+  expect(perfilProgreso.status).toBe(200);
+  const servicioProgreso = await crearServicio(progreso.auth, { title: `Afilado de ${TERMINO_SERVICIO}` });
+  expect(servicioProgreso.status).toBe(201);
+  ID_PROGRESO = progreso.providerId!;
 
   // Con coordenadas y un oficio activo como cualquier otro: si algo que no sea show_on_map lo
   // excluyera, este perfil igual desaparecería y la prueba de abajo no probaría nada.
@@ -296,30 +315,29 @@ describe('GET /api/mapa', () => {
   });
 
   // ─── q busca lo mismo que la lista de esa pestaña ──────────────────────────────────────────
-  it('en tab=servicios, q busca el título del oficio, no solo los campos del perfil', async () => {
-    const LAT = 21.3, LNG = -78.3;
-    const pro = await registrar('provider');
-    const perfil = await api.put('/api/providers/me/profile').set(pro.auth).send({
-      business_name: 'Taller El Progreso', province_id: provinciaId(), contact_mode: 'whatsapp',
-      lat: LAT, lng: LNG, show_on_map: true,
-    });
-    expect(perfil.status).toBe(200);
+  it('en tab=servicios, q busca el título del oficio y también el nombre del negocio', async () => {
+    const bbox = `${LAT_PROGRESO - 0.05},${LNG_PROGRESO - 0.05},${LAT_PROGRESO + 0.05},${LNG_PROGRESO + 0.05}`;
     // 'Destornillador' no aparece en el nombre del negocio ni en el de su dueño: con el buscador
     // viejo (que miraba pp.business_name/pp.description/u.full_name) esto no encontraba nada.
-    const TERMINO = 'Destornillador';
-    const s = await crearServicio(pro.auth, { title: `Afilado de ${TERMINO}` });
-    expect(s.status).toBe(201);
+    const porTitulo = await request(app).get(`/api/mapa?bbox=${bbox}&tab=servicios&q=${TERMINO_SERVICIO}`);
+    expect(porTitulo.body.puntos.map((p: any) => p.id)).toContain(ID_PROGRESO);
 
-    const bbox = `${LAT - 0.05},${LNG - 0.05},${LAT + 0.05},${LNG + 0.05}`;
-    const r = await request(app).get(`/api/mapa?bbox=${bbox}&tab=servicios&q=${TERMINO}`);
-    expect(r.body.puntos.map((p: any) => p.id)).toContain(pro.providerId);
+    // 'Progreso' sí está en el nombre del negocio: services.ts:109 (la lista de Servicios) lo
+    // busca ahí también, así que pasar de la lista al mapa con este término no puede vaciarlo.
+    const porNegocio = await request(app).get(`/api/mapa?bbox=${bbox}&tab=servicios&q=Progreso`);
+    expect(porNegocio.body.puntos.map((p: any) => p.id)).toContain(ID_PROGRESO);
   });
 
-  it('en tab=productos, q busca el nombre del artículo del catálogo, no el nombre del negocio', async () => {
-    // 'Manguera' no aparece en 'Negocio Prueba Básico': con el buscador viejo esto vaciaba el mapa.
+  it('en tab=productos, q busca el nombre del artículo del catálogo y también el nombre del negocio', async () => {
     const bbox = `${LAT_B - 0.05},${LNG_B - 0.05},${LAT_B + 0.05},${LNG_B + 0.05}`;
-    const r = await request(app).get(`/api/mapa?bbox=${bbox}&tab=productos&q=Manguera`);
-    expect(r.body.puntos.map((p: any) => p.id)).toContain(ID_NEGOCIO_B);
+    // 'Manguera' no aparece en 'Negocio Prueba Básico': con el buscador viejo esto vaciaba el mapa.
+    const porArticulo = await request(app).get(`/api/mapa?bbox=${bbox}&tab=productos&q=Manguera`);
+    expect(porArticulo.body.puntos.map((p: any) => p.id)).toContain(ID_NEGOCIO_B);
+
+    // 'Básico' sí está en el nombre del negocio: catalog.ts:78 (/catalog/search, la que usa la
+    // pestaña Productos) lo busca ahí también.
+    const porNegocio = await request(app).get(`/api/mapa?bbox=${bbox}&tab=productos&q=Básico`);
+    expect(porNegocio.body.puntos.map((p: any) => p.id)).toContain(ID_NEGOCIO_B);
   });
 
   it('en tab=negocios, q sigue buscando en los campos del perfil: ahí no hay un "servicio que coincide" que mostrar', async () => {
