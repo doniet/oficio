@@ -349,3 +349,33 @@
   subir cada vez que cambie el dibujo.
 - Blockers: la APK 0.2.0 sigue sin compilar (ver la entrada anterior): SSH a j-u denegado por la ACL
   del tailnet, y vps2 no tiene toolchain ni espacio.
+
+## 2026-09-28 22:10 UTC — claude-code (vps2) — Municipios reales y base poblada para ver el mapa
+- Changes: **las coordenadas de los 168 municipios eran inventadas.** `seed.ts` las repartía en
+  espiral de ángulo áureo alrededor de la capital provincial (radio hasta 21 km); verificado
+  recalculando la fórmula contra producción, **13 de 13** municipios de La Habana coinciden al
+  noveno decimal. Por eso Habana Vieja, Playa, 10 de Octubre y Cotorro salían en el estrecho de
+  Florida y Trinidad a 80 km de Trinidad. Un negocio en la capital de su provincia caía bien por
+  casualidad: es el índice 0 de la espiral, el único punto real. Ahora salen de Wikidata (Q558330)
+  y viven en `municipios-coords.ts`, porque `oficio_api` no tiene salida a internet. Nueve no
+  casaron por nombre y se resolvieron uno a uno («Lajas» = Santa Isabel de las Lajas, «Mella» =
+  Julio Antonio Mella, dos San Luis, la Isla de la Juventud que no es municipio en Wikidata).
+  **Migración 12**; no toca `provider_profiles`. `seed-mapa` cuelga ahora cada perfil del centro de
+  SU municipio con ±900 m en vez de ±33 km desde la capital, y pone `municipality_id`, dirección y
+  nombres creíbles. Su guardia pasa de `NODE_ENV` a `DEMO_MODE`, que protege más. Los dos negocios
+  que Dariel vio mar adentro (Clima Frío Express, Brillo Total) reciben punto propio geocodificado.
+  Diseño completo en `docs/superpowers/specs/2026-09-28-ubicacion-aproximada-design.md`.
+- Tests: pass — backend **165/165**, web 19/19, app 44/44, typechecks. Nuevos: que ningún municipio
+  conserve el punto de la espiral, que todos caigan dentro de Cuba, y que ningún perfil sembrado se
+  aleje más de 900 m del centro de su municipio — que es lo que impide volver al mar.
+- Security: N/A. Sin cambios de red, auth ni exposición. `show_on_map` sigue en `DEFAULT 0`.
+  Respaldo con `.backup()` antes de migrar (`data/respaldo-antes-migracion12-*.db`) y migración
+  probada antes contra una copia de la base real, borrada tras usarla.
+- Next: verificado contra producción — 312 perfiles visibles (252 exactos, 60 de zona), 16
+  provincias, **cero** al norte de la costa habanera, y los seis puntos más expuestos
+  reverse-geocodifican a direcciones reales (Alamar, Antonio Guiteras, Santa Cruz del Norte),
+  incluido uno con la coordenada ya redondeada. `/api/mapa` sobre La Habana devuelve 29 puntos con
+  126 perfiles detrás de los `+N`: por fin hay densidad para ver el agrupamiento.
+- Blockers: los `+N` siguen siendo decorativos (esos 126 son inalcanzables) — lo arregla la entrega
+  de ubicación aproximada, cuya spec está aprobada y pendiente de plan. APK 0.2.0 pendiente de que
+  Dariel apruebe los pasos en la sesión de j-u.
