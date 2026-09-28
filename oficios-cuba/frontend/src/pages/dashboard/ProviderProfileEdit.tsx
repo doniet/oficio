@@ -409,6 +409,11 @@ export default function ProviderProfileEdit() {
           <Field label="Dirección (opcional)" htmlFor="addr" hint="Solo si atiendes en un local. No pongas tu dirección particular si trabajas a domicilio.">
             <input id="addr" value={form.address} onChange={(e) => set('address', e.target.value)} maxLength={200} className="input" />
           </Field>
+          {Boolean(point) && form.show_on_map && form.map_precision !== 'exacta' && (
+            <Alert tone="error">
+              <strong>Esta dirección se publica tal cual la escribas.</strong> Elegir «Solo mi zona» más abajo protege el punto del mapa, pero no este texto: si aquí pusiste tu casa, tu casa queda publicada igual. Para no publicar ninguna dirección, deja el campo vacío.
+            </Alert>
+          )}
           <div>
             <p className="label">Punto en el mapa (opcional)</p>
             <MapPointPicker value={point} onChange={setPoint} fallbackCenter={fallbackCenter} />
@@ -442,8 +447,8 @@ export default function ProviderProfileEdit() {
               ) : (
                 <p className="hint">
                   {form.map_precision === 'zona'
-                    ? 'Se publica un punto dentro de una zona de un kilómetro, nunca tu casa exacta. Es lo recomendado si trabajas desde tu hogar.'
-                    : 'Se publica el punto exacto que marcaste arriba. Úsalo solo si tienes un local al que los clientes pueden llegar; si trabajas desde tu casa, elige "Solo mi zona".'}
+                    ? 'Se publica un punto dentro de una zona de un kilómetro: ese punto nunca cae justo en tu casa. Esto protege solo el punto del mapa — la dirección que escribas arriba, si la escribes, se publica tal cual. Es lo recomendado si trabajas desde tu hogar y no pones tu dirección particular.'
+                    : 'Se publica el punto exacto que marcaste arriba. Úsalo solo si tienes un local al que los clientes pueden llegar; si trabajas desde tu casa, elige "Solo mi zona" y no pongas tu dirección particular en el campo de arriba.'}
                 </p>
               )}
             </fieldset>

@@ -6,7 +6,7 @@ import { useTasa } from '../hooks/useTasa';
 import { useAuth } from '../hooks/useAuth';
 import { providerApi, reviewApi, apiError } from '../services/api';
 import { memberSince, priceFrom } from '../lib/format';
-import type { Pagination, ProviderPublic, ProviderServiceItem, Review, ServiceArea } from '../types';
+import type { MyProviderProfile, Pagination, ProviderPublic, ProviderServiceItem, Review, ServiceArea } from '../types';
 import ContactActions from '../components/ContactActions';
 import ProviderCatalog from '../components/catalog/ProviderCatalog';
 import { NegocioChip } from '../components/cards';
@@ -14,6 +14,11 @@ import { RatingBreakdown, ReviewItem } from '../components/ReviewList';
 import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, Spinner } from '../components/ui';
 
 const PlaceMap = lazy(() => import('../components/PlaceMap'));
+
+type MapPrecision = 'exacta' | 'zona';
+
+/** `types/index.ts` no declara este campo todavía (mismo hueco que en ProviderProfileEdit.tsx): se amplía aquí. */
+type MiPerfilConPrecision = MyProviderProfile & { map_precision?: MapPrecision | null };
 
 function ServiceRow({ service }: { service: ProviderServiceItem }) {
   const tasa = useTasa();
@@ -96,10 +101,18 @@ export default function ProviderProfile() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState('');
   const [myProviderId, setMyProviderId] = useState<string | null>(null);
+  // El endpoint público (`GET /providers/:id`) no manda `map_precision` a propósito: exponerlo
+  // dejaría distinguir qué profesionales pidieron ocultarse. Solo lo sabemos cuando quien mira
+  // es el propio dueño (este fetch autenticado ya se lo cuenta desde su panel).
+  const [ownPrecision, setOwnPrecision] = useState<MapPrecision | null>(null);
 
   useEffect(() => {
     if (user?.user_type !== 'provider') return;
-    providerApi.getMyProfile().then((r) => setMyProviderId(r.data.provider.id)).catch(() => {});
+    providerApi.getMyProfile().then((r) => {
+      const prof: MiPerfilConPrecision = r.data.provider;
+      setMyProviderId(prof.id);
+      setOwnPrecision(prof.map_precision ?? null);
+    }).catch(() => {});
   }, [user]);
 
   const load = useCallback(async () => {
@@ -264,7 +277,7 @@ export default function ProviderProfile() {
                 {provider.lat != null && provider.lng != null && (
                   <Suspense fallback={<div className="skeleton h-56 w-full rounded-2xl" />}>
                     <div className="relative z-0 overflow-hidden rounded-2xl border border-sand-200">
-                      <PlaceMap lat={provider.lat} lng={provider.lng} label={name} />
+                      <PlaceMap lat={provider.lat} lng={provider.lng} label={name} precision={isOwnProfile ? ownPrecision : undefined} />
                     </div>
                   </Suspense>
                 )}
