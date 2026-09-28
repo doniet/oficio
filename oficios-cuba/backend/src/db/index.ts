@@ -635,6 +635,14 @@ export const CON_NEGOCIO_SQL = "pp.subscription_plan IN ('pro', 'premium')";
 // plan permite (`hidden_by_plan`). `catalog_items` no tiene `is_active`.
 export const CON_CATALOGO_SQL = "pp.subscription_plan IN ('basic', 'pro', 'premium') AND ci.hidden_by_plan = 0";
 
+// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil. La usan
+// PUBLIC_COLUMNS en providers.ts (listado y detalle) y el resumen del mapa (pestaña Negocios),
+// para que ninguno de los dos invente una segunda forma de sacar la categoría principal.
+export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
+     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
+     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3))`;
+
 export function planDelPerfil(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   return planDe(row?.subscription_plan);

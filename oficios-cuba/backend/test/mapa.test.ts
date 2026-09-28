@@ -61,25 +61,43 @@ function provinciaId() {
   return (db.prepare('SELECT id FROM provinces LIMIT 1').get() as { id: string }).id;
 }
 
+const CELDA_ZONA = 0.01; // debe coincidir con la del servidor (routes/mapa.ts)
+
 const CUBA_ENTERA = '19,-85.5,24,-73.5';
 const UNA_CIUDAD = '23,-82.5,23.2,-82.3';
 const NOMBRE_DEL_OCULTO = 'Perfil Oculto De Prueba Mapa';
 
-// Dos negocios (pro y premium) en la MISMA celda de la vista de Cuba entera (celda = 1°).
+// Dos negocios en la MISMA celda de la vista de Cuba entera (celda = 1°), con planes que de
+// verdad compiten en PLAN_WEIGHT_SQL (pro=2, basic=1 — a diferencia de pro/premium, que empatan
+// en 2 y no probarían nada). Se dejan como kind='negocio' a propósito: CON_NEGOCIO_SQL solo se
+// aplica cuando tab==='negocios', así que en la pestaña por defecto (servicios) el de plan básico
+// sigue visible y la competencia de planes es real.
 const LAT_A = 20.1, LNG_A = -77.1;
 const LAT_B = 20.2, LNG_B = -77.2;
 // Un negocio que bajó a Gratis: sigue en el mapa general, pero no en la pestaña Negocios.
 const LAT_SIN_PLAN = 22.5, LNG_SIN_PLAN = -79.5;
-// Precisión de zona: se sirve redondeado, sin dejar de filtrarse por la coordenada exacta.
+// Precisión de zona: se sirve redondeado, y la presencia también depende de lo redondeado.
 const LAT_EXACTA = 23.137856, LNG_EXACTA = -82.383754;
+const LAT_REDONDA = Math.round(LAT_EXACTA / CELDA_ZONA) * CELDA_ZONA;
+const LNG_REDONDA = Math.round(LNG_EXACTA / CELDA_ZONA) * CELDA_ZONA;
 const BBOX_DEL_PERFIL_ZONA = `${LAT_EXACTA - 0.05},${LNG_EXACTA - 0.05},${LAT_EXACTA + 0.05},${LNG_EXACTA + 0.05}`;
+// Un rectángulo minúsculo alrededor de la coordenada EXACTA que, a propósito, NO contiene la
+// coordenada redondeada (0,0005° de radio: incluso inflado un 50 % por conMargen se queda corto
+// para alcanzar los ~0,002-0,004° que separan LAT_EXACTA/LNG_EXACTA de su redondeo). Es la
+// prueba central del arreglo: si el filtro todavía mirara pp.lat/pp.lng en vez de lo servido,
+// el perfil aparecería aquí y se podría localizar por bisección.
+const BBOX_ZONA_SIN_REDONDA = `${LAT_EXACTA - 0.0005},${LNG_EXACTA - 0.0005},${LAT_EXACTA + 0.0005},${LNG_EXACTA + 0.0005}`;
 // Un valor de `map_precision` que no es ni 'exacta' ni 'zona' (se cuela por fuera del CHECK,
 // como podría hacerlo un dato viejo o una migración futura mal escrita).
 const LAT_TERCERO = 21.654321, LNG_TERCERO = -80.123456;
+const LAT_TERCERA_REDONDA = Math.round(LAT_TERCERO / CELDA_ZONA) * CELDA_ZONA;
+const LNG_TERCERA_REDONDA = Math.round(LNG_TERCERO / CELDA_ZONA) * CELDA_ZONA;
 const BBOX_TERCER_VALOR = `${LAT_TERCERO - 0.05},${LNG_TERCERO - 0.05},${LAT_TERCERO + 0.05},${LNG_TERCERO + 0.05}`;
 // Nunca debe salir, tenga o no coordenadas válidas.
 const LAT_OCULTO = 19.5, LNG_OCULTO = -84.5;
 
+let ID_NEGOCIO_A: string;
+let ID_NEGOCIO_B: string;
 let ID_NEGOCIO_SIN_PLAN: string;
 let ID_PERFIL_ZONA: string;
 let ID_PERFIL_TERCERO: string;
@@ -87,8 +105,10 @@ let ID_PERFIL_TERCERO: string;
 // pestaña por defecto (servicios) sobre toda Cuba tiene que dar este número.
 const TOTAL_VISIBLES = 5;
 
+// Todo perfil sembrado lleva un oficio activo (default tab='servicios' lo exige): así, salvo en
+// el caso de show_on_map=0, ningún filtro además de privacidad decide si aparece o no.
 async function crearProveedorConMapa(opts: {
-  nombre: string; lat: number; lng: number; showOnMap: boolean; kind?: 'oficio' | 'negocio'; conServicio?: boolean;
+  nombre: string; lat: number; lng: number; showOnMap: boolean; kind?: 'oficio' | 'negocio';
 }) {
   const pro = await registrar('provider');
   if (opts.kind === 'negocio') ponerPlan(pro.providerId!, 'pro'); // el plan Profesional es requisito para guardar kind='negocio'
@@ -97,23 +117,21 @@ async function crearProveedorConMapa(opts: {
     kind: opts.kind ?? 'oficio', lat: opts.lat, lng: opts.lng, show_on_map: opts.showOnMap,
   });
   expect(res.status).toBe(200);
-  if (opts.conServicio !== false) {
-    const s = await crearServicio(pro.auth);
-    expect(s.status).toBe(201);
-  }
+  const s = await crearServicio(pro.auth);
+  expect(s.status).toBe(201);
   return pro;
 }
 
 beforeAll(async () => {
   const a = await crearProveedorConMapa({ nombre: 'Negocio Prueba Pro', lat: LAT_A, lng: LNG_A, showOnMap: true, kind: 'negocio' });
+  ID_NEGOCIO_A = a.providerId!; // ya queda en plan 'pro' (ver crearProveedorConMapa)
 
-  const b = await crearProveedorConMapa({ nombre: 'Negocio Prueba Premium', lat: LAT_B, lng: LNG_B, showOnMap: true, kind: 'negocio' });
-  // 'premium' ya no se vende, pero el CHECK lo sigue permitiendo (bases viejas): ponerPlan() no
-  // lo tipa porque no es una opción nueva, así que se escribe directo.
-  db.prepare("UPDATE provider_profiles SET subscription_plan = 'premium' WHERE id = ?").run(b.providerId);
+  const b = await crearProveedorConMapa({ nombre: 'Negocio Prueba Básico', lat: LAT_B, lng: LNG_B, showOnMap: true, kind: 'negocio' });
+  ponerPlan(b.providerId!, 'basic'); // se registró Profesional para poder marcar kind='negocio', y luego bajó a Básico
+  ID_NEGOCIO_B = b.providerId!;
 
   const sinPlan = await crearProveedorConMapa({ nombre: 'Negocio Bajado De Plan', lat: LAT_SIN_PLAN, lng: LNG_SIN_PLAN, showOnMap: true, kind: 'negocio' });
-  ponerPlan(sinPlan.providerId!, 'free'); // se registró Profesional para poder marcar kind='negocio', y luego bajó
+  ponerPlan(sinPlan.providerId!, 'free'); // bajó hasta Gratis: tampoco cuenta como negocio
   ID_NEGOCIO_SIN_PLAN = sinPlan.providerId!;
 
   const zona = await crearProveedorConMapa({ nombre: 'Perfil Precision Zona', lat: LAT_EXACTA, lng: LNG_EXACTA, showOnMap: true });
@@ -128,7 +146,9 @@ beforeAll(async () => {
   db.pragma('ignore_check_constraints = OFF');
   ID_PERFIL_TERCERO = tercero.providerId!;
 
-  await crearProveedorConMapa({ nombre: NOMBRE_DEL_OCULTO, lat: LAT_OCULTO, lng: LNG_OCULTO, showOnMap: false, conServicio: false });
+  // Con coordenadas y un oficio activo como cualquier otro: si algo que no sea show_on_map lo
+  // excluyera, este perfil igual desaparecería y la prueba de abajo no probaría nada.
+  await crearProveedorConMapa({ nombre: NOMBRE_DEL_OCULTO, lat: LAT_OCULTO, lng: LNG_OCULTO, showOnMap: false });
 });
 
 describe('GET /api/mapa', () => {
@@ -142,12 +162,22 @@ describe('GET /api/mapa', () => {
     expect(r.status).toBe(400);
   });
 
+  it('un tab que no es una cadena (?tab[x]=1) también da 400, no cae en servicios en silencio', async () => {
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab[x]=1`);
+    expect(r.status).toBe(400);
+  });
+
   it('devuelve un solo punto por celda y es el de mejor plan', async () => {
-    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab=negocios`);
+    // Tab por defecto (servicios): a propósito, no tab=negocios — ahí CON_NEGOCIO_SQL solo deja
+    // pasar pro/premium, que empatan en PLAN_WEIGHT_SQL y no probarían que gana "el mejor plan".
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}`);
     expect(r.status).toBe(200);
     const celdas = r.body.puntos.map((p: any) => `${Math.trunc(p.lat / r.body.celda)}:${Math.trunc(p.lng / r.body.celda)}`);
     expect(new Set(celdas).size).toBe(celdas.length);
-    expect(r.body.puntos[0].plan).toBe('pro');
+    expect(r.body.puntos.length).toBeGreaterThan(1); // para que la unicidad de arriba no sea trivial
+    const ids = r.body.puntos.map((p: any) => p.id);
+    expect(ids).toContain(ID_NEGOCIO_A); // pro (peso 2) le gana a básico (peso 1) en la misma celda
+    expect(ids).not.toContain(ID_NEGOCIO_B);
   });
 
   it('detras cuenta los que quedaron en la celda', async () => {
@@ -167,13 +197,25 @@ describe('GET /api/mapa', () => {
     expect(r.body.puntos).toHaveLength(0);
   });
 
-  it('map_precision = zona redondea al servir y no filtra por la redondeada', async () => {
+  it('map_precision = zona: sale redondeado cuando el rectángulo contiene la coordenada redondeada', async () => {
     const r = await request(app).get(`/api/mapa?bbox=${BBOX_DEL_PERFIL_ZONA}`);
     const p = r.body.puntos.find((x: any) => x.id === ID_PERFIL_ZONA);
     expect(p).toBeDefined();
     // Redondeado a celda de ~1 km (0,01°): los decimales finos desaparecen.
-    expect(p.lat).toBeCloseTo(Math.round(LAT_EXACTA / 0.01) * 0.01, 6);
+    expect(p.lat).toBeCloseTo(LAT_REDONDA, 6);
+    expect(p.lng).toBeCloseTo(LNG_REDONDA, 6);
     expect(p.lat).not.toBe(LAT_EXACTA);
+    expect(p.lng).not.toBe(LNG_EXACTA);
+  });
+
+  // El corazón del arreglo de esta ronda: antes se filtraba por pp.lat/pp.lng (lo guardado) y
+  // solo se redondeaba al servir, así que un rectángulo minúsculo alrededor de la coordenada
+  // EXACTA (que no llega a cubrir la redondeada) igual encontraba el perfil — eso es un oráculo
+  // de bisección sobre la casa real de alguien que pidió precisión de zona. Ahora la presencia
+  // depende de la coordenada SERVIDA, así que este rectángulo no debe encontrar nada.
+  it('map_precision = zona: no se puede localizar por bisección alrededor de la coordenada exacta', async () => {
+    const r = await request(app).get(`/api/mapa?bbox=${BBOX_ZONA_SIN_REDONDA}`);
+    expect(r.body.puntos.map((p: any) => p.id)).not.toContain(ID_PERFIL_ZONA);
   });
 
   // Más allá de lo que pide el brief: un valor de map_precision que no es 'exacta' ni 'zona'
@@ -182,8 +224,10 @@ describe('GET /api/mapa', () => {
     const r = await request(app).get(`/api/mapa?bbox=${BBOX_TERCER_VALOR}`);
     const p = r.body.puntos.find((x: any) => x.id === ID_PERFIL_TERCERO);
     expect(p).toBeDefined();
-    expect(p.lat).toBeCloseTo(Math.round(LAT_TERCERO / 0.01) * 0.01, 6);
+    expect(p.lat).toBeCloseTo(LAT_TERCERA_REDONDA, 6);
+    expect(p.lng).toBeCloseTo(LNG_TERCERA_REDONDA, 6);
     expect(p.lat).not.toBe(LAT_TERCERO);
+    expect(p.lng).not.toBe(LNG_TERCERO);
   });
 
   it('un perfil que bajó de plan no sale en tab=negocios', async () => {

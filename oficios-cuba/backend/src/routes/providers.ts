@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { CON_NEGOCIO_SQL, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -31,13 +31,6 @@ const providerProfileSchema = z.object({
   years_experience: z.number().int().min(0).max(70).optional(),
   service_area_ids: z.array(z.string().uuid()).max(60).optional(),
 });
-
-// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil. Compartida con
-// el resumen del mapa (pestaña Negocios) para que los dos digan la misma categoría principal.
-export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
-     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
-     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3))`;
 
 const PUBLIC_COLUMNS = `
   pp.id, pp.business_name, pp.description, pp.province_id, pp.municipality_id, pp.years_experience,

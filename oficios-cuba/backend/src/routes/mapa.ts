@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import db, { CON_CATALOGO_SQL, CON_NEGOCIO_SQL, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { queryTextos } from '../lib/entrada.js';
-import { CATEGORIAS_SQL } from './providers.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
 
 const router = Router();
@@ -12,31 +11,52 @@ const TOPE = 200;
 const CELDA_ZONA = 0.01;
 const PESTANAS = ['servicios', 'productos', 'negocios'] as const;
 
-// El servicio activo mejor clasificado de un perfil: el mismo criterio (el más antiguo) que usa
-// la portada del perfil en PUBLIC_COLUMNS de providers.ts, para no inventar un segundo orden.
+// Una sola definición de «la coordenada que se publica», en SQL, para que la presencia de un
+// perfil dependa de lo mismo que se sirve. Antes se filtraba por pp.lat/pp.lng (lo guardado) y
+// se redondeaba después, en JS: eso deja un oráculo — con un rectángulo del tamaño que se quiera
+// (leerBbox no impone mínimo) se puede localizar por bisección la casa exacta de un perfil
+// `zona`, con solo mirar si aparece o no. Dirección segura a propósito: lo que no sea
+// exactamente 'exacta' se redondea, así que un valor inesperado degrada la precisión en vez de
+// publicar la casa de alguien.
+const LAT_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lat ELSE ROUND(pp.lat / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+const LNG_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lng ELSE ROUND(pp.lng / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+
+// Los tres `db.prepare` de abajo se compilan una sola vez, en el primer uso, y se reusan después
+// (better-sqlite3 no cachea por su cuenta: sin esto, resumenDe() recompilaría el SQL hasta 200
+// veces por petición). No se preparan al cargar el módulo: este archivo se importa antes de que
+// initDatabase() cree las tablas (app.ts → index.ts arrancan en ese orden), así que un
+// `db.prepare` a nivel de módulo rompería el arranque con «no such table».
+let stmtServicio: ReturnType<typeof db.prepare> | null = null;
+let stmtProductos: ReturnType<typeof db.prepare> | null = null;
+let stmtNegocio: ReturnType<typeof db.prepare> | null = null;
+
+// El servicio activo más reciente de un perfil: uno recién publicado es el más probable de
+// seguir vigente. Desempate por id para que dos peticiones iguales den siempre el mismo resumen.
 function resumenServicio(providerId: string) {
-  const s = db.prepare(`
+  stmtServicio ??= db.prepare(`
     SELECT title, price_min, price_max, price_type, price_currency FROM services
-    WHERE provider_id = ? AND is_active = 1 ORDER BY created_at LIMIT 1
-  `).get(providerId) as
+    WHERE provider_id = ? AND is_active = 1 ORDER BY created_at DESC, id LIMIT 1
+  `);
+  const s = stmtServicio.get(providerId) as
     { title: string; price_min: number | null; price_max: number | null; price_type: string; price_currency: string } | undefined;
   if (!s) return null;
   return { titulo: s.title, precio_min: s.price_min, precio_max: s.price_max, price_type: s.price_type, price_currency: s.price_currency };
 }
 
 function resumenProductos(providerId: string) {
-  const { n } = db.prepare(`
+  stmtProductos ??= db.prepare(`
     SELECT COUNT(*) AS n FROM catalog_items ci JOIN provider_profiles pp ON ci.provider_id = pp.id
     WHERE ci.provider_id = ? AND ci.available = 1 AND ${CON_CATALOGO_SQL}
-  `).get(providerId) as { n: number };
+  `);
+  const { n } = stmtProductos.get(providerId) as { n: number };
   return { articulos: n };
 }
 
-// La categoría principal de un negocio: se reusa el SQL de categorías de PUBLIC_COLUMNS
-// (providers.ts) en vez de escribir otra forma de sacarla — la misma pregunta, la misma respuesta.
+// La categoría principal de un negocio: se reusa CATEGORIAS_SQL de db/index.ts (la misma que
+// arma PUBLIC_COLUMNS en providers.ts) en vez de escribir otra forma de sacarla.
 function resumenNegocio(providerId: string) {
-  const row = db.prepare(`SELECT ${CATEGORIAS_SQL} AS categorias FROM provider_profiles pp WHERE pp.id = ?`)
-    .get(providerId) as { categorias: string | null } | undefined;
+  stmtNegocio ??= db.prepare(`SELECT ${CATEGORIAS_SQL} AS categorias FROM provider_profiles pp WHERE pp.id = ?`);
+  const row = stmtNegocio.get(providerId) as { categorias: string | null } | undefined;
   let categorias: string[] = [];
   try { categorias = JSON.parse(row?.categorias || '[]'); } catch { categorias = []; }
   return { categoria: categorias[0] ?? null };
@@ -49,6 +69,11 @@ function resumenDe(providerId: string, tab: string) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
+  // Un tab que no sea una cadena (p. ej. ?tab[x]=1) no puede caer en el valor por defecto en
+  // silencio: es justo el filtro que separa negocios de oficios, y la spec pide fallar, no adivinar.
+  if (req.query.tab !== undefined && typeof req.query.tab !== 'string') {
+    throw new AppError('Pestaña no válida', 400);
+  }
   const { tab = 'servicios', q, category } = queryTextos(req.query, ['tab', 'q', 'category'] as const);
   if (!PESTANAS.includes(tab as (typeof PESTANAS)[number])) {
     throw new AppError('Pestaña no válida', 400);
@@ -57,12 +82,19 @@ router.get('/', asyncHandler(async (req, res) => {
   const celda = tamanoCelda(visible);
   const pedido = conMargen(visible);
 
-  // Se filtra por la coordenada EXACTA y se redondea al servir. Al contrario, un perfil con
-  // precisión de zona desaparecería del borde del rectángulo según el redondeo.
+  // El BETWEEN crudo (sobre lo guardado) va primero y con holgura de una celda de zona: es
+  // indexable por idx_pp_geo y acota, pero NO decide. Quien decide es el filtro siguiente, sobre
+  // la coordenada SERVIDA — el redondeo mueve un punto como mucho media celda, así que una celda
+  // entera de holgura siempre alcanza para no perder a nadie que el filtro preciso sí deba incluir.
+  const HOLGURA = CELDA_ZONA;
   let where = `WHERE pp.is_active = 1 AND pp.show_on_map = 1
     AND pp.lat IS NOT NULL AND pp.lng IS NOT NULL
-    AND pp.lat BETWEEN ? AND ? AND pp.lng BETWEEN ? AND ?`;
-  const params: unknown[] = [pedido.sur, pedido.norte, pedido.oeste, pedido.este];
+    AND pp.lat BETWEEN ? AND ? AND pp.lng BETWEEN ? AND ?
+    AND ${LAT_SERVIDA} BETWEEN ? AND ? AND ${LNG_SERVIDA} BETWEEN ? AND ?`;
+  const params: unknown[] = [
+    pedido.sur - HOLGURA, pedido.norte + HOLGURA, pedido.oeste - HOLGURA, pedido.este + HOLGURA,
+    pedido.sur, pedido.norte, pedido.oeste, pedido.este,
+  ];
 
   if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
   if (tab === 'servicios') {
@@ -89,9 +121,9 @@ router.get('/', asyncHandler(async (req, res) => {
   const orden = `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC, pp.id`;
   const filas = db.prepare(`
     WITH visibles AS (
-      SELECT pp.id, pp.kind, pp.subscription_plan, pp.lat, pp.lng, pp.map_precision,
+      SELECT pp.id, pp.kind, pp.subscription_plan, ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng,
              pp.business_name, pp.rating, pp.review_count, u.full_name AS owner_name,
-             CAST(pp.lat / ? AS INT) AS cy, CAST(pp.lng / ? AS INT) AS cx
+             CAST(${LAT_SERVIDA} / ? AS INT) AS cy, CAST(${LNG_SERVIDA} / ? AS INT) AS cx
         FROM provider_profiles pp JOIN users u ON pp.user_id = u.id
       ${where}
     ), rankeadas AS (
@@ -107,11 +139,8 @@ router.get('/', asyncHandler(async (req, res) => {
     id: f.id,
     tipo: f.kind as 'oficio' | 'negocio',
     nombre: f.business_name || f.owner_name,
-    // Al revés de lo intuitivo a propósito: si `map_precision` no es exactamente 'exacta' (un
-    // valor futuro, un NULL, cualquier cosa que se cuele), se redondea. Así lo peor que puede
-    // pasar es publicar un punto menos útil, nunca la casa exacta de alguien que pidió zona.
-    lat: f.map_precision === 'exacta' ? f.lat : Math.round(f.lat / CELDA_ZONA) * CELDA_ZONA,
-    lng: f.map_precision === 'exacta' ? f.lng : Math.round(f.lng / CELDA_ZONA) * CELDA_ZONA,
+    lat: f.lat,
+    lng: f.lng,
     plan: f.subscription_plan === 'premium' ? 'pro' : f.subscription_plan,
     detras: f.en_celda - 1,
     resumen: resumenDe(f.id, tab),
