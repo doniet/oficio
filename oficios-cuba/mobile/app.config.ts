@@ -16,7 +16,7 @@ const config: ExpoConfig = {
   name: 'Encuentrauno',
   slug: 'oficios-cuba',
   scheme: 'oficio',
-  version: '0.1.0',
+  version: '0.1.1',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   icon: './assets/images/icon.png',
@@ -28,8 +28,23 @@ const config: ExpoConfig = {
       backgroundColor: '#FAF6EF',
     },
     package: 'com.dardoit.oficios',
+    // Android solo instala encima si sube: cada APK publicado lleva uno mayor que el anterior.
+    versionCode: 2,
     ...(existsSync(googleServicesFile) ? { googleServicesFile } : {}),
     permissions: ['POST_NOTIFICATIONS'],
+    // Permisos que Expo y sus módulos añaden por defecto y la app no usa. El antivirus de Huawei (Avast)
+    // marcó el APK 0.1.0 como virus: SYSTEM_ALERT_WINDOW (dibujar sobre otras apps) y arrancar con el
+    // teléfono son el patrón de los troyanos bancarios. SecureStore va sin biometría y no hay avisos
+    // locales programados que reponer al reiniciar (solo push remoto).
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+      'android.permission.USE_BIOMETRIC',
+      'android.permission.USE_FINGERPRINT',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+      'com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE',
+    ],
   },
   ios: { bundleIdentifier: 'com.dardoit.oficios' },
   plugins: [
