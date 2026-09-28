@@ -115,6 +115,9 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
   const onCerrarRef = useRef(onCerrar);
   puntoRef.current = punto;
   onCerrarRef.current = onCerrar;
+  // Solo para decidir cuándo pedir la ficha completa (ver más abajo): la hoja empieza asomada,
+  // así que la primera vez que se abre un punto no debe disparar la petición todavía.
+  const [indiceActual, setIndiceActual] = useState(-1);
 
   // Al abrir un punto (o cambiar a otro con la hoja ya abierta) vuelve siempre a "asomada",
   // igual que en la web. Cuando punto pasa a null se cierra (arrastre, X, fondo o Atrás ya
@@ -149,9 +152,13 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
       ref={sheetRef}
       index={-1}
       snapPoints={PUNTOS_ANCLAJE}
+      // Con snapPoints explícitos y el "dynamic sizing" (activado por defecto) puesto, la
+      // librería espera a medir el contenido y puede insertar un tercer anclaje por su cuenta —
+      // rompería el supuesto de este archivo de que el índice 0 es "asomada" y el 1 "abierta".
+      enableDynamicSizing={false}
       enablePanDownToClose
       onClose={() => onCerrarRef.current()}
-      onChange={(indice) => onCambiaIndice?.(indice)}
+      onChange={(indice) => { setIndiceActual(indice); onCambiaIndice?.(indice); }}
       backdropComponent={renderBackdrop}
       backgroundStyle={e.fondo}
       handleIndicatorStyle={e.asa}
@@ -179,8 +186,14 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
               <Text style={u.enlace}>Ver perfil completo</Text>
             </Pressable>
 
-            <View style={e.separador} />
-            <FichaCompleta punto={punto} />
+            {/* La ficha completa se pide a la API solo al desplegar (igual que en la web): a
+                "asomada" ya alcanza con el resumen y el enlace de arriba. */}
+            {indiceActual === 1 ? (
+              <>
+                <View style={e.separador} />
+                <FichaCompleta punto={punto} />
+              </>
+            ) : null}
           </>
         ) : null}
       </BottomSheetScrollView>
