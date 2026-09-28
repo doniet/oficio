@@ -114,7 +114,7 @@ export function SeccionApp() {
           </div>
 
           <div className="hidden justify-center md:flex" aria-hidden="true">
-            <img src="/app-icono.png" alt="" width={160} height={160} className="h-40 w-40 rotate-3 rounded-[2.25rem] shadow-lift ring-1 ring-white/10" />
+            <img src="/app-icono.png?v=2" alt="" width={160} height={160} className="h-40 w-40 rotate-3 rounded-[2.25rem] shadow-lift ring-1 ring-white/10" />
           </div>
         </div>
       </div>
