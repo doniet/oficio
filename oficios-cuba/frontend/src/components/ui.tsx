@@ -8,15 +8,27 @@ export function cn(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
 }
 
+/** El mismo pin de `mobile/assets/marca/glifo.svg`, que es de donde salen los iconos de la app:
+ *  mismas coordenadas y mismos colores, para que cualquier desvío entre los dos salte a la vista.
+ *  Aquí va sin sombra (a 36 px solo ensucia) y con el viewBox ceñido al dibujo. */
 export function Logo({ light = false, className = '' }: { light?: boolean; className?: string }) {
+  // Dos Logo en la misma página (cabecera y pie) no pueden repetir el id del degradado.
+  // useId() los devuelve con dos puntos («:r0:»), que en un url(#…) no todos los navegadores resuelven.
+  const gradiente = `marca${useId().replace(/:/g, '')}`;
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <svg viewBox="0 0 40 40" className="h-9 w-9 shrink-0" aria-hidden="true">
-        <g fill="none" stroke="#FF7A00" strokeLinecap="round">
-          <circle cx="17" cy="17" r="11.5" strokeWidth="5" />
-          <path d="M25.6 25.6 34.3 34.3" strokeWidth="6" />
-          <path d="M13.4 14.2 17.6 10.6V23.4" strokeWidth="4.6" strokeLinejoin="round" />
+      <svg viewBox="21 19 61 61" className="h-9 w-9 shrink-0" aria-hidden="true">
+        <defs>
+          <linearGradient id={gradiente} x1="0" y1="20" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#FF9A3A" />
+            <stop offset="1" stopColor="#F26A00" />
+          </linearGradient>
+        </defs>
+        <g transform="rotate(-45 49 47)">
+          <path d="M49 19 C64.5 19 77 31.5 77 47 C77 60 68 70 58 82 L49 94 L40 82 C30 70 21 60 21 47 C21 31.5 33.5 19 49 19 Z" fill={`url(#${gradiente})`} />
         </g>
+        <circle cx="49" cy="47" r="19" fill="#FFFFFF" />
+        <path d="M44 41 L50.5 37 V57.5" fill="none" stroke="#F26A00" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <span className={cn('font-display text-[1.2rem] font-bold leading-none tracking-tight', light ? 'text-white' : 'text-ink-900')}>
         Encuentra<span className="text-brand-500">uno</span>
