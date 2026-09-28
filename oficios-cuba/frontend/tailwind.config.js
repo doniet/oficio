@@ -7,11 +7,12 @@ export default {
         // Naranja Encuentrauno: la marca. Ojo con el contraste — ver el comentario de abajo.
         brand: {
           50: '#FFF4EA', 100: '#FFE6CC', 200: '#FFCB99', 300: '#FFAD5C', 400: '#FF922E',
-          500: '#FF7A00', 600: '#C25A00', 700: '#B85400', 800: '#8F4200', 900: '#6B3200',
+          500: '#FF7A00', 600: '#B85400', 700: '#9A4600', 800: '#7C3800', 900: '#5E2A00',
         },
         // brand-500 es el naranja del logo: vale para fondos, iconos e ilustraciones, pero con
-        // texto blanco encima da 2,6:1 y WCAG AA pide 4,5:1. Los botones rellenos y los enlaces
-        // usan brand-700 (4,9:1). Sobre naranja vivo, el texto va en ink-950.
+        // texto blanco encima da 2,6:1 y WCAG AA pide 4,5:1. Por eso la escala salta de golpe a
+        // brand-600 (#B85400, 4,9:1 con blanco): es el tono de todo lo que lleva texto encima
+        // (.btn-primary, insignias, burbujas del chat) y no hace falta tocar cada sitio.
         // Azul tinta: texto, cabeceras y superficies oscuras.
         ink: {
           50: '#F4F6FA', 100: '#E6EAF2', 200: '#CBD2E1', 300: '#A3AEC6', 400: '#7885A3',

@@ -17,7 +17,7 @@
 - Comentarios solo para el **porqué** no obvio, nunca para el qué.
 - Commits en español, descriptivos. Terminan con:
   `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
-- **`brand-500` (`#FF7A00`) nunca lleva texto blanco encima**: da 2,6:1 y WCAG AA pide 4,5:1. Botones rellenos y enlaces usan `brand-700` (`#B85400`, 4,9:1). Sobre naranja vivo, el texto va en `ink-950`.
+- **`brand-500` (`#FF7A00`) nunca lleva texto blanco encima**: da 2,6:1 y WCAG AA pide 4,5:1. Todo lo que lleva texto blanco encima usa **`brand-600` (`#B85400`, 4,9:1)**, que es donde la escala salta a propósito. Sobre naranja vivo, el texto va en `ink-950`.
 - **No se tocan** `slug`, `scheme`, `package` (`com.dardoit.oficios`) ni `bundleIdentifier` de Expo: romperían la actualización del APK instalado.
 - **No se renombra** la carpeta `oficios-cuba/`, el paquete `@oficio/shared` ni los contenedores.
 - Verificación del backend: `npm test` y `npm run typecheck` en `backend/`.

@@ -1,7 +1,7 @@
 // Escalas copiadas de oficios-cuba/frontend/tailwind.config.js: la app usa la misma paleta que la web.
 export const brand = {
   50: '#FFF4EA', 100: '#FFE6CC', 200: '#FFCB99', 300: '#FFAD5C', 400: '#FF922E',
-  500: '#FF7A00', 600: '#C25A00', 700: '#B85400', 800: '#8F4200', 900: '#6B3200',
+  500: '#FF7A00', 600: '#B85400', 700: '#9A4600', 800: '#7C3800', 900: '#5E2A00',
 } as const;
 export const ink = {
   50: '#F4F6FA', 100: '#E6EAF2', 200: '#CBD2E1', 300: '#A3AEC6', 400: '#7885A3',
@@ -21,7 +21,7 @@ export const whatsapp = '#1FA855';
 export const colores = {
   fondo: paper, superficie: '#ffffff', borde: sand[200], bordeFuerte: sand[300],
   tinta: ink[900], tintaSuave: ink[500], tintaTenue: ink[400],
-  acento: brand[700], acentoTexto: '#ffffff', mar: sea[600], error: '#b42318',
+  acento: brand[600], acentoTexto: '#ffffff', mar: sea[600], error: '#b42318',
 };
 
 export const fuentes = {
