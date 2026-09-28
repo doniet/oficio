@@ -240,3 +240,53 @@
 - Security: sin cambios de red, de auth, del túnel ni del `.env`. Aislamiento verificado tras el deploy: `oficio_api` **sin** salida a internet (`EAI_AGAIN`) y `oficio_notifier` **con** salida (Telegram 200).
 - Next: (1) **republicar el APK** — no se hizo aquí porque la llave de firma vive en j-u (`~/.claude/.oficio-firma/`), así que toca `cd oficios-cuba/mobile && ./scripts/apk-release.sh && ./scripts/publicar-apk.sh` desde allí; hasta entonces los teléfonos siguen con los iconos viejos. (2) **push a `github.com/doniet/oficio`**: 17 commits locales sin subir, pendiente de avisar a Doniet por ser cambio de marca. (3) Comprobación visual, ver Blockers.
 - Blockers: **sigue sin haber verificación visual en navegador**. A los dos chromium de Playwright les faltan 9 y 12 bibliotecas del sistema (no solo `libatk-1.0.so.0`: también `libatk-bridge`, `libcups`, `libasound`, `libgbm`, `libcairo`, `libX*`…), y el MCP además busca el canal `chrome` en `/opt/google/chrome`, que no existe. Se arregla con un comando que pide sudo: `sudo npx --yes playwright@latest install-deps chromium`. Mientras, la comprobación se hizo por volcado del HTML, el CSS y los chunks JS que sirve Cloudflare, más md5 de los assets de marca.
+## 2026-09-28 18:52 UTC — claude-code (vps2) — Explorar en mapa
+- Changes: **el mapa de Explorar**, con un perfil por celda priorizando el plan de pago.
+  47 archivos, +6 673/−240, 23 nuevos. *Backend*: endpoint `GET /api/mapa` — deduce el
+  tamaño de celda del rectángulo VISIBLE (`min(alto,ancho)/5`, sin parámetro `zoom`),
+  infla un 50 % por su cuenta para que un arrastre corto no deje huecos, y devuelve el
+  mejor perfil de cada celda por `PLAN_WEIGHT_SQL` con `detras` = cuántos más hay ahí.
+  Migración **11**: `map_precision` (`exacta`|`zona`, con `CHECK`) e índice `idx_pp_geo`.
+  `show_on_map` **sigue en `DEFAULT 0`**: nadie aparece sin activarlo. Cuatro constantes
+  de SQL centralizadas en `db/index.ts` (`CON_NEGOCIO_SQL`, `CON_CATALOGO_SQL`,
+  `CATEGORIAS_SQL`, `LAT_SERVIDA`/`LNG_SERVIDA`) para que ninguna ruta pueda contradecir
+  a otra. *Web*: switch lista↔mapa en `/explorar?vista=mapa` (la lista sigue siendo la
+  vista por defecto), Leaflet con teselas de OSM en chunk diferido, hoja inferior con dos
+  anclajes, Esc y Atrás. *App*: MapLibre con las mismas teselas, pestaña `buscar` →
+  `explorar`, hoja con `@gorhom/bottom-sheet` y botón físico Atrás. *Opt-in*: el panel
+  avisa cuando no apareces y pregunta la precisión al activarlo, sin escribirla nunca en
+  silencio. Sembrado de 300 perfiles sintéticos solo en desarrollo (`npm run seed:mapa`).
+- Tests: pass — backend **155/155**; frontend **17/17** (la suite del frontend **no existía**: se montó
+  vitest+jsdom en esta entrega); app **44/44** con `npx jest`; typechecks de los cuatro paquetes.
+  Diez archivos de prueba nuevos, cinco de ellos pedidos en rondas de arreglo y no en el
+  plan; dos de esos cinco encontraron bugs reales que ninguna revisión había visto.
+- Security: **el fallo más grave de la entrega lo encontró una revisión, no una prueba.**
+  El endpoint filtraba por la coordenada exacta, así que con rectángulos minúsculos se
+  podía extraer por bisección la ubicación exacta de un perfil `zona` — anulando la única
+  promesa de esa opción. Cerrado pasando la presencia a la coordenada servida, definida
+  una sola vez en SQL. Verificado ejecutando el ataque: tres víctimas en la misma celda
+  convergen al mismo intervalo de 4e-9 en torno al valor redondeado, o sea indistinguibles;
+  resolución exactamente la celda de ~1 km. Y un segundo agujero: `GET /providers/:id`
+  publicaba `lat`/`lng` en crudo — cerrado también, con un barrido de los 49 archivos del
+  backend y 28 peticiones reales con control positivo. Las dos puertas redondean a la
+  MISMA celda, así que no se pueden intersectar para bajar de 1 km. Sin cambios de red ni
+  de auth.
+- Next: (1) **desplegar con `oficio-deploy-vps2`: HAY MIGRACIÓN 11**, así que toca probarla
+  antes sobre una copia del backup, como manda esa skill. (2) **Verificación visual**, que
+  este servidor no puede hacer — ver Blockers. (3) **Republicar el APK** desde j-u; la app
+  cambia y trae una dependencia nativa nueva. (4) Dos decisiones de producto pendientes de
+  Dariel: si al elegir «solo mi zona» el campo de **dirección** debe avisar u ocultarse
+  (hoy un profesional puede publicar su calle creyendo que eligió no hacerlo), y una frase
+  ambigua en la pregunta del registro. (5) Diferido con motivo escrito en el ledger: hacer
+  `TOPE` inyectable para poder probar el desborde, y la deriva ya existente entre el
+  `ProviderPublic` de `frontend/src/types` y el de `shared/src/tipos`.
+- Blockers: **sin verificación visual**. En vps2 no arranca ningún navegador: a los dos
+  chromium de Playwright les faltan entre 9 y 12 bibliotecas del sistema y su instalación
+  pide sudo (`sudo npx --yes playwright@latest install-deps chromium`), y no hay emulador
+  Android. Lo que queda pendiendo de que alguien lo MIRE es estrecho y está enumerado por
+  los revisores: la animación y el tacto del arrastre de la hoja, que el botón «Buscar en
+  esta zona» no quede tapado durante un arrastre que expande, y si las teselas de OSM
+  cargan desde Cuba. Todo lo demás se verificó leyendo el código o con pruebas — incluidos
+  dos defectos (el mapa que no cargaba al montarse y el spinner pegado) que parecían
+  necesitar pantalla y no la necesitaban. Para la app existe la skill
+  `oficio-app-e2e-emulador`, que documenta cómo probarla de verdad en el emulador de j-u.
