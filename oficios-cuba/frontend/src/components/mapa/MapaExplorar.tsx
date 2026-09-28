@@ -147,7 +147,10 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: {
       </div>
 
       {mapa.zonaSucia && (
-        <div className="absolute bottom-3 left-1/2 z-[400] -translate-x-1/2">
+        // `bottom` lee la variable CSS que publica HojaPunto (Tarea 6) en <html>: "0px" con la
+        // hoja cerrada, y el alto que ocupa desde abajo del viewport mientras está asomada o
+        // abierta (incluso durante el arrastre). Sin esto la hoja tapa este botón.
+        <div className="absolute left-1/2 z-[400] -translate-x-1/2" style={{ bottom: 'calc(var(--hoja-punto-alto, 0px) + 1rem)' }}>
           <button type="button" onClick={mapa.buscarZona} className="btn-primary btn-sm shadow-lift">
             Buscar en esta zona
           </button>
