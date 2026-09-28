@@ -3,6 +3,7 @@ import db, { CATEGORIAS_SQL, CELDA_ZONA, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { queryTextos } from '../lib/entrada.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
+import { segunPlan } from './providers.js';
 
 const router = Router();
 
@@ -24,6 +25,26 @@ let stmtServicio: ReturnType<typeof db.prepare> | null = null;
 let stmtProductos: ReturnType<typeof db.prepare> | null = null;
 let stmtNegocio: ReturnType<typeof db.prepare> | null = null;
 
+// Una línea de precio para el marcador. Sin conversión de moneda (esa la hace shared/formato.ts,
+// pensada para las fichas del cliente y no accesible desde el backend): basta con la cifra tal
+// como se guardó — el mapa es una vista de bulto, no la ficha completa.
+function textoPrecio(s: { price_min: number | null; price_max: number | null; price_type: string; price_currency: string }) {
+  if (s.price_type === 'negotiable' || (s.price_min == null && s.price_max == null)) return 'a convenir';
+  const miles = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const cifra = (n: number) => `${miles(n)} ${s.price_currency === 'USD' ? 'USD' : 'CUP'}`;
+  const { price_min: min, price_max: max } = s;
+  const monto = min != null && max != null && max !== min ? `${cifra(min)}–${cifra(max)}` : cifra((min ?? max) as number);
+  const sufijo = s.price_type === 'hourly' ? ' / hora' : s.price_type === 'daily' ? ' / día' : '';
+  return `${monto}${sufijo}`;
+}
+
+// `resumen` es la línea que se ve en el marcador y en la ficha asomada: SIEMPRE una cadena (el
+// contrato de los cuatro tipos — shared, frontend y los dos móviles — es `resumen: string`, nunca
+// un objeto). Antes cada rama devolvía una forma distinta ({titulo,precio_min,…} / {articulos} /
+// {categoria}) y los tres consumidores la pintaban como hijo de React directo: cualquier punto
+// del mapa reventaba la página. El propio test de este archivo fija `typeof resumen === 'string'`
+// para que esto no pueda volver a desviarse sin que la suite lo note.
+
 // El servicio activo más reciente de un perfil: uno recién publicado es el más probable de
 // seguir vigente. Desempate por id para que dos peticiones iguales den siempre el mismo resumen.
 function resumenServicio(providerId: string) {
@@ -33,8 +54,8 @@ function resumenServicio(providerId: string) {
   `);
   const s = stmtServicio.get(providerId) as
     { title: string; price_min: number | null; price_max: number | null; price_type: string; price_currency: string } | undefined;
-  if (!s) return null;
-  return { titulo: s.title, precio_min: s.price_min, precio_max: s.price_max, price_type: s.price_type, price_currency: s.price_currency };
+  if (!s) return '';
+  return `${s.title} · ${textoPrecio(s)}`;
 }
 
 function resumenProductos(providerId: string) {
@@ -43,7 +64,8 @@ function resumenProductos(providerId: string) {
     WHERE ci.provider_id = ? AND ci.available = 1 AND ${CON_CATALOGO_SQL}
   `);
   const { n } = stmtProductos.get(providerId) as { n: number };
-  return { articulos: n };
+  if (!n) return '';
+  return `${n} ${n === 1 ? 'artículo' : 'artículos'}`;
 }
 
 // La categoría principal de un negocio: se reusa CATEGORIAS_SQL de db/index.ts (la misma que
@@ -53,10 +75,10 @@ function resumenNegocio(providerId: string) {
   const row = stmtNegocio.get(providerId) as { categorias: string | null } | undefined;
   let categorias: string[] = [];
   try { categorias = JSON.parse(row?.categorias || '[]'); } catch { categorias = []; }
-  return { categoria: categorias[0] ?? null };
+  return categorias[0] ?? '';
 }
 
-function resumenDe(providerId: string, tab: string) {
+function resumenDe(providerId: string, tab: string): string {
   if (tab === 'negocios') return resumenNegocio(providerId);
   if (tab === 'productos') return resumenProductos(providerId);
   return resumenServicio(providerId);
@@ -91,23 +113,38 @@ router.get('/', asyncHandler(async (req, res) => {
   ];
 
   if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
+
+  // `q` tiene que buscar lo mismo que busca la lista de esa pestaña (services.ts / catalog.ts):
+  // si no, cambiar de lista a mapa con un término escrito casi siempre vacía el mapa, porque el
+  // término coincide con un servicio o un artículo, no con el nombre del negocio. Negocios es la
+  // excepción a propósito: ahí no hay un "servicio que coincide" que mostrar, así que sí busca en
+  // los campos del propio perfil.
+  const termino = q && q.trim() ? `%${q.trim()}%` : null;
+
   if (tab === 'servicios') {
-    where += ` AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1)`;
+    where += ` AND EXISTS (SELECT 1 FROM services s
+      LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+      WHERE s.provider_id = pp.id AND s.is_active = 1`;
+    if (termino) where += ' AND (s.title LIKE ? OR s.description LIKE ? OR c.name LIKE ? OR parent.name LIKE ?)';
+    where += ')';
+    if (termino) params.push(termino, termino, termino, termino);
   }
   if (tab === 'productos') {
     // `catalog_items` NO tiene `is_active`: la visibilidad es `available` más el tope del plan.
     where += ` AND EXISTS (SELECT 1 FROM catalog_items ci
-      WHERE ci.provider_id = pp.id AND ci.available = 1 AND ${CON_CATALOGO_SQL})`;
+      WHERE ci.provider_id = pp.id AND ci.available = 1 AND ${CON_CATALOGO_SQL}`;
+    if (termino) where += ' AND (ci.name LIKE ? OR ci.description LIKE ? OR ci.section LIKE ?)';
+    where += ')';
+    if (termino) params.push(termino, termino, termino);
   }
   if (category) {
     where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
       WHERE s.is_active = 1 AND (c.id = ? OR c.slug = ? OR c.parent_id IN (SELECT id FROM categories WHERE id = ? OR slug = ?)))`;
     params.push(category, category, category, category);
   }
-  if (q && q.trim()) {
+  if (tab === 'negocios' && termino) {
     where += ' AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)';
-    const term = `%${q.trim()}%`;
-    params.push(term, term, term);
+    params.push(termino, termino, termino);
   }
 
   // Las dos CTE se aliasan `pp` a propósito: PLAN_WEIGHT_SQL lleva el prefijo `pp.` escrito
@@ -131,7 +168,13 @@ router.get('/', asyncHandler(async (req, res) => {
   const hay_mas = filas.length > TOPE;
   const puntos = filas.slice(0, TOPE).map((f) => ({
     id: f.id,
-    tipo: f.kind as 'oficio' | 'negocio',
+    // `pp.kind` a secas es el dato guardado, no lo que el plan actual permite mostrar: un negocio
+    // que bajó de plan sigue teniendo kind='negocio' en la fila hasta que alguien lo edite. El
+    // filtro de la pestaña Negocios ya usa CON_NEGOCIO_SQL (por eso no aparece ahí), pero fuera de
+    // esa pestaña la etiqueta pasaba cruda — segunPlan() es la única fuente de verdad de "qué kind
+    // se le muestra a la gente" (routes/providers.ts, listados y ficha), así que el mapa la reusa
+    // en vez de escribir una tercera forma de decidirlo.
+    tipo: segunPlan(f).kind as 'oficio' | 'negocio',
     nombre: f.business_name || f.owner_name,
     lat: f.lat,
     lng: f.lng,

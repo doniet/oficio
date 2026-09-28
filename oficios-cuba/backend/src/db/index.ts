@@ -635,13 +635,18 @@ export const CON_NEGOCIO_SQL = "pp.subscription_plan IN ('pro', 'premium')";
 // plan permite (`hidden_by_plan`). `catalog_items` no tiene `is_active`.
 export const CON_CATALOGO_SQL = "pp.subscription_plan IN ('basic', 'pro', 'premium') AND ci.hidden_by_plan = 0";
 
-// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil. La usan
-// PUBLIC_COLUMNS en providers.ts (listado y detalle) y el resumen del mapa (pestaña Negocios),
-// para que ninguno de los dos invente una segunda forma de sacar la categoría principal.
+// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil, la más usada
+// primero. La usan PUBLIC_COLUMNS en providers.ts (listado y detalle) y el resumen del mapa
+// (pestaña Negocios), para que ninguno de los dos invente una segunda forma de sacar la categoría
+// principal. GROUP BY + ORDER BY (antes faltaba: sin orden, "la categoría principal" era
+// literalmente la que SQLite devolviera primero, que puede cambiar entre dos peticiones iguales)
+// hace el resultado determinista: json_group_array agrega las filas en el orden en que llegan de
+// la subconsulta, así que el ORDER BY de dentro sí controla qué queda de primero afuera.
 export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
-     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
+     SELECT COALESCE(parent.name, c.name) AS name, COUNT(*) AS n FROM services s
      JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3))`;
+     WHERE s.provider_id = pp.id AND s.is_active = 1
+     GROUP BY COALESCE(parent.name, c.name) ORDER BY n DESC, name LIMIT 3))`;
 
 // La coordenada que se publica hacia fuera: si el perfil no es exactamente 'exacta' (incluye
 // 'zona' y cualquier valor inesperado), se redondea a una celda de ~1 km. Dirección segura a

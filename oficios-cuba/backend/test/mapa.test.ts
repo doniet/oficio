@@ -130,6 +130,16 @@ beforeAll(async () => {
   const b = await crearProveedorConMapa({ nombre: 'Negocio Prueba Básico', lat: LAT_B, lng: LNG_B, showOnMap: true, kind: 'negocio' });
   ponerPlan(b.providerId!, 'basic'); // se registró Profesional para poder marcar kind='negocio', y luego bajó a Básico
   ID_NEGOCIO_B = b.providerId!;
+  // B (el que debe PERDER por plan) queda con mejor rating que A: si alguien quitara
+  // PLAN_WEIGHT_SQL del ORDER BY, el desempate seguiría siendo determinista (B ganaría por
+  // rating) en vez de caer en pp.id — un uuid al azar que solo detectaría la regresión la mitad
+  // de las veces. Antes ambos se quedaban en rating=0/review_count=0 por defecto.
+  db.prepare('UPDATE provider_profiles SET rating = 4.8, review_count = 20 WHERE id = ?').run(b.providerId);
+  // Un artículo de catálogo sobre B (su plan Básico ya lo permite): sirve para probar el
+  // resumen y la búsqueda de la pestaña Productos sin sembrar un perfil aparte que alteraría
+  // TOTAL_VISIBLES.
+  const articulo = await api.post('/api/catalog').set(b.auth).send({ name: 'Manguera de jardín', price_type: 'fixed', price: 500 });
+  expect(articulo.status).toBe(201);
 
   const sinPlan = await crearProveedorConMapa({ nombre: 'Negocio Bajado De Plan', lat: LAT_SIN_PLAN, lng: LNG_SIN_PLAN, showOnMap: true, kind: 'negocio' });
   ponerPlan(sinPlan.providerId!, 'free'); // bajó hasta Gratis: tampoco cuenta como negocio
@@ -234,6 +244,87 @@ describe('GET /api/mapa', () => {
   it('un perfil que bajó de plan no sale en tab=negocios', async () => {
     const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab=negocios`);
     expect(r.body.puntos.map((p: any) => p.id)).not.toContain(ID_NEGOCIO_SIN_PLAN);
+  });
+
+  // ─── resumen: siempre una cadena ────────────────────────────────────────────────────────────
+  // El defecto que encontró la revisión final: resumenDe() devolvía un objeto distinto por
+  // pestaña ({titulo,precio_min,…} / {articulos} / {categoria}) y los cuatro tipos declarados
+  // (shared, frontend, los dos móviles) dicen `resumen: string`. Cualquier punto del mapa
+  // reventaba la ficha al abrirla. Esta prueba es la que evita que eso vuelva a desviarse.
+  it('resumen es siempre una cadena, nunca un objeto, en las tres pestañas', async () => {
+    for (const tab of ['servicios', 'productos', 'negocios'] as const) {
+      const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab=${tab}`);
+      expect(r.status).toBe(200);
+      expect(r.body.puntos.length).toBeGreaterThan(0); // para que "todos son string" no sea trivial sobre una lista vacía
+      for (const p of r.body.puntos) {
+        expect(typeof p.resumen).toBe('string');
+      }
+    }
+  });
+
+  it('en tab=servicios, resumen es "título · precio" del oficio activo más reciente', async () => {
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}`);
+    const p = r.body.puntos.find((x: any) => x.id === ID_NEGOCIO_A);
+    expect(p).toBeDefined();
+    // crearServicio() (helpers.ts) siembra 'Servicio de prueba' con price_type 'negotiable'.
+    expect(p.resumen).toBe('Servicio de prueba · a convenir');
+  });
+
+  it('en tab=productos, resumen cuenta los artículos visibles del catálogo', async () => {
+    const bbox = `${LAT_B - 0.05},${LNG_B - 0.05},${LAT_B + 0.05},${LNG_B + 0.05}`;
+    const r = await request(app).get(`/api/mapa?bbox=${bbox}&tab=productos`);
+    const p = r.body.puntos.find((x: any) => x.id === ID_NEGOCIO_B);
+    expect(p).toBeDefined();
+    expect(p.resumen).toBe('1 artículo');
+  });
+
+  it('en tab=negocios, resumen es la categoría principal del negocio', async () => {
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab=negocios`);
+    const p = r.body.puntos.find((x: any) => x.id === ID_NEGOCIO_A);
+    expect(p).toBeDefined();
+    expect(typeof p.resumen).toBe('string');
+    expect(p.resumen.length).toBeGreaterThan(0);
+  });
+
+  // ─── tipo: la etiqueta sigue al plan, no al dato crudo ─────────────────────────────────────
+  it('un negocio que bajó de plan aparece como "oficio" fuera de tab=negocios (la etiqueta sigue a segunPlan, no a pp.kind crudo)', async () => {
+    const bbox = `${LAT_SIN_PLAN - 0.05},${LNG_SIN_PLAN - 0.05},${LAT_SIN_PLAN + 0.05},${LNG_SIN_PLAN + 0.05}`;
+    const r = await request(app).get(`/api/mapa?bbox=${bbox}`); // tab por defecto: servicios
+    const p = r.body.puntos.find((x: any) => x.id === ID_NEGOCIO_SIN_PLAN);
+    expect(p).toBeDefined();
+    expect(p.tipo).toBe('oficio');
+  });
+
+  // ─── q busca lo mismo que la lista de esa pestaña ──────────────────────────────────────────
+  it('en tab=servicios, q busca el título del oficio, no solo los campos del perfil', async () => {
+    const LAT = 21.3, LNG = -78.3;
+    const pro = await registrar('provider');
+    const perfil = await api.put('/api/providers/me/profile').set(pro.auth).send({
+      business_name: 'Taller El Progreso', province_id: provinciaId(), contact_mode: 'whatsapp',
+      lat: LAT, lng: LNG, show_on_map: true,
+    });
+    expect(perfil.status).toBe(200);
+    // 'Destornillador' no aparece en el nombre del negocio ni en el de su dueño: con el buscador
+    // viejo (que miraba pp.business_name/pp.description/u.full_name) esto no encontraba nada.
+    const TERMINO = 'Destornillador';
+    const s = await crearServicio(pro.auth, { title: `Afilado de ${TERMINO}` });
+    expect(s.status).toBe(201);
+
+    const bbox = `${LAT - 0.05},${LNG - 0.05},${LAT + 0.05},${LNG + 0.05}`;
+    const r = await request(app).get(`/api/mapa?bbox=${bbox}&tab=servicios&q=${TERMINO}`);
+    expect(r.body.puntos.map((p: any) => p.id)).toContain(pro.providerId);
+  });
+
+  it('en tab=productos, q busca el nombre del artículo del catálogo, no el nombre del negocio', async () => {
+    // 'Manguera' no aparece en 'Negocio Prueba Básico': con el buscador viejo esto vaciaba el mapa.
+    const bbox = `${LAT_B - 0.05},${LNG_B - 0.05},${LAT_B + 0.05},${LNG_B + 0.05}`;
+    const r = await request(app).get(`/api/mapa?bbox=${bbox}&tab=productos&q=Manguera`);
+    expect(r.body.puntos.map((p: any) => p.id)).toContain(ID_NEGOCIO_B);
+  });
+
+  it('en tab=negocios, q sigue buscando en los campos del perfil: ahí no hay un "servicio que coincide" que mostrar', async () => {
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}&tab=negocios&q=Negocio Prueba Pro`);
+    expect(r.body.puntos.map((p: any) => p.id)).toContain(ID_NEGOCIO_A);
   });
 
   it('el recorte es determinista: dos peticiones iguales dan los mismos puntos', async () => {
