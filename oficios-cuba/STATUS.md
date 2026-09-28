@@ -400,3 +400,23 @@
   tiene sus librerías de sistema, pero la imagen `mcr.microsoft.com/playwright:v1.63.0-noble` ya
   está en el host y con `--network host` alcanza un servidor local. Es la vía para verificar UI aquí.
 - Blockers: ninguno nuevo. Sigue pendiente decidir el alcance del aviso de `pp.address`.
+
+## 2026-09-28 22:55 UTC — claude-code (vps2) — El plan de pago deja de ser etiqueta pública
+- Changes: el tag «Profesional» de la corona se pintaba en **diez** sitios públicos entre web y app
+  —incluidos la hoja del mapa y las tarjetas de servicio en AMBAS plataformas—, cuando «Profesional»
+  es solo uno de los tres planes de pago. Se leía como distintivo de calidad cuando únicamente
+  significa que ese negocio paga más, y el plan de alguien no es asunto de quien lo busca. Fuera las
+  diez, y fuera también los componentes (`PlanBadge` en la web; `InsigniaPlan` y la variante `plan`
+  de `Insignia` en la app) para que nadie los reintroduzca sin pensarlo. Se conserva `PlanPill`,
+  que solo sale en el panel del propio dueño. **No se toca el color del pin por plan en el mapa**:
+  eso es el ranking de pago que el producto sí quiere, no una etiqueta. Además, la miga de pan y el
+  botón de atrás del perfil decían «Profesionales», que no existe en el modelo —el sistema muestra
+  Servicios, Productos y Negocios—: ahora dicen «Explorar», que es de donde llega la gente.
+- Tests: pass — web 19/19, app 44/44, typechecks y build. Verificado mirando producción: el tag no
+  está ni en la ficha ni en las tarjetas del listado, y la miga dice «Inicio / Explorar / …».
+- Security: N/A.
+- Next: queda `/profesionales` (`pages/Providers.tsx`) como página viva pero fuera del menú
+  principal, alcanzable desde la portada y varios estados vacíos. Contradice el modelo de tres
+  pestañas; **decisión de Dariel** si se retira o se renombra.
+- Blockers: pendiente de decidir qué es una «dirección aproximada» (¿solo municipio? ¿calle sin
+  número? ¿texto propio?), que es lo que define el modelo de datos de esa opción.
