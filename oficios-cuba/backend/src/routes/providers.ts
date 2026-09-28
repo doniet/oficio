@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -206,8 +206,13 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
+  // lat/lng van por LAT_SERVIDA/LNG_SERVIDA (db/index.ts), no por pp.lat/pp.lng crudos: este
+  // endpoint es público y sin autenticar, así que un perfil `zona` tiene que salir redondeado
+  // aquí igual que en GET /api/mapa — si no, esta puerta publica la casa exacta que la otra ya
+  // protege.
   const provider = db.prepare(`
-    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario, pp.lat, pp.lng, pp.show_on_map
+    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario,
+      ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng, pp.show_on_map
     ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
   `).get(req.params.id);
   if (!provider) throw new AppError('Proveedor no encontrado', 404);

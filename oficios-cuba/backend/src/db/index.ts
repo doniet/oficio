@@ -643,6 +643,17 @@ export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
      JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
      WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3))`;
 
+// La coordenada que se publica hacia fuera: si el perfil no es exactamente 'exacta' (incluye
+// 'zona' y cualquier valor inesperado), se redondea a una celda de ~1 km. Dirección segura a
+// propósito — lo que no sea 'exacta' se degrada, nunca al revés — para que un valor inesperado en
+// map_precision no acabe publicando la casa de alguien. La usan routes/mapa.ts (el listado del
+// mapa, que además la usa para decidir qué perfil aparece, no solo qué coordenada mostrar) y
+// routes/providers.ts (GET /providers/:id): dos definiciones del mismo redondeo es el error que
+// esta entrega ya corrigió varias veces con PLAN_WEIGHT_SQL/CON_NEGOCIO_SQL/CATEGORIAS_SQL.
+export const CELDA_ZONA = 0.01;
+export const LAT_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lat ELSE ROUND(pp.lat / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+export const LNG_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lng ELSE ROUND(pp.lng / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+
 export function planDelPerfil(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;
   return planDe(row?.subscription_plan);

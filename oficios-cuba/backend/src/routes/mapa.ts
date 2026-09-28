@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import db, { CATEGORIAS_SQL, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CELDA_ZONA, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { queryTextos } from '../lib/entrada.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
@@ -7,19 +7,13 @@ import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
 const router = Router();
 
 const TOPE = 200;
-// Celda de ~1 km: es la precisión que acepta quien no quiere publicar su casa exacta.
-const CELDA_ZONA = 0.01;
 const PESTANAS = ['servicios', 'productos', 'negocios'] as const;
 
-// Una sola definición de «la coordenada que se publica», en SQL, para que la presencia de un
-// perfil dependa de lo mismo que se sirve. Antes se filtraba por pp.lat/pp.lng (lo guardado) y
-// se redondeaba después, en JS: eso deja un oráculo — con un rectángulo del tamaño que se quiera
-// (leerBbox no impone mínimo) se puede localizar por bisección la casa exacta de un perfil
-// `zona`, con solo mirar si aparece o no. Dirección segura a propósito: lo que no sea
-// exactamente 'exacta' se redondea, así que un valor inesperado degrada la precisión en vez de
-// publicar la casa de alguien.
-const LAT_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lat ELSE ROUND(pp.lat / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
-const LNG_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lng ELSE ROUND(pp.lng / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+// LAT_SERVIDA/LNG_SERVIDA (db/index.ts) son la única definición de «la coordenada que se
+// publica»: la presencia de un perfil en este listado depende de lo mismo que se sirve. Antes se
+// filtraba por pp.lat/pp.lng (lo guardado) y se redondeaba después, en JS: eso deja un oráculo —
+// con un rectángulo del tamaño que se quiera (leerBbox no impone mínimo) se puede localizar por
+// bisección la casa exacta de un perfil `zona`, con solo mirar si aparece o no.
 
 // Los tres `db.prepare` de abajo se compilan una sola vez, en el primer uso, y se reusan después
 // (better-sqlite3 no cachea por su cuenta: sin esto, resumenDe() recompilaría el SQL hasta 200
