@@ -286,7 +286,7 @@ describe('GET /api/mapa', () => {
     const p = r.body.puntos.find((x: any) => x.id === ID_NEGOCIO_A);
     expect(p).toBeDefined();
     // crearServicio() (helpers.ts) siembra 'Servicio de prueba' con price_type 'negotiable'.
-    expect(p.resumen).toBe('Servicio de prueba · a convenir');
+    expect(p.resumen).toBe('Servicio de prueba · precio acordado');
   });
 
   it('en tab=productos, resumen cuenta los artículos visibles del catálogo', async () => {

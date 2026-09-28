@@ -33,7 +33,7 @@ export function priceParts(s: Priced, tasa: number = TASA_RESPALDO) {
   const { price_min: min, price_max: max, price_type } = s;
   const currency: Currency = s.price_currency ?? 'CUP';
   if (price_type === 'negotiable' || (min == null && max == null)) {
-    return { negotiable: true, main: 'A convenir', alt: null as string | null, suffix: '', currency, hasRange: false, from: '', fromAlt: null as string | null };
+    return { negotiable: true, main: 'Precio acordado', alt: null as string | null, suffix: '', currency, hasRange: false, from: '', fromAlt: null as string | null };
   }
   const lo = (min ?? max) as number;
   const hi = max ?? min;
@@ -69,7 +69,7 @@ export function formatPrice(s: Priced, tasa?: number): string {
 /** Precio corto para tarjetas: "desde 3 000 CUP" + "≈ $4 USD". */
 export function priceFrom(s: Priced, tasa?: number) {
   const p = priceParts(s, tasa);
-  if (p.negotiable) return { prefix: '', amount: 'A convenir', suffix: '', alt: null as string | null };
+  if (p.negotiable) return { prefix: '', amount: 'Precio acordado', suffix: '', alt: null as string | null };
   return { prefix: p.hasRange ? 'desde' : '', amount: p.from, suffix: p.suffix, alt: p.fromAlt };
 }
 
@@ -82,7 +82,7 @@ export const priceTypeLabel: Record<PriceType, string> = {
   fixed: 'Precio fijo',
   hourly: 'Por hora',
   daily: 'Por día',
-  negotiable: 'A convenir',
+  negotiable: 'Precio acordado',
 };
 
 export const planLabel: Record<Plan, string> = {

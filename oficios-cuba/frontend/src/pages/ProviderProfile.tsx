@@ -207,8 +207,13 @@ export default function ProviderProfile() {
   return (
     <div className="pb-28 md:pb-10">
       <div className="relative h-40 overflow-hidden bg-sand-100 sm:h-56">
-        <CoverImage src={provider.cover} seed={provider.categories[0] ?? name} alt="" eager />
-        <div className="absolute inset-0 bg-gradient-to-t from-ink-950/60 via-ink-950/10 to-transparent" />
+        {/* absolute: sin esto la imagen ocupa el alto completo EN FLUJO y empuja al botón
+            «Profesionales» de abajo fuera de la caja, que lo recorta con overflow-hidden.
+            El botón llevaba ahí invisible; en móvil era la única forma de volver atrás. */}
+        <CoverImage src={provider.cover} seed={provider.categories[0] ?? name} alt="" eager className="absolute inset-0" />
+        {/* Sombra suave solo para dar profundidad y para que el botón «Profesionales» del móvil
+            no flote sobre una foto clara. Ya no tiene que proteger ningún texto. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-950/30 via-ink-950/5 to-ink-950/15" />
         <div className="container-page relative pt-4">
           <Link to="/profesionales" className="btn-sm inline-flex items-center gap-1 rounded-xl bg-white/90 px-3 py-1.5 font-semibold text-ink-800 shadow-sm backdrop-blur sm:hidden">
             <ArrowLeft className="h-4 w-4" /> Profesionales
@@ -217,8 +222,12 @@ export default function ProviderProfile() {
       </div>
 
       <div className="container-page">
-        <header className="relative -mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end">
-          <Avatar src={provider.avatar_url} name={name} size="xl" square className="border-4 border-paper shadow-card" />
+        {/* Solo el avatar invade la portada. Antes subía la cabecera entera, así que la miga de pan
+            y el nombre del negocio caían encima de la foto: texto oscuro (ink-900) sobre un
+            degradado que oscurece justamente para texto CLARO, y el h1 partido por el borde de la
+            imagen. El avatar sí puede pisarla porque lleva su propio borde de papel. */}
+        <header className="relative flex flex-col gap-4 sm:flex-row sm:items-start">
+          <Avatar src={provider.avatar_url} name={name} size="xl" square className="-mt-12 shrink-0 border-4 border-paper shadow-card sm:-mt-14" />
           <div className="min-w-0 flex-1 sm:pb-1">
             <div className="hidden sm:mb-2 sm:block">
               <Breadcrumbs items={[{ label: 'Inicio', to: '/' }, { label: 'Profesionales', to: '/profesionales' }, { label: name }]} />

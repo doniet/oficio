@@ -46,7 +46,7 @@ function validate(f: FormState): Errors {
   if (f.price_type !== 'negotiable') {
     const min = f.price_min === '' ? null : Number(f.price_min);
     const max = f.price_max === '' ? null : Number(f.price_max);
-    if (min == null && max == null) e.price = 'Indica al menos un precio o elige “A convenir”';
+    if (min == null && max == null) e.price = 'Indica al menos un precio o elige “Precio acordado”';
     else if ((min != null && (Number.isNaN(min) || min < 0)) || (max != null && (Number.isNaN(max) || max < 0))) e.price = 'Los precios deben ser números positivos';
     else if (min != null && max != null && max < min) e.price = 'El precio máximo no puede ser menor que el mínimo';
   }

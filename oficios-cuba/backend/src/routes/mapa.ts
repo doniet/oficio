@@ -29,7 +29,7 @@ let stmtNegocio: ReturnType<typeof db.prepare> | null = null;
 // pensada para las fichas del cliente y no accesible desde el backend): basta con la cifra tal
 // como se guardó — el mapa es una vista de bulto, no la ficha completa.
 function textoPrecio(s: { price_min: number | null; price_max: number | null; price_type: string; price_currency: string }) {
-  if (s.price_type === 'negotiable' || (s.price_min == null && s.price_max == null)) return 'a convenir';
+  if (s.price_type === 'negotiable' || (s.price_min == null && s.price_max == null)) return 'precio acordado';
   const miles = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const cifra = (n: number) => `${miles(n)} ${s.price_currency === 'USD' ? 'USD' : 'CUP'}`;
   const { price_min: min, price_max: max } = s;

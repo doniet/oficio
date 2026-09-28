@@ -21,7 +21,7 @@ function BloquePrecio({ service }: { service: ServiceDetail }) {
   const p = precioDetalle(service, tasa);
   return (
     <View>
-      {/* "A convenir" ya es la cifra: repetirlo como etiqueta encima sobra. */}
+      {/* "Precio acordado" ya es la cifra: repetirlo como etiqueta encima sobra. */}
       {service.price_type !== 'negotiable' && p.alt ? <Text style={e.tipoPrecio}>{ETIQUETA_TIPO_PRECIO[service.price_type].toUpperCase()}</Text> : null}
       <Text style={e.cifra}>
         {p.principal}
