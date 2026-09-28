@@ -13,6 +13,11 @@ import { FormSection, PlanLock } from './parts';
 
 const MAX_AREAS = 60;
 
+type MapPrecision = 'exacta' | 'zona';
+
+/** `types/index.ts` no declara este campo todavía (fuera del alcance de esta tarea): se amplía aquí. */
+type ProviderConPrecision = MyProviderProfile & { map_precision?: MapPrecision | null };
+
 interface FormState {
   business_name: string;
   description: string;
@@ -27,6 +32,9 @@ interface FormState {
   kind: ProviderKind;
   horario: string;
   show_on_map: boolean;
+  // '' a propósito cuando el mapa está apagado: así la interfaz obliga a elegir
+  // cada vez que se enciende, en vez de arrastrar el valor por defecto de la columna.
+  map_precision: MapPrecision | '';
 }
 
 const CONTACT_MODES: { value: ContactMode; label: string }[] = [
@@ -37,7 +45,7 @@ const CONTACT_MODES: { value: ContactMode; label: string }[] = [
 
 type AreaMap = Map<string, { name: string; province: string }>;
 
-function toForm(p: MyProviderProfile): FormState {
+function toForm(p: ProviderConPrecision): FormState {
   return {
     business_name: p.business_name ?? '',
     description: p.description ?? '',
@@ -52,12 +60,13 @@ function toForm(p: MyProviderProfile): FormState {
     kind: p.kind ?? 'oficio',
     horario: p.horario ?? '',
     show_on_map: Boolean(p.show_on_map),
+    map_precision: p.show_on_map && p.map_precision === 'zona' ? 'zona' : p.show_on_map ? 'exacta' : '',
   };
 }
 
 type Errors = Partial<Record<keyof FormState, string>>;
 
-function validate(f: FormState): Errors {
+function validate(f: FormState, tienePunto: boolean): Errors {
   const e: Errors = {};
   if (f.business_name.trim() && f.business_name.trim().length < 2) e.business_name = 'El nombre es muy corto';
   if (!f.province_id) e.province_id = 'Elige tu provincia';
@@ -66,6 +75,7 @@ function validate(f: FormState): Errors {
   if (!f.whatsapp.trim()) e.whatsapp = 'Pon un teléfono para que los clientes te contacten';
   else if (!/^\+?[\d\s-]{8,20}$/.test(f.whatsapp.trim())) e.whatsapp = 'Usa solo números, con el prefijo del país (ej.: +53 5 123 4567)';
   if (f.email_contact.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email_contact.trim())) e.email_contact = 'Email no válido';
+  if (tienePunto && f.show_on_map && !f.map_precision) e.map_precision = 'Elige con qué precisión se publica tu punto';
   return e;
 }
 
@@ -111,7 +121,7 @@ export default function ProviderProfileEdit() {
     setLoadError('');
     try {
       const [p, prov] = await Promise.all([providerApi.getMyProfile(), provinceApi.getAll()]);
-      const prof: MyProviderProfile = p.data.provider;
+      const prof: ProviderConPrecision = p.data.provider;
       setProfile(prof);
       setForm(toForm(prof));
       setLimits(p.data.limits);
@@ -233,7 +243,7 @@ export default function ProviderProfileEdit() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitError('');
-    const errs = validate(form);
+    const errs = validate(form, Boolean(point));
     setErrors(errs);
     if (Object.keys(errs).length) {
       document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
@@ -251,6 +261,8 @@ export default function ProviderProfileEdit() {
         lat: point?.lat,
         lng: point?.lng,
         show_on_map: Boolean(point) && form.show_on_map,
+        // Sin punto visible la precisión no se usa: no hace falta preguntar para poder guardar.
+        map_precision: form.map_precision || 'exacta',
         whatsapp: form.whatsapp.trim(),
         contact_mode: form.contact_mode,
         kind: limits.negocio ? form.kind : 'oficio',
@@ -397,6 +409,11 @@ export default function ProviderProfileEdit() {
           <Field label="Dirección (opcional)" htmlFor="addr" hint="Solo si atiendes en un local. No pongas tu dirección particular si trabajas a domicilio.">
             <input id="addr" value={form.address} onChange={(e) => set('address', e.target.value)} maxLength={200} className="input" />
           </Field>
+          {Boolean(point) && form.show_on_map && form.map_precision !== 'exacta' && (
+            <Alert tone="error">
+              <strong>Esta dirección se publica tal cual la escribas.</strong> Elegir «Solo mi zona» más abajo protege el punto del mapa, pero no este texto: si aquí pusiste tu casa, tu casa queda publicada igual. Para no publicar ninguna dirección, deja el campo vacío.
+            </Alert>
+          )}
           <div>
             <p className="label">Punto en el mapa (opcional)</p>
             <MapPointPicker value={point} onChange={setPoint} fallbackCenter={fallbackCenter} />
@@ -409,6 +426,39 @@ export default function ProviderProfileEdit() {
               <span className="block text-ink-500">Los clientes verán el punto en tu perfil. Si no lo marcas, solo se usa tu municipio.</span>
             </span>
           </label>
+
+          {Boolean(point) && form.show_on_map ? (
+            <fieldset>
+              <legend className="label">¿Con qué precisión se publica tu punto?</legend>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Precisión del punto en el mapa">
+                {([
+                  ['exacta', 'Mi punto exacto'],
+                  ['zona', 'Solo mi zona, unos 1 000 metros'],
+                ] as const).map(([value, label]) => (
+                  <button key={value} type="button" role="radio" aria-checked={form.map_precision === value}
+                    onClick={() => set('map_precision', value)}
+                    className={cn('chip justify-center', form.map_precision === value && 'chip-active')}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {errors.map_precision ? (
+                <p className="mt-1 text-xs font-medium text-red-600">{errors.map_precision}</p>
+              ) : (
+                <p className="hint">
+                  {form.map_precision === 'zona'
+                    ? 'Se publica un punto dentro de una zona de un kilómetro: ese punto nunca cae justo en tu casa. Esto protege solo el punto del mapa — la dirección que escribas arriba, si la escribes, se publica tal cual. Es lo recomendado si trabajas desde tu hogar y no pones tu dirección particular.'
+                    : 'Se publica el punto exacto que marcaste arriba. Úsalo solo si tienes un local al que los clientes pueden llegar; si trabajas desde tu casa, elige "Solo mi zona" y no pongas tu dirección particular en el campo de arriba.'}
+                </p>
+              )}
+            </fieldset>
+          ) : (
+            <Alert tone="info">
+              {point
+                ? <><strong>No apareces en el mapa.</strong> Muchos clientes buscan primero a quién tienen cerca, antes de leer perfiles uno por uno. Marca la casilla de arriba para que también te encuentren por tu zona, no solo por tu nombre o tu oficio.</>
+                : <><strong>No apareces en el mapa.</strong> Marca tu punto arriba y activa la casilla para que los clientes que buscan por zona también te encuentren.</>}
+            </Alert>
+          )}
         </FormSection>
 
         <FormSection title="Fotos del negocio" description={hasPhotos ? 'Fotos de tu local y de trabajos reales. La primera es la portada de tu perfil.' : undefined}>

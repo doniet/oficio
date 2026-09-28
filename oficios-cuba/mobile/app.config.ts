@@ -55,6 +55,10 @@ const config: ExpoConfig = {
     './plugins/firma-release',
     // Android pinta el icono de la notificación solo con su canal alfa: blanco sobre transparente.
     ['expo-notifications', { defaultChannel: 'mensajes', icon: './assets/images/notification-icon.png', color: '#FF7A00' }],
+    // Teselas raster de OpenStreetMap en el mapa de Explorar (MapaExplorar.tsx). Sin claves de API.
+    '@maplibre/maplibre-react-native',
+    // «Cerca de mí» del mapa de Explorar: ubicación puntual, nunca en segundo plano.
+    ['expo-location', { locationWhenInUsePermission: 'Encuentrauno necesita tu ubicación para mostrarte profesionales cerca de ti en el mapa.' }],
   ],
   experiments: { typedRoutes: true },
 };

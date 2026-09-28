@@ -147,6 +147,8 @@ export interface ProviderPublic extends ProviderCard {
   whatsapp?: string | null;
   telegram?: string | null;
   email_contact?: string | null;
+  /** Solo viene si el perfil es un negocio (routes/providers.ts, GET /providers/:id). */
+  horario?: string | null;
 }
 
 export interface ProviderServiceItem {
@@ -234,3 +236,17 @@ export interface PaginaServicios { services: ServiceSummary[]; pagination: Pagin
 export interface SesionUsuario { token: string; user: User }
 export type CanalPush = 'fcm';
 export interface DispositivoPush { canal: CanalPush; token: string; plataforma: 'android' | 'ios'; app_version: string }
+
+export type PuntoMapa = {
+  id: string;
+  tipo: 'oficio' | 'negocio';
+  nombre: string;
+  lat: number;
+  lng: number;
+  plan: 'pro' | 'basic' | 'free';
+  detras: number;
+  resumen: string;
+};
+
+export type MapaRespuesta = { puntos: PuntoMapa[]; celda: number; hay_mas: boolean };
+export type Bbox = { sur: number; oeste: number; norte: number; este: number };

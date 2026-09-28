@@ -35,7 +35,9 @@ describe('agenda profesional', () => {
     const body = await slots(p.providerId!, { service_id: largo });
     expect(body.duracion).toBe(120);
     expect(body.servicios[0]).toMatchObject({ id: largo, duration_min: 120 });
-    const hora = todos(body)[10];
+    // Del día siguiente, que siempre está entero: un índice sobre la lista plana empieza en «ahora»
+    // y por la tarde cae cerca de medianoche, donde ya no caben las dos horas de después.
+    const hora = body.days[1].slots[2];
     const cita = await pedir(c.auth, p.providerId!, hora, { service_id: largo });
     expect(cita.body.appointment).toMatchObject({ status: 'pending', duration_min: 120 });
     expect(Date.parse(cita.body.appointment.ends_at) - Date.parse(hora)).toBe(120 * 60_000);

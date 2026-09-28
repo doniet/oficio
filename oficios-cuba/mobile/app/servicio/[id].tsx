@@ -93,7 +93,7 @@ export default function Servicio() {
       <View style={[e.raiz, { padding: 16, paddingTop: 24 }]}>
         {noExiste ? (
           <EstadoVacio icono="search-outline" titulo="Este servicio ya no está disponible" texto="Puede que el profesional lo haya pausado o eliminado."
-            accion={<Boton titulo="Buscar otros servicios" onPress={() => router.navigate('/buscar')} />} />
+            accion={<Boton titulo="Buscar otros servicios" onPress={() => router.navigate('/explorar')} />} />
         ) : (
           <EstadoError mensaje={consulta.error instanceof ErrorApi ? consulta.error.message : 'No pudimos cargar el servicio.'} alReintentar={() => consulta.refetch()} />
         )}

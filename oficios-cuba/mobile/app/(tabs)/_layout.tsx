@@ -20,7 +20,7 @@ export default function Pestañas() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Inicio', tabBarIcon: icono('home-outline') }} />
-      <Tabs.Screen name="buscar" options={{ title: 'Buscar', tabBarIcon: icono('search-outline') }} />
+      <Tabs.Screen name="explorar" options={{ title: 'Explorar', tabBarIcon: icono('search-outline') }} />
       <Tabs.Screen name="mensajes" options={{ title: 'Mensajes', tabBarIcon: icono('chatbubble-outline') }} />
       <Tabs.Screen name="cuenta" options={{ title: 'Cuenta', tabBarIcon: icono('person-outline') }} />
     </Tabs>

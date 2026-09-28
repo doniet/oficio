@@ -17,7 +17,7 @@ import { brand, fuentes, ink, paper, sand, sombra } from '../../src/lib/tema';
 const POPULARES = ['Electricista', 'Plomero', 'Mecánico', 'Clases', 'Peluquería', 'Aire acondicionado'];
 
 const buscar = (params: { q?: string; categoria?: string; nombre?: string }) =>
-  router.navigate({ pathname: '/buscar', params: { ...params, t: String(Date.now()) } });
+  router.navigate({ pathname: '/explorar', params: { ...params, t: String(Date.now()) } });
 
 function Buscador() {
   const [q, setQ] = useState('');

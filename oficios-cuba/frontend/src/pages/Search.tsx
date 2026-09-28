@@ -1,16 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Store, Wrench, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, List, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Store, Wrench, X } from 'lucide-react';
 import { catalogApi, categoryApi, providerApi, provinceApi, serviceApi, apiError } from '../services/api';
-import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, ProviderCard as ProviderCardType, Province, ServiceSummary } from '../types';
+import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, ProviderCard as ProviderCardType, Province, PuntoMapa, ServiceSummary } from '../types';
 import { cup, plural, priceTypeLabel } from '../lib/format';
 import { ProviderCard, ProviderCardSkeleton, ServiceCard, ServiceCardSkeleton } from '../components/cards';
 import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../components/ui';
 import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
 import CatalogItemModal from '../components/catalog/CatalogItemModal';
+import HojaPunto from '../components/mapa/HojaPunto';
 
-// Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa.
+// Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa (o cambia a la vista de mapa).
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
+const MapaExplorar = lazy(() => import('../components/mapa/MapaExplorar'));
+
+// Lo único que el endpoint /api/mapa honra: el buscador de texto, la pestaña y la categoría.
+// Provincia, municipio, precio y orden no llegan al mapa (el rectángulo visible ya es la
+// ubicación) — un control que no hace nada es peor que uno ausente, misma regla de la Entrega 1.
+const FILTROS_QUE_HONRA_EL_MAPA: readonly string[] = ['category'];
 
 const SORTS = [
   { value: 'relevance', label: 'Relevancia' },
@@ -66,12 +73,16 @@ function FilterBlock({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function Filters({ categories, provinces, municipalities, get, update, onOpenMap, pestaña }: {
+function Filters({ categories, provinces, municipalities, get, update, onOpenMap, pestaña, enMapa }: {
   categories: Category[]; provinces: Province[]; municipalities: Municipality[];
   get: (k: string) => string; update: (p: Record<string, string | null>) => void; onOpenMap: () => void; pestaña: Pestaña;
+  enMapa?: boolean;
 }) {
   const conCategoria = pestaña !== 'productos';
-  const conPrecio = pestaña === 'servicios';
+  // En la vista de mapa, la ubicación es el propio rectángulo visible: mostrar también
+  // provincia/municipio invitaría a que compitan por la misma cosa.
+  const conUbicacion = !enMapa;
+  const conPrecio = pestaña === 'servicios' && !enMapa;
   return (
     <div className="space-y-5">
       {conCategoria && <FilterBlock title="Categoría">
@@ -86,7 +97,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
         </select>
       </FilterBlock>}
 
-      <FilterBlock title="Ubicación">
+      {conUbicacion && <FilterBlock title="Ubicación">
         <div className="space-y-2">
           <select className="input" value={get('province')} onChange={(e) => update({ province: e.target.value || null })} aria-label="Provincia">
             <option value="">Toda Cuba</option>
@@ -102,7 +113,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
             <MapIcon className="h-4 w-4" /> Elegir en el mapa
           </button>
         </div>
-      </FilterBlock>
+      </FilterBlock>}
 
       {conPrecio && <>
       <FilterBlock title="Precio máximo (CUP)">
@@ -230,6 +241,10 @@ export default function Search() {
   const pestaña: Pestaña = tab === 'productos' || tab === 'negocios' ? tab : 'servicios';
   const productos = pestaña === 'productos';
   const negocios = pestaña === 'negocios';
+  // Sin `vista` en la URL se ve la lista: el precio y la foto deciden un servicio, y eso el mapa
+  // no lo enseña. `vista=mapa` es explícito y sobrevive a compartir el enlace.
+  const enMapa = get('vista') === 'mapa';
+  const [puntoAbierto, setPuntoAbierto] = useState<PuntoMapa | null>(null);
   const [negs, setNegs] = useState<ProviderCardType[]>([]);
   const [negPag, setNegPag] = useState<Pagination | null>(null);
   const [prod, setProd] = useState<CatalogSearchPage | null>(null);
@@ -255,7 +270,9 @@ export default function Search() {
   }, [province]);
 
   useEffect(() => {
-    if (pestaña !== 'servicios') return;
+    // En la vista de mapa la lista no se pinta: pedirla igual sería tráfico de más en una
+    // conexión cubana lenta, justo lo que el mapa (la vista cara) ya intenta evitar.
+    if (pestaña !== 'servicios' || enMapa) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -282,7 +299,7 @@ export default function Search() {
 
   // Productos del catálogo: "Ver más" concatena páginas (no va en la URL).
   useEffect(() => {
-    if (!productos) return;
+    if (!productos || enMapa) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -295,10 +312,10 @@ export default function Search() {
       .catch((err) => alive && setError(apiError(err, 'No pudimos cargar los productos.')))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [productos, get('q'), province, get('municipality'), reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [productos, enMapa, get('q'), province, get('municipality'), reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!negocios) return;
+    if (!negocios || enMapa) return;
     let alive = true;
     setLoading(true);
     setError('');
@@ -346,7 +363,11 @@ export default function Search() {
     return slug;
   }, [categories, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filterKeys = FILTROS_POR_PESTAÑA[pestaña];
+  // En el mapa, los chips/badge/«Limpiar» solo cuentan lo que el mapa honra: lo demás no hace
+  // nada ahí, así que contarlo o dejarlo "puesto" en un chip sería engañoso.
+  const filterKeys = enMapa
+    ? FILTROS_POR_PESTAÑA[pestaña].filter((k) => FILTROS_QUE_HONRA_EL_MAPA.includes(k))
+    : FILTROS_POR_PESTAÑA[pestaña];
   // Un filtro que no aplica a la pestaña actual no se muestra ni cuenta, aunque siga en la URL.
   const puesto = (k: string) => filterKeys.includes(k) && get(k);
   const sortsDisponibles = SORTS.filter((s) => SORTS_POR_PESTAÑA[pestaña].includes(s.value));
@@ -380,7 +401,7 @@ export default function Search() {
   const title = pestaña === 'servicios'
     ? categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : TITULOS.servicios)
     : (get('q') ? `${TITULOS[pestaña]}: “${get('q')}”` : TITULOS[pestaña]);
-  const filterProps = { categories, provinces, municipalities, get, update, pestaña, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
+  const filterProps = { categories, provinces, municipalities, get, update, pestaña, enMapa, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
   const totalResultados = productos ? prod?.total : negocios ? negPag?.total : pagination?.total;
   const resultadosTexto = productos
     ? ['producto encontrado', 'productos encontrados']
@@ -404,19 +425,37 @@ export default function Search() {
           </label>
           <button type="submit" className="btn-primary px-5">Buscar</button>
         </form>
-        <div className="mt-4 inline-grid grid-cols-3 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Qué buscar">
-          {([['servicios', 'Servicios', Wrench], ['productos', 'Productos', Package], ['negocios', 'Negocios', Store]] as const).map(([valor, label, Icon]) => (
-            <button
-              key={valor}
-              type="button"
-              role="tab"
-              aria-selected={pestaña === valor}
-              onClick={() => update({ tab: valor === 'servicios' ? null : valor })}
-              className={cn('flex items-center justify-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition', pestaña === valor ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}
-            >
-              <Icon className="h-4 w-4" /> {label}
-            </button>
-          ))}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="inline-grid grid-cols-3 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Qué buscar">
+            {([['servicios', 'Servicios', Wrench], ['productos', 'Productos', Package], ['negocios', 'Negocios', Store]] as const).map(([valor, label, Icon]) => (
+              <button
+                key={valor}
+                type="button"
+                role="tab"
+                aria-selected={pestaña === valor}
+                onClick={() => update({ tab: valor === 'servicios' ? null : valor })}
+                className={cn('flex items-center justify-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition', pestaña === valor ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
+          </div>
+          {/* La lista es el valor por defecto (sin `vista` en la URL): el precio y la foto de un
+             servicio deciden, y el mapa no los enseña; también es la vista más cara de cargar. */}
+          <div className="inline-grid grid-cols-2 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Cómo ver los resultados">
+            {([['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]] as const).map(([valor, label, Icon]) => (
+              <button
+                key={valor}
+                type="button"
+                role="tab"
+                aria-selected={enMapa === (valor === 'mapa')}
+                onClick={() => update({ vista: valor === 'mapa' ? 'mapa' : null })}
+                className={cn('flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition', enMapa === (valor === 'mapa') ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -438,14 +477,16 @@ export default function Search() {
         <div className="min-w-0">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink-500" aria-live="polite">
-              {loading && totalResultados === undefined ? 'Buscando…' : totalResultados !== undefined ? plural(totalResultados, resultadosTexto[0], resultadosTexto[1]) : ''}
+              {/* El total es de la lista, que en el mapa no se pide: mostrarlo aquí describiría
+                 datos que ya no están en pantalla. */}
+              {enMapa ? '' : loading && totalResultados === undefined ? 'Buscando…' : totalResultados !== undefined ? plural(totalResultados, resultadosTexto[0], resultadosTexto[1]) : ''}
             </p>
             <div className="flex items-center gap-2">
               <button onClick={() => setFiltersOpen(true)} className="btn-secondary lg:hidden">
                 <SlidersHorizontal className="h-4 w-4" /> Filtros
                 {activeFilters > 0 && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] leading-5 text-white">{activeFilters}</span>}
               </button>
-              {pestaña !== 'productos' && <>
+              {pestaña !== 'productos' && !enMapa && <>
                 <label className="sr-only" htmlFor="sort">Ordenar por</label>
                 <select id="sort" value={sortValue} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
                   {sortsDisponibles.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -464,7 +505,13 @@ export default function Search() {
             </div>
           )}
 
-          {error ? (
+          {enMapa ? (
+            <div className="h-[70vh] min-h-[420px]">
+              <Suspense fallback={<PageLoader />}>
+                <MapaExplorar tab={pestaña} q={get('q')} category={get('category')} onAbrir={setPuntoAbierto} />
+              </Suspense>
+            </div>
+          ) : error ? (
             <ErrorState message={error} onRetry={() => setReload((n) => n + 1)} />
           ) : negocios ? (
             loading && negs.length === 0 ? (
@@ -573,6 +620,11 @@ export default function Search() {
         onApply={(p, m) => update({ province: p, municipality: negocios ? null : m })}
         soloProvincia={negocios}
       />
+
+      {/* El punto abierto lo posee esta página, no el mapa: HojaPunto se monta como hermano de
+         MapaExplorar (ver el escaneo de conflictos de la Entrega 2), y sobrevive aunque se
+         vuelva a la lista mientras se cierra la hoja. */}
+      <HojaPunto punto={puntoAbierto} onCerrar={() => setPuntoAbierto(null)} />
     </div>
   );
 }

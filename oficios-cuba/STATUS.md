@@ -247,3 +247,60 @@
 - Security: N/A (se quitan permisos; sin cambios de red ni de backend).
 - Next: publicar la 0.1.1 (`scripts/publicar-apk.sh`, OK de Dariel); reportar el falso positivo a Avast; averiguar si el Huawei tiene servicios de Google (sin GMS no hay FCM); arreglar el test de contacto del rebrand.
 - Blockers: ninguno.
+## 2026-09-28 18:52 UTC — claude-code (vps2) — Explorar en mapa
+- Changes: **el mapa de Explorar**, con un perfil por celda priorizando el plan de pago.
+  47 archivos, +6 673/−240, 23 nuevos. *Backend*: endpoint `GET /api/mapa` — deduce el
+  tamaño de celda del rectángulo VISIBLE (`min(alto,ancho)/5`, sin parámetro `zoom`),
+  infla un 50 % por su cuenta para que un arrastre corto no deje huecos, y devuelve el
+  mejor perfil de cada celda por `PLAN_WEIGHT_SQL` con `detras` = cuántos más hay ahí.
+  Migración **11**: `map_precision` (`exacta`|`zona`, con `CHECK`) e índice `idx_pp_geo`.
+  `show_on_map` **sigue en `DEFAULT 0`**: nadie aparece sin activarlo. Cuatro constantes
+  de SQL centralizadas en `db/index.ts` (`CON_NEGOCIO_SQL`, `CON_CATALOGO_SQL`,
+  `CATEGORIAS_SQL`, `LAT_SERVIDA`/`LNG_SERVIDA`) para que ninguna ruta pueda contradecir
+  a otra. *Web*: switch lista↔mapa en `/explorar?vista=mapa` (la lista sigue siendo la
+  vista por defecto), Leaflet con teselas de OSM en chunk diferido, hoja inferior con dos
+  anclajes, Esc y Atrás. *App*: MapLibre con las mismas teselas, pestaña `buscar` →
+  `explorar`, hoja con `@gorhom/bottom-sheet` y botón físico Atrás. *Opt-in*: el panel
+  avisa cuando no apareces y pregunta la precisión al activarlo, sin escribirla nunca en
+  silencio. Sembrado de 300 perfiles sintéticos solo en desarrollo (`npm run seed:mapa`).
+- Tests: pass — backend **155/155**; frontend **17/17** (la suite del frontend **no existía**: se montó
+  vitest+jsdom en esta entrega); app **44/44** con `npx jest`; typechecks de los cuatro paquetes.
+  Diez archivos de prueba nuevos, cinco de ellos pedidos en rondas de arreglo y no en el
+  plan; dos de esos cinco encontraron bugs reales que ninguna revisión había visto.
+- Security: **el fallo más grave de la entrega lo encontró una revisión, no una prueba.**
+  El endpoint filtraba por la coordenada exacta, así que con rectángulos minúsculos se
+  podía extraer por bisección la ubicación exacta de un perfil `zona` — anulando la única
+  promesa de esa opción. Cerrado pasando la presencia a la coordenada servida, definida
+  una sola vez en SQL. Verificado ejecutando el ataque: tres víctimas en la misma celda
+  convergen al mismo intervalo de 4e-9 en torno al valor redondeado, o sea indistinguibles;
+  resolución exactamente la celda de ~1 km. Y un segundo agujero: `GET /providers/:id`
+  publicaba `lat`/`lng` en crudo — cerrado también, con un barrido de los 49 archivos del
+  backend y 28 peticiones reales con control positivo. Las dos puertas redondean a la
+  MISMA celda, así que no se pueden intersectar para bajar de 1 km. Sin cambios de red ni
+  de auth.
+- Next: (1) **desplegar con `oficio-deploy-vps2`: HAY MIGRACIÓN 11**, así que toca probarla
+  antes sobre una copia del backup, como manda esa skill. (2) **Verificación visual**, que
+  este servidor no puede hacer — ver Blockers. (3) **Republicar el APK** desde j-u; la app
+  cambia y trae una dependencia nativa nueva. (4) Dos decisiones de producto pendientes de
+  Dariel: si al elegir «solo mi zona» el campo de **dirección** debe avisar u ocultarse
+  (hoy un profesional puede publicar su calle creyendo que eligió no hacerlo), y una frase
+  ambigua en la pregunta del registro. (5) Diferido con motivo escrito en el ledger: hacer
+  `TOPE` inyectable para poder probar el desborde, y la deriva ya existente entre el
+  `ProviderPublic` de `frontend/src/types` y el de `shared/src/tipos`.
+- Blockers: **sin verificación visual**. En vps2 no arranca ningún navegador: a los dos
+  chromium de Playwright les faltan entre 9 y 12 bibliotecas del sistema y su instalación
+  pide sudo (`sudo npx --yes playwright@latest install-deps chromium`), y no hay emulador
+  Android. Lo que queda pendiendo de que alguien lo MIRE es estrecho y está enumerado por
+  los revisores: la animación y el tacto del arrastre de la hoja, que el botón «Buscar en
+  esta zona» no quede tapado durante un arrastre que expande, y si las teselas de OSM
+  cargan desde Cuba. Todo lo demás se verificó leyendo el código o con pruebas — incluidos
+  dos defectos (el mapa que no cargaba al montarse y el spinner pegado) que parecían
+  necesitar pantalla y no la necesitaban. Para la app existe la skill
+  `oficio-app-e2e-emulador`, que documenta cómo probarla de verdad en el emulador de j-u.
+
+## 2026-09-28 19:58 UTC — claude-code (vps2) — Despliegue del mapa de Explorar (desde la RAMA, sin fusionar)
+- Changes: desplegado `da53c75` de la rama **`encuentrauno-2-explorar-mapa`** en `oficio.dardoit.com` — **no `master`**, a propósito: Dariel pidió ver los cambios antes de decidir la integración, así que producción corre la rama y volver atrás es reconstruir desde `master`. Build de `oficio-api` y `oficio-web`, los tres contenedores recreados con `--profile telegram`. **Migración 11 aplicada** (`map_precision` con su `CHECK`, e índice `idx_pp_geo`).
+- Tests: pass — **la migración se probó antes sobre una copia del backup real**, no solo en pruebas: `user_version` 10→11, `map_precision` con `default='exacta'`, `idx_pp_geo` creado, `integrity_check` ok, `foreign_key_check` vacío, conteos idénticos (19/13/22/0/34), las 13 filas en `'exacta'` y las 12 coordenadas intactas; la copia se borró al terminar (llevaba datos reales, permisos 600). Base real tras el deploy: exactamente lo mismo. Los tres contenedores `healthy`, notificador con `Push FCM activo` y bot conectado. Por Cloudflare: `/api/mapa` devuelve 8 puntos con celda de 1° para Cuba entera y 3 con celda de 0,03° para una ciudad (la densificación funciona), 2 en `tab=negocios`, 0 en `productos` (correcto: `catalog_items = 0` en producción); 400 para bbox fuera de Cuba, bbox invertido y `tab` inventada. **El defecto Critical está cerrado en producción: `resumen` llega como cadena en todos los puntos** («Rejas y portones a medida · a convenir»), con `tipo`, `plan` y `detras` correctos. La regresión que cerró la última ronda también: `q=Clima` da 1 punto en Servicios, donde antes daba 0. Rutas `/`, `/explorar`, `/explorar?vista=mapa`, `/buscar`, `/planes` en 200 y `/nada.js` en 404. La CSP permite `https://*.tile.openstreetmap.org`, así que las teselas cargarán. Chunks `MapaExplorar` y Leaflet servidos.
+- Security: sin cambios de red, de auth, del túnel ni del `.env`. Aislamiento verificado tras el deploy: `oficio_api` **sin** salida a internet (`EAI_AGAIN`), `oficio_notifier` **con** salida. `show_on_map` sigue en `DEFAULT 0`: la migración no puso a nadie en el mapa que no estuviera ya (los 12 que tenían `show_on_map = 1` lo tenían de antes).
+- Next: (1) **decidir la integración de la rama** — producción corre código sin fusionar, que es un estado que no conviene dejar mucho tiempo. (2) **Verificación visual**: es lo único que falta y ahora se puede hacer contra producción, abriendo `https://oficio.dardoit.com/explorar?vista=mapa` en un teléfono o un navegador. (3) **Republicar el APK** desde j-u. (4) Dos decisiones de producto pendientes: el aviso de `pp.address` para quien nunca toca el mapa, y el booleano `ubicacion_aproximada` que hoy hace que todos los pines ajenos se dibujen aproximados.
+- Blockers: ninguno para el despliegue. La verificación visual sigue sin poder hacerse **desde vps2** (no hay navegador ni emulador), pero ya no bloquea: el mapa está en producción y se puede mirar desde cualquier dispositivo.

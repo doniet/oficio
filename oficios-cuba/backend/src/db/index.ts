@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   gallery TEXT, -- JSON: fotos del negocio
   agenda TEXT, -- JSON: días y horas en que acepta citas
   show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
+  map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -399,6 +400,7 @@ CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
 CREATE INDEX IF NOT EXISTS idx_providers_province ON provider_profiles(province_id);
 CREATE INDEX IF NOT EXISTS idx_providers_active ON provider_profiles(is_active);
 CREATE INDEX IF NOT EXISTS idx_providers_subscription ON provider_profiles(subscription_plan);
+CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
 CREATE INDEX IF NOT EXISTS idx_reviews_provider ON reviews(provider_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_provider ON conversations(provider_id);
@@ -578,6 +580,14 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   (d) => {
     d.exec('ALTER TABLE services ADD COLUMN price_list TEXT');
   },
+  // 11 — precisión del punto en el mapa y su índice. `zona` redondea al servir, nunca al guardar,
+  // para que cambiar de opinión no exija volver a marcar el punto.
+  (d) => {
+    d.exec(`
+      ALTER TABLE provider_profiles ADD COLUMN map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona'));
+      CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
+    `);
+  },
 ];
 
 export const ESQUEMA_VERSION = MIGRACIONES.length;
@@ -615,6 +625,39 @@ export function initDatabase() {
 }
 
 export const PLAN_WEIGHT_SQL = "CASE pp.subscription_plan WHEN 'premium' THEN 2 WHEN 'pro' THEN 2 WHEN 'basic' THEN 1 ELSE 0 END";
+
+// El plan manda: segunPlan() muestra como oficio a quien no lo tenga incluido, así que todo SQL
+// que separe negocios de oficios tiene que decir lo mismo. Una sola definición, importada, para
+// que la lista y el mapa no puedan contradecirse.
+export const CON_NEGOCIO_SQL = "pp.subscription_plan IN ('pro', 'premium')";
+
+// Lo mismo para el catálogo: qué artículo se ve depende del plan del perfil y del tope que ese
+// plan permite (`hidden_by_plan`). `catalog_items` no tiene `is_active`.
+export const CON_CATALOGO_SQL = "pp.subscription_plan IN ('basic', 'pro', 'premium') AND ci.hidden_by_plan = 0";
+
+// Hasta 3 categorías (o su categoría padre) de los oficios activos de un perfil, la más usada
+// primero. La usan PUBLIC_COLUMNS en providers.ts (listado y detalle) y el resumen del mapa
+// (pestaña Negocios), para que ninguno de los dos invente una segunda forma de sacar la categoría
+// principal. GROUP BY + ORDER BY (antes faltaba: sin orden, "la categoría principal" era
+// literalmente la que SQLite devolviera primero, que puede cambiar entre dos peticiones iguales)
+// hace el resultado determinista: json_group_array agrega las filas en el orden en que llegan de
+// la subconsulta, así que el ORDER BY de dentro sí controla qué queda de primero afuera.
+export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
+     SELECT COALESCE(parent.name, c.name) AS name, COUNT(*) AS n FROM services s
+     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+     WHERE s.provider_id = pp.id AND s.is_active = 1
+     GROUP BY COALESCE(parent.name, c.name) ORDER BY n DESC, name LIMIT 3))`;
+
+// La coordenada que se publica hacia fuera: si el perfil no es exactamente 'exacta' (incluye
+// 'zona' y cualquier valor inesperado), se redondea a una celda de ~1 km. Dirección segura a
+// propósito — lo que no sea 'exacta' se degrada, nunca al revés — para que un valor inesperado en
+// map_precision no acabe publicando la casa de alguien. La usan routes/mapa.ts (el listado del
+// mapa, que además la usa para decidir qué perfil aparece, no solo qué coordenada mostrar) y
+// routes/providers.ts (GET /providers/:id): dos definiciones del mismo redondeo es el error que
+// esta entrega ya corrigió varias veces con PLAN_WEIGHT_SQL/CON_NEGOCIO_SQL/CATEGORIAS_SQL.
+export const CELDA_ZONA = 0.01;
+export const LAT_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lat ELSE ROUND(pp.lat / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+export const LNG_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lng ELSE ROUND(pp.lng / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
 
 export function planDelPerfil(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;

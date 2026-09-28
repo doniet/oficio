@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -26,6 +26,7 @@ const providerProfileSchema = z.object({
   horario: optionalText(120),
   gallery: z.array(z.string().max(500)).max(30).optional(),
   show_on_map: z.boolean().default(false),
+  map_precision: z.enum(['exacta', 'zona']).default('exacta'),
   telegram: optionalText(40),
   email_contact: z.preprocess(blankToUndefined, z.string().trim().email('Email de contacto no válido').optional()),
   years_experience: z.number().int().min(0).max(70).optional(),
@@ -38,10 +39,7 @@ const PUBLIC_COLUMNS = `
   p.name AS province_name, m.name AS municipality_name,
   u.full_name AS owner_name, u.avatar_url,
   (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) AS service_count,
-  (SELECT json_group_array(name) FROM (
-     SELECT DISTINCT COALESCE(parent.name, c.name) AS name FROM services s
-     JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-     WHERE s.provider_id = pp.id AND s.is_active = 1 LIMIT 3)) AS categories,
+  ${CATEGORIAS_SQL} AS categories,
   (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) AS cover_images
 `;
 
@@ -83,11 +81,8 @@ router.get('/', asyncHandler(async (req, res) => {
 
   let where = 'WHERE pp.is_active = 1';
   const params: unknown[] = [];
-  // El plan manda: segunPlan() muestra como oficio a quien no lo tenga incluido, así que el
-  // SQL tiene que decir lo mismo o un perfil que bajó de plan saldría en la pestaña equivocada.
-  const CON_NEGOCIO = "pp.subscription_plan IN ('pro', 'premium')";
-  if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO}`;
-  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO})`;
+  if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
+  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO_SQL})`;
   else if (kind) throw new AppError('Tipo de perfil no válido', 400);
   if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
   if (category) {
@@ -185,12 +180,12 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     db.prepare(`
       UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
         lat = ?, lng = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
-        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, updated_at = CURRENT_TIMESTAMP
+        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, map_precision = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
       data.lat ?? null, data.lng ?? null, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
       data.years_experience ?? 0, data.contact_mode, data.kind, data.kind === 'negocio' ? data.horario ?? null : null,
-      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, provider.id);
+      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, data.map_precision, provider.id);
 
     if (data.service_area_ids) {
       db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
@@ -211,8 +206,13 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
+  // lat/lng van por LAT_SERVIDA/LNG_SERVIDA (db/index.ts), no por pp.lat/pp.lng crudos: este
+  // endpoint es público y sin autenticar, así que un perfil `zona` tiene que salir redondeado
+  // aquí igual que en GET /api/mapa — si no, esta puerta publica la casa exacta que la otra ya
+  // protege.
   const provider = db.prepare(`
-    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario, pp.lat, pp.lng, pp.show_on_map
+    SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario,
+      ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng, pp.show_on_map
     ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
   `).get(req.params.id);
   if (!provider) throw new AppError('Proveedor no encontrado', 404);

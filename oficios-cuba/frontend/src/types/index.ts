@@ -490,3 +490,17 @@ export interface AdminTelegram {
 }
 
 export interface AdminAuditEntry { action: string; detail: string | null; ip: string | null; created_at: string; email: string | null }
+
+export type PuntoMapa = {
+  id: string;
+  tipo: 'oficio' | 'negocio';
+  nombre: string;
+  lat: number;
+  lng: number;
+  plan: 'pro' | 'basic' | 'free';
+  detras: number;
+  resumen: string;
+};
+
+export type MapaRespuesta = { puntos: PuntoMapa[]; celda: number; hay_mas: boolean };
+export type Bbox = { sur: number; oeste: number; norte: number; este: number };

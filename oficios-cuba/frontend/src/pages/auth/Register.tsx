@@ -60,7 +60,7 @@ export default function Register() {
         user_type: type,
       });
       if (type === 'provider') {
-        toast('¡Cuenta creada! Completa tu perfil para aparecer en las búsquedas.');
+        toast('¡Cuenta creada! Completa tu perfil y, si quieres, marca tu ubicación para aparecer también en el mapa.');
         navigate('/dashboard/perfil', { replace: true });
       } else {
         toast('¡Te damos la bienvenida a Encuentrauno!');
@@ -103,9 +103,18 @@ export default function Register() {
         </fieldset>
 
         {type === 'provider' && (
-          <p className="rounded-xl bg-sand-100 px-3.5 py-2.5 text-sm text-ink-600">
-            <strong className="text-ink-900">Empieza gratis:</strong> nombre, logo, descripción, dirección y teléfono. Mejora cuando quieras.
-          </p>
+          <>
+            <p className="rounded-xl bg-sand-100 px-3.5 py-2.5 text-sm text-ink-600">
+              <strong className="text-ink-900">Empieza gratis:</strong> nombre, logo, descripción, dirección y teléfono. Mejora cuando quieras.
+            </p>
+
+            <div className="rounded-xl border border-sand-200 bg-white p-3.5 text-sm">
+              <p className="font-semibold text-ink-800">Aparece en el mapa de Encuentrauno</p>
+              <p className="mt-1 text-ink-500">
+                Esto no se activa aquí: se hace después, desde tu panel, cuando marques tu ubicación. Ahí eliges cómo se ve tu punto — tu local exacto, o solo tu zona (un radio de más o menos 1 000 metros) si trabajas desde tu casa y no quieres mostrar dónde vives.
+              </p>
+            </div>
+          </>
         )}
 
         {googleMode && (

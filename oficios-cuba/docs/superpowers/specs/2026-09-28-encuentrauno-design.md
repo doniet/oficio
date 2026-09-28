@@ -339,6 +339,14 @@ Grupo nuevo en `users.notify_prefs`: `revision`.
 
 ## Entrega 3 · Mapa
 
+> **Superada por `2026-09-28-explorar-mapa-design.md`.** Se rediseñó con Dariel el
+> 2026-09-28 y se adelantó antes de la Entrega 2. Cambian cuatro cosas de lo que
+> dice esta sección: el mapa es un switch dentro de Explorar y no una página
+> aparte; `show_on_map` se queda en `DEFAULT 0` (opt-in) y **no** pasa a `DEFAULT 1`;
+> el paneo no recarga solo, saca un botón «Buscar en esta zona»; y a zoom bajo se
+> muestra un negocio real por celda con una insignia «+N» en vez de burbujas de
+> grupo. Lo que sigue se conserva como registro de lo que se pensó primero.
+
 ### 3.1 Ubicación en el registro
 
 Paso nuevo en el registro de profesional: mapa a pantalla completa reusando
