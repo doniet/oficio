@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './index.js';
+import { COORDS_MUNICIPIOS } from './municipios-coords.js';
 
 const provinces = [
   { id: uuidv4(), name: 'Pinar del Río', capital: 'Pinar del Río', lat: 22.4123, lng: -83.6919, zoom: 9 },
@@ -154,13 +155,14 @@ const categories = [
   ]},
 ];
 
-// Los municipios no traen coordenadas reales: se reparten en espiral alrededor de la
-// capital provincial para que los marcadores no se solapen y sean estables entre arranques.
-function municipalityCoords(base: { lat: number; lng: number }, index: number) {
-  if (index === 0) return { lat: base.lat, lng: base.lng };
-  const angle = index * 2.39996;
-  const radius = 0.06 + 0.035 * Math.sqrt(index);
-  return { lat: base.lat + radius * Math.sin(angle), lng: base.lng + radius * 1.2 * Math.cos(angle) };
+// Antes esto repartía los municipios en espiral alrededor de la capital provincial. Desviaba
+// hasta 29 km y dejaba media Habana en el estrecho de Florida; ahora salen de COORDS_MUNICIPIOS.
+// Si algún día se añade un municipio a la lista de arriba sin su coordenada, esto falla en vez
+// de inventarla: un punto inventado no se distingue de uno bueno hasta que alguien lo ve en el mar.
+function municipalityCoords(province: string, name: string) {
+  const c = COORDS_MUNICIPIOS[`${province}|${name}`];
+  if (!c) throw new Error(`Falta la coordenada de ${province}|${name} en municipios-coords.ts`);
+  return c;
 }
 
 export function seedBase() {
@@ -178,12 +180,11 @@ export function seedBase() {
 
     for (const { province, municipalities: names } of municipalities) {
       const provinceId = provinceIds.get(province);
-      const base = provinces.find((p) => p.name === province);
-      if (!provinceId || !base) continue;
-      names.forEach((name, index) => {
+      if (!provinceId) continue;
+      names.forEach((name) => {
         const exists = db.prepare('SELECT 1 FROM municipalities WHERE name = ? AND province_id = ?').get(name, provinceId);
         if (exists) return;
-        const { lat, lng } = municipalityCoords(base, index);
+        const { lat, lng } = municipalityCoords(province, name);
         db.prepare('INSERT INTO municipalities (id, name, province_id, lat, lng) VALUES (?, ?, ?, ?, ?)').run(uuidv4(), name, provinceId, lat, lng);
       });
     }

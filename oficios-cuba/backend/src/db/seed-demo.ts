@@ -29,6 +29,11 @@ interface DemoProvider {
   province: string;
   municipality: string;
   address: string;
+  /** Punto propio del negocio. Sin él cae en el centro del municipio, que apila a todos los
+   *  demo del mismo municipio en el mismo pin. Estos salen de geocodificar `address`: la
+   *  dirección y el punto tienen que contar lo mismo. */
+  lat?: number;
+  lng?: number;
   whatsapp: string;
   years: number;
   plan: Plan;
@@ -74,7 +79,8 @@ const providers: DemoProvider[] = [
     business_name: 'Clima Frío Express',
     description: 'Técnico en refrigeración y climatización. Instalo, limpio y reparo splits, neveras y aires de ventana. Carga de gas con equipo de medición y garantía de 3 meses.',
     province: 'La Habana', municipality: 'Playa',
-    address: '5ta Avenida y 42, Miramar', whatsapp: '+5352000012', years: 11, plan: 'pro', negocio: { horario: 'Todos los días, 8:00 a. m. – 8:00 p. m.' },
+    address: 'Calle 42, entre 1ra y 3ra, Miramar', lat: 23.1147, lng: -82.4291,
+    whatsapp: '+5352000012', years: 11, plan: 'pro', negocio: { horario: 'Todos los días, 8:00 a. m. – 8:00 p. m.' },
     services: [
       { category: 'aire-acondicionado', title: 'Instalación de split con garantía', description: 'Instalación completa de split de 1 a 2 toneladas: soporte, tubería, desagüe y puesta en marcha con prueba de presión.', price_min: 40, price_max: 80, price_currency: 'USD', price_type: 'fixed' },
       { category: 'aire-acondicionado', title: 'Mantenimiento y limpieza de aire acondicionado', description: 'Limpieza profunda de evaporador y condensador, revisión de gas y ajuste eléctrico. Tu equipo enfría más y gasta menos.', price_min: 6000, price_max: 12000, price_type: 'fixed' },
@@ -186,7 +192,8 @@ const providers: DemoProvider[] = [
     business_name: 'Brillo Total',
     description: 'Limpieza profunda de casas, apartamentos de renta y oficinas. Limpieza post-obra y de cristales.',
     province: 'La Habana', municipality: 'Habana Vieja',
-    address: 'Calle Obispo', whatsapp: '+5352000020', years: 5, plan: 'free',
+    address: 'Calle Obispo, entre Aguiar y Habana, Habana Vieja', lat: 23.1398, lng: -82.3496,
+    whatsapp: '+5352000020', years: 5, plan: 'free',
     services: [
       { category: 'limpieza-hogar', title: 'Limpieza profunda de vivienda', description: 'Cocina, baños, cristales y pisos. Ideal para rentas entre huéspedes. Llevamos los productos.', price_min: 4000, price_max: 12000, price_type: 'fixed', images: [img('limpieza-1')] },
     ],
@@ -268,7 +275,7 @@ export async function seedDemo() {
           contact_mode, kind, horario, gallery, show_on_map)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)`)
         .run(profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
-          muni?.lat ?? province.lat, muni?.lng ?? province.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
+          p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
           p.contact_mode ?? 'whatsapp', p.negocio ? 'negocio' : 'oficio', p.negocio?.horario ?? null, JSON.stringify(gallery));
 
       if (p.plan !== 'free') {

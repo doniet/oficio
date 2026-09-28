@@ -7,16 +7,27 @@ export const SEED_MAPA_PASSWORD = 'Prueba123!';
 
 const N = 300;
 
-// El 40 % vive apretado en un cuadrado de 0,3° alrededor de La Habana: a zoom de provincia
-// eso deja celdas con cinco o seis perfiles detrás, que es lo que hace visible el «+N».
+// El 40 % vive en municipios de La Habana: a zoom de provincia eso deja celdas con cinco o seis
+// perfiles detrás, que es lo que hace visible el «+N». HABANA_LAT/LNG es el centro de celda fijo
+// donde se apilan los tres de ZONA_COMPARTIDA, no el centro del reparto.
 const HABANA_LAT = 23.10;
 const HABANA_LNG = -82.38;
-const LADO_HABANA = 0.3;
 const EN_HABANA = Math.round(N * 0.4);
 
-// Desvío alrededor de la capital de cada provincia: separa a los perfiles entre sí sin sacarlos
-// de su provincia (los municipios reales caben en un radio así).
-const JITTER_PROVINCIA = 0.6;
+// Los perfiles cuelgan del centro de su MUNICIPIO, no de la capital provincial. Antes se
+// dispersaban ±0,3° (±33 km) alrededor de la capital, lo que en provincias costeras sembraba
+// negocios mar adentro. El centro de un municipio es un pueblo: está en tierra por definición,
+// y ±900 m de ahí sigue estándolo. Además queda realista — los negocios se agrupan en los
+// pueblos, que es como se reparten de verdad, en vez de salpicar el campo de forma uniforme.
+const JITTER_MUNICIPIO = 0.016;
+
+// Nombres creíbles: al tocar un punto del mapa se lee un negocio, no «Prueba 137».
+const RUBROS = ['Taller', 'Servicios', 'Casa', 'Punto', 'El Rincón', 'La Esquina', 'Agro', 'Clínica',
+  'Barbería', 'Dulcería', 'Ferretería', 'Cafetería', 'Estudio', 'Multiservicios'];
+const APELLIDOS = ['Pérez', 'Rodríguez', 'Hernández', 'Díaz', 'Fernández', 'Suárez', 'Caballero',
+  'Valdés', 'Almeida', 'Quesada', 'Betancourt', 'Zaldívar', 'Nápoles', 'Guerra', 'Sotolongo'];
+const CALLES = ['Calle Martí', 'Avenida Céspedes', 'Calle Maceo', 'Carretera Central', 'Calle Real',
+  'Avenida Libertad', 'Calle Independencia', 'Calle Gómez'];
 
 // Determinista y sin Math.random: el mismo índice da siempre el mismo desvío, así el sembrado
 // (y por tanto el recorte de /api/mapa sobre él) es reproducible y las pruebas pueden afirmar
@@ -56,12 +67,16 @@ const ZONA_COMPARTIDA = new Set([5, 10, 15]);
  * comprobar el algoritmo con eso.
  */
 export async function seedMapa(): Promise<number> {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('seedMapa no se ejecuta en producción: sembraría 300 negocios falsos en datos reales.');
+  // El centinela es DEMO_MODE, no NODE_ENV: DEMO_MODE=true es el marcador que ya usa el proyecto
+  // para «esta base contiene datos falsos». Mirar NODE_ENV protegía menos — una instancia real a
+  // la que se le perdiera la variable quedaba abierta, y un despliegue de demo, cerrado sin razón.
+  if (process.env.DEMO_MODE !== 'true') {
+    throw new Error('seedMapa solo corre con DEMO_MODE=true: sembraría 300 negocios falsos en datos reales.');
   }
 
-  // Mismo centinela que seed-demo.ts: si "Prueba 1" ya existe, el sembrado ya corrió.
-  const yaExiste = db.prepare("SELECT 1 FROM provider_profiles WHERE business_name = 'Prueba 1'").get();
+  // El centinela es el correo, no el nombre del negocio: los nombres ahora son creíbles y
+  // variados, así que ya no sirven para reconocer lo sembrado. El correo sí es estable.
+  const yaExiste = db.prepare("SELECT 1 FROM users WHERE email = 'prueba.mapa.1@oficios.test'").get();
   if (yaExiste) return 0;
 
   // seedBase() es idempotente (revisa lo que ya existe antes de insertar): llamarla aquí deja
@@ -76,6 +91,11 @@ export async function seedMapa(): Promise<number> {
   if (provincias.length === 0) throw new Error('seedMapa necesita las provincias ya sembradas (seedBase primero)');
   const habana = provincias.find((p) => p.name === 'La Habana') ?? provincias[0];
 
+  const municipios = db.prepare('SELECT id, name, province_id, lat, lng FROM municipalities ORDER BY name').all() as
+    { id: string; name: string; province_id: string; lat: number; lng: number }[];
+  if (municipios.length === 0) throw new Error('seedMapa necesita los municipios ya sembrados (seedBase primero)');
+  const deHabana = municipios.filter((m) => m.province_id === habana.id);
+
   const hash = await bcrypt.hash(SEED_MAPA_PASSWORD, 10);
 
   const tx = db.transaction(() => {
@@ -84,25 +104,28 @@ export async function seedMapa(): Promise<number> {
       const mapPrecision: 'exacta' | 'zona' = i % ZONA_CADA === 0 ? 'zona' : 'exacta';
 
       let provinceId: string;
+      let municipalityId: string | null;
       let lat: number;
       let lng: number;
       if (ZONA_COMPARTIDA.has(i)) {
-        // Mismo centro que el cuadrado de La Habana: cada uno con su propio desvío (salt 7/8,
-        // distinto del que usa el cuadrado general), pero todos dentro de ±0,003° del centro
-        // exacto de celda (23,10 / −82,38), así los tres redondean siempre a la misma celda.
+        // Los tres tienen que caer en la MISMA celda de ~1 km para que el redondeo de 'zona' sea
+        // observable, así que estos no cuelgan de un municipio: van a ±0,003° de un centro de
+        // celda fijo (23,10 / −82,38, en tierra, entre Cerro y Plaza).
         provinceId = habana.id;
+        municipalityId = deHabana[0]?.id ?? null;
         lat = HABANA_LAT + (pseudoAzar(i, 7) - 0.5) * 0.006;
         lng = HABANA_LNG + (pseudoAzar(i, 8) - 0.5) * 0.006;
-      } else if (i <= EN_HABANA) {
-        provinceId = habana.id;
-        lat = HABANA_LAT + (pseudoAzar(i, 1) - 0.5) * LADO_HABANA;
-        lng = HABANA_LNG + (pseudoAzar(i, 2) - 0.5) * LADO_HABANA;
       } else {
-        const p = provincias[i % provincias.length];
-        provinceId = p.id;
-        lat = p.lat + (pseudoAzar(i, 3) - 0.5) * JITTER_PROVINCIA;
-        lng = p.lng + (pseudoAzar(i, 4) - 0.5) * JITTER_PROVINCIA;
+        // El 40 % en municipios de La Habana; el resto repartido por toda la isla.
+        const pool = i <= EN_HABANA && deHabana.length ? deHabana : municipios;
+        const m = pool[i % pool.length];
+        provinceId = m.province_id;
+        municipalityId = m.id;
+        lat = m.lat + (pseudoAzar(i, 1) - 0.5) * JITTER_MUNICIPIO;
+        lng = m.lng + (pseudoAzar(i, 2) - 0.5) * JITTER_MUNICIPIO;
       }
+      const nombre = `${RUBROS[i % RUBROS.length]} ${APELLIDOS[(i * 7) % APELLIDOS.length]}`;
+      const direccion = `${CALLES[(i * 3) % CALLES.length]} nº ${10 + (i % 180)}`;
 
       const userId = uuidv4();
       const profileId = uuidv4();
@@ -112,15 +135,15 @@ export async function seedMapa(): Promise<number> {
         .run(userId, `prueba.mapa.${i}@oficios.test`, hash, `Prueba ${i}`, `+53500${String(i).padStart(5, '0')}`);
 
       db.prepare(`INSERT INTO provider_profiles
-          (id, user_id, business_name, description, province_id, lat, lng, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
-        .run(profileId, userId, `Prueba ${i}`, 'Perfil sintético de prueba para la densidad del mapa.',
-          provinceId, lat, lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
+          (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
+        .run(profileId, userId, nombre, 'Perfil sintético de prueba para la densidad del mapa.',
+          provinceId, municipalityId, direccion, lat, lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
 
       // Un oficio activo por perfil: lo exige el tab por defecto (servicios) de /api/mapa.
       db.prepare(`INSERT INTO services (id, provider_id, category_id, title, price_type, is_active)
         VALUES (?, ?, ?, ?, 'negotiable', 1)`)
-        .run(uuidv4(), profileId, categoria.id, `Servicio de prueba ${i}`);
+        .run(uuidv4(), profileId, categoria.id, `${RUBROS[i % RUBROS.length]}: servicio ${i}`);
     }
   });
   tx();

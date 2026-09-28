@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { planDe } from '../config.js';
+import { COORDS_MUNICIPIOS } from './municipios-coords.js';
 
 export const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -587,6 +588,25 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
       ALTER TABLE provider_profiles ADD COLUMN map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona'));
       CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
     `);
+  },
+
+  // 12 — coordenadas reales de los municipios. Hasta aquí se repartían en espiral de ángulo áureo
+  // alrededor de la capital provincial (`seed.ts`), lo que desviaba hasta 29 km: Habana Vieja,
+  // Playa, 10 de Octubre y Cotorro caían en el estrecho de Florida. No toca `provider_profiles`:
+  // el punto que puso una persona no se reubica sin que lo pida, ni aunque esté mal.
+  (d) => {
+    const filas = d.prepare('SELECT m.id, m.name, p.name AS provincia FROM municipalities m JOIN provinces p ON m.province_id = p.id').all() as
+      { id: string; name: string; provincia: string }[];
+    const poner = d.prepare('UPDATE municipalities SET lat = ?, lng = ? WHERE id = ?');
+    const sinCoordenada: string[] = [];
+    for (const f of filas) {
+      const c = COORDS_MUNICIPIOS[`${f.provincia}|${f.name}`];
+      if (c) poner.run(c.lat, c.lng, f.id);
+      else sinCoordenada.push(`${f.provincia}|${f.name}`);
+    }
+    // Se avisa en vez de fallar: un municipio añadido a mano no debe impedir arrancar, pero
+    // tampoco puede quedarse con la coordenada inventada sin que nadie se entere.
+    if (sinCoordenada.length) console.warn(`[migración 12] sin coordenada real: ${sinCoordenada.join(', ')}`);
   },
 ];
 

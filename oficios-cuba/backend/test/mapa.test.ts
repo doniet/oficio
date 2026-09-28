@@ -357,6 +357,7 @@ describe('GET /api/mapa', () => {
   });
 
   it('con 300 perfiles, el tope de 200 se activa y lo dice', async () => {
+    process.env.DEMO_MODE = 'true'; // seedMapa se niega a sembrar sin este permiso explícito
     await seedMapa();
     const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}`);
     expect(r.body.puntos.length).toBeLessThanOrEqual(200);
