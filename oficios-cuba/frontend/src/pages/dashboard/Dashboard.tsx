@@ -296,7 +296,7 @@ function ClientDashboard() {
         <div className="relative max-w-md">
           <h2 className="text-2xl font-bold text-white">¿Qué necesitas solucionar hoy?</h2>
           <p className="mt-2 text-ink-200">Busca por oficio y provincia, compara reseñas y escribe directo al profesional.</p>
-          <Link to="/buscar" className="btn-primary mt-5"><Compass className="h-4 w-4" /> Explorar servicios</Link>
+          <Link to="/explorar" className="btn-primary mt-5"><Compass className="h-4 w-4" /> Explorar servicios</Link>
         </div>
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-brand-600/30 blur-2xl" aria-hidden="true" />
       </section>

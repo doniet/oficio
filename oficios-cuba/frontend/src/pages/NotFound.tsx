@@ -24,7 +24,7 @@ export default function NotFound() {
         <button onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))} className="btn-secondary btn-lg">
           <ArrowLeft className="h-4 w-4" /> Volver
         </button>
-        <Link to="/buscar" className="btn-primary btn-lg">
+        <Link to="/explorar" className="btn-primary btn-lg">
           <Search className="h-4 w-4" /> Buscar servicios
         </Link>
       </div>

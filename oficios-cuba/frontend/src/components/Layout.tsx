@@ -93,7 +93,7 @@ function MobileTabBar() {
   const { user, unread } = useAuth();
   const tabs = [
     { to: '/', label: 'Inicio', icon: Home, end: true },
-    { to: '/buscar', label: 'Buscar', icon: Search },
+    { to: '/explorar', label: 'Explorar', icon: Search },
     ...(user
       ? [
           user.user_type === 'provider'
@@ -146,11 +146,8 @@ export default function Layout() {
           <div className="flex items-center gap-8">
             <Link to="/" aria-label="Encuentrauno, inicio"><Logo /></Link>
             <nav className="hidden items-center gap-1 md:flex" aria-label="Secciones">
-              <NavLink to="/buscar" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
-                Explorar servicios
-              </NavLink>
-              <NavLink to="/profesionales" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
-                Profesionales
+              <NavLink to="/explorar" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
+                Explorar
               </NavLink>
               <NavLink to="/planes" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
                 Planes
@@ -196,7 +193,7 @@ export default function Layout() {
               <div>
                 <h4 className="mb-3 font-sans text-sm font-bold text-white">Para clientes</h4>
                 <ul className="space-y-2 text-sm">
-                  <li><Link to="/buscar" className="hover:text-white">Explorar servicios</Link></li>
+                  <li><Link to="/explorar" className="hover:text-white">Explorar</Link></li>
                   <li><Link to="/profesionales" className="hover:text-white">Ver profesionales</Link></li>
                   <li><Link to="/registro" className="hover:text-white">Crear cuenta gratis</Link></li>
                   <EnlaceApp className="hover:text-white" />

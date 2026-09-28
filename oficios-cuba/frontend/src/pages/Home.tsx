@@ -27,7 +27,7 @@ function Hero({ provinces }: { provinces: Province[] }) {
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
     if (province) params.set('province', province);
-    navigate(`/buscar${params.toString() ? `?${params}` : ''}`);
+    navigate(`/explorar${params.toString() ? `?${params}` : ''}`);
   };
 
   return (
@@ -74,7 +74,7 @@ function Hero({ provinces }: { provinces: Province[] }) {
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <span className="text-sm text-ink-400">Lo más buscado:</span>
             {POPULAR.map((term) => (
-              <Link key={term} to={`/buscar?q=${encodeURIComponent(term)}`} className="chip py-1 text-[13px]">{term}</Link>
+              <Link key={term} to={`/explorar?q=${encodeURIComponent(term)}`} className="chip py-1 text-[13px]">{term}</Link>
             ))}
           </div>
         </div>
@@ -130,14 +130,14 @@ function Categories({ categories, loading }: { categories: CategoryStat[]; loadi
       <SectionHeading
         eyebrow="Categorías"
         title="¿Qué necesitas resolver?"
-        action={<Link to="/buscar" className="link inline-flex items-center gap-1 text-sm">Ver todos los servicios <ArrowRight className="h-4 w-4" /></Link>}
+        action={<Link to="/explorar" className="link inline-flex items-center gap-1 text-sm">Ver todos los servicios <ArrowRight className="h-4 w-4" /></Link>}
       />
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {loading
           ? Array.from({ length: 8 }).map((_, i) => <li key={i} className="skeleton h-24 rounded-2xl" />)
           : categories.map((c) => (
             <li key={c.id}>
-              <Link to={`/buscar?category=${c.slug}`} className="card card-hover group flex h-full items-start gap-3 p-4">
+              <Link to={`/explorar?category=${c.slug}`} className="card card-hover group flex h-full items-start gap-3 p-4">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-2xl transition group-hover:bg-brand-50" aria-hidden="true">{c.icon}</span>
                 <span className="min-w-0">
                   <span className="block text-[15px] font-bold leading-snug text-ink-900 group-hover:text-brand-700">{c.name}</span>
@@ -206,7 +206,7 @@ export default function Home() {
           <SectionHeading
             eyebrow="Recién publicados"
             title="Servicios nuevos"
-            action={<Link to="/buscar?sort=newest" className="link inline-flex items-center gap-1 text-sm">Ver más <ArrowRight className="h-4 w-4" /></Link>}
+            action={<Link to="/explorar?sort=newest" className="link inline-flex items-center gap-1 text-sm">Ver más <ArrowRight className="h-4 w-4" /></Link>}
           />
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {loading.services

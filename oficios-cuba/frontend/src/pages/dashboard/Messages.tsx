@@ -63,7 +63,7 @@ export default function Messages() {
         <EmptyState
           icon={<MessageCircle className="h-6 w-6" />}
           title="Aún no tienes mensajes"
-          action={!isProvider && <Link to="/buscar" className="btn-primary">Buscar profesionales</Link>}
+          action={!isProvider && <Link to="/explorar" className="btn-primary">Buscar profesionales</Link>}
         >
           {isProvider
             ? 'Cuando un cliente te escriba desde uno de tus servicios, la conversación aparecerá aquí.'

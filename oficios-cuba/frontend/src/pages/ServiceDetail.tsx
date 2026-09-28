@@ -228,7 +228,7 @@ export default function ServiceDetail() {
   if (notFound) {
     return (
       <div className="container-page py-16">
-        <EmptyState icon={<SearchX className="h-7 w-7" />} title="Este servicio ya no está disponible" action={<Link to="/buscar" className="btn-primary">Buscar otros servicios</Link>}>
+        <EmptyState icon={<SearchX className="h-7 w-7" />} title="Este servicio ya no está disponible" action={<Link to="/explorar" className="btn-primary">Buscar otros servicios</Link>}>
           Puede que el profesional lo haya pausado o eliminado.
         </EmptyState>
       </div>
@@ -242,22 +242,22 @@ export default function ServiceDetail() {
   const providerName = service.business_name || service.owner_name;
   const place = [service.municipality_name, service.province_name].filter(Boolean).join(', ');
   const category = service.parent_category_slug
-    ? { label: service.parent_category_name ?? '', to: `/buscar?category=${service.parent_category_slug}` }
+    ? { label: service.parent_category_name ?? '', to: `/explorar?category=${service.parent_category_slug}` }
     : null;
 
   return (
     <div className={cn('container-page py-6 sm:py-8', !service.is_owner && 'pb-28 md:pb-8')}>
       <div className="mb-5 flex items-center gap-3">
-        <Link to="/buscar" className="btn-ghost btn-sm -ml-3 sm:hidden" aria-label="Volver a la búsqueda">
+        <Link to="/explorar" className="btn-ghost btn-sm -ml-3 sm:hidden" aria-label="Volver a la búsqueda">
           <ArrowLeft className="h-4 w-4" /> Buscar
         </Link>
         <div className="hidden sm:block">
           <Breadcrumbs
             items={[
               { label: 'Inicio', to: '/' },
-              { label: 'Buscar', to: '/buscar' },
+              { label: 'Explorar', to: '/explorar' },
               ...(category ? [category] : []),
-              { label: service.category_name, to: `/buscar?category=${service.category_slug}` },
+              { label: service.category_name, to: `/explorar?category=${service.category_slug}` },
               { label: service.title },
             ]}
           />
@@ -285,7 +285,7 @@ export default function ServiceDetail() {
           <Gallery images={service.images} title={service.title} seed={service.parent_category_slug || service.category_slug} icon={service.category_icon} />
 
           <header>
-            <Link to={`/buscar?category=${service.category_slug}`} className="badge bg-sand-100 text-ink-700 hover:bg-sand-200">
+            <Link to={`/explorar?category=${service.category_slug}`} className="badge bg-sand-100 text-ink-700 hover:bg-sand-200">
               <span aria-hidden="true">{service.category_icon}</span> {service.category_name}
             </Link>
             <h1 className="mt-3 text-balance text-3xl font-bold leading-tight sm:text-4xl">{service.title}</h1>

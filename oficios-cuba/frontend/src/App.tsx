@@ -32,6 +32,12 @@ const Admin = lazy(() => import('./pages/admin/Admin'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
+// /buscar era la ruta vieja: se conserva la query entera para no romper enlaces compartidos.
+function RedirigirAExplorar() {
+  const { search } = useLocation();
+  return <Navigate to={`/explorar${search}`} replace />;
+}
+
 function RequireAuth({ children, only }: { children: ReactNode; only?: UserType }) {
   const { user, isLoading } = useAuth();
   const location = useLocation();
@@ -58,7 +64,8 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Home />} />
-          <Route path="buscar" element={<Search />} />
+          <Route path="explorar" element={<Search />} />
+          <Route path="buscar" element={<RedirigirAExplorar />} />
           <Route path="profesionales" element={<Providers />} />
           <Route path="planes" element={<Plans />} />
           <Route path="servicio/:id" element={<ServiceDetail />} />
