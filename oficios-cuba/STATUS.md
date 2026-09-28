@@ -329,3 +329,23 @@
   `google-services.json`, y quedan **9,9 GB libres de 77 (88 % usado)** en el host de producción:
   el SDK + NDK + cachés de Gradle no caben. La llave de firma sí está aquí
   (`secrets/firma-android/`), así que ese no es el impedimento.
+
+## 2026-09-28 20:48 UTC — claude-code (vps2) — El logotipo de la web pasa al pin, y despliegue
+- Changes: `<Logo/>` deja la lupa de línea y usa el mismo pin que `mobile/assets/marca/glifo.svg`,
+  con idénticas coordenadas y colores para que un desvío entre logotipo e icono de la app salte a la
+  vista. El degradado lleva id por instancia (el logotipo sale dos veces: cabecera y pie) y se le
+  quitan los dos puntos de `useId()`, que dentro de un `url(#…)` no todos los navegadores resuelven.
+  Era el único sitio que quedaba con el glifo viejo. Además, `?v=2` en el favicon y en `app-icono.png`.
+- Tests: pass — web 19/19, `tsc` y build limpios. El glifo se verificó **rasterizado** a 36 px reales
+  y ampliado, sobre fondo claro y sobre el `ink-950` del pie; no hay navegador en vps2 y no se instaló
+  uno en el host de producción.
+- Security: N/A. Solo se reconstruyó `oficio_web`; `oficio_api` y `oficio_notifier` no se tocaron
+  (el único cambio del backend fue un archivo de test, que no se despliega). Sin cambios de esquema.
+- Next: verificado contra producción — el bundle sirve el pin y ya no contiene el glifo viejo, y
+  `app-icono.png` coincide byte a byte con el local. **Hallazgo:** los archivos de `public/` van con
+  nombre fijo, así que Cloudflare siguió sirviendo los anteriores tras el despliegue (`cf-cache-status:
+  HIT`, `age 2775`, `max-age 14400`): el contenedor tenía el icono de 12 231 bytes y el borde devolvía
+  el de 7 872. El bundle no sufre esto porque lleva hash en el nombre. De ahí el `?v=`, que hay que
+  subir cada vez que cambie el dibujo.
+- Blockers: la APK 0.2.0 sigue sin compilar (ver la entrada anterior): SSH a j-u denegado por la ACL
+  del tailnet, y vps2 no tiene toolchain ni espacio.
