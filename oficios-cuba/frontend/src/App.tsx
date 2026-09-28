@@ -31,7 +31,8 @@ const Admin = lazy(() => import('./pages/admin/Admin'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-// /buscar era la ruta vieja: se conserva la query y el hash enteros para no romper enlaces compartidos.
+// /buscar y /profesionales eran rutas viejas: se conserva la query y el hash enteros para no
+// romper enlaces compartidos ni lo que ya esté indexado.
 function RedirigirAExplorar() {
   const { search, hash } = useLocation();
   return <Navigate to={`/explorar${search}${hash}`} replace />;
@@ -65,6 +66,7 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="explorar" element={<Search />} />
           <Route path="buscar" element={<RedirigirAExplorar />} />
+          <Route path="profesionales" element={<RedirigirAExplorar />} />
           <Route path="planes" element={<Plans />} />
           <Route path="servicio/:id" element={<ServiceDetail />} />
           <Route path="proveedor/:id" element={<ProviderProfile />} />
