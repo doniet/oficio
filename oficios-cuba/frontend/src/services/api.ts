@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
+import type { Agenda, AgendaBlock, Bbox, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, MapaRespuesta, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -182,6 +182,14 @@ export const favoriteApi = {
   ids: () => api.get<{ ids: string[] }>('/favorites/ids'),
   add: (provider_id: string) => api.post('/favorites', { provider_id }),
   remove: (providerId: string) => api.delete(`/favorites/${providerId}`),
+};
+
+export const mapaApi = {
+  buscar: (bbox: Bbox, params: { tab?: string; q?: string; category?: string }, signal?: AbortSignal) =>
+    api.get<MapaRespuesta>('/mapa', {
+      params: { bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, ...params },
+      signal,
+    }).then((r) => r.data),
 };
 
 export const telegramApi = {
