@@ -304,3 +304,28 @@
 - Security: sin cambios de red, de auth, del túnel ni del `.env`. Aislamiento verificado tras el deploy: `oficio_api` **sin** salida a internet (`EAI_AGAIN`), `oficio_notifier` **con** salida. `show_on_map` sigue en `DEFAULT 0`: la migración no puso a nadie en el mapa que no estuviera ya (los 12 que tenían `show_on_map = 1` lo tenían de antes).
 - Next: (1) **decidir la integración de la rama** — producción corre código sin fusionar, que es un estado que no conviene dejar mucho tiempo. (2) **Verificación visual**: es lo único que falta y ahora se puede hacer contra producción, abriendo `https://oficio.dardoit.com/explorar?vista=mapa` en un teléfono o un navegador. (3) **Republicar el APK** desde j-u. (4) Dos decisiones de producto pendientes: el aviso de `pp.address` para quien nunca toca el mapa, y el booleano `ubicacion_aproximada` que hoy hace que todos los pines ajenos se dibujen aproximados.
 - Blockers: ninguno para el despliegue. La verificación visual sigue sin poder hacerse **desde vps2** (no hay navegador ni emulador), pero ya no bloquea: el mapa está en producción y se puede mirar desde cualquier dispositivo.
+
+## 2026-09-28 20:20 UTC — claude-code (vps2) — Fusión del mapa a master y preparación de la APK 0.2.0
+- Changes: `encuentrauno-2-explorar-mapa` (33 commits) fusionada a `master` y subida a `origin`
+  (`2b04816`). La rama local se borró; nunca estuvo en `origin`. Único conflicto: `STATUS.md`,
+  resuelto conservando las dos entradas en orden (la de j-u de las 15:45 y la del mapa de las 18:52);
+  `mobile/app.config.ts` se auto-fusionó bien y conserva a la vez el `name: 'Encuentrauno'` del
+  rebrand y el `versionCode`/`blockedPermissions` de la 0.1.1. Antes de fusionar: el icono de marca
+  pasó a «Pin buscador» (`cb5a277`) — al cambiar el dibujo, el teñido de las capas monocromas
+  buscaba un color que ya no existe y habría generado un icono de notificación a color sin fallar.
+  `app.config.ts` queda en **0.2.0 / versionCode 3** (la 0.1.1 ya está publicada desde las 16:37).
+- Tests: pass — backend 163/163, web 19/19, app 44/44, typecheck de los cuatro paquetes y build de
+  la web, todo re-ejecutado **sobre el árbol ya fusionado**. Se arregló un test rojo **preexistente
+  en `master`**, ajeno al mapa (`8f09793`): el de solape de agenda tomaba el hueco por índice sobre
+  la lista plana, que empieza en «ahora», así que por la tarde caía a las 21:30 y el `+120 min`
+  (23:30) ya no es hueco porque una cita ahí cruzaría la medianoche. El producto acertaba; fallaba
+  la suposición del test. Ahora toma el hueco del día siguiente, que siempre está entero.
+- Security: N/A. No se tocó red, auth ni exposición. **No se movió la llave de firma a ningún sitio.**
+- Next: compilar la APK 0.2.0 **en j-u** (`git pull` → `npm install` → `scripts/apk-release.sh` →
+  `scripts/publicar-apk.sh`). Desplegar la web para que el icono nuevo llegue a producción.
+- Blockers: la APK no se pudo compilar desde vps2. Dos razones independientes: (1) el SSH a j-u lo
+  deniega la **política del tailnet** (`tailnet policy does not permit you to SSH to this node`) —
+  es un control de seguridad y no se rodea; (2) vps2 no tiene JDK, ni SDK de Android, ni
+  `google-services.json`, y quedan **9,9 GB libres de 77 (88 % usado)** en el host de producción:
+  el SDK + NDK + cachés de Gradle no caben. La llave de firma sí está aquí
+  (`secrets/firma-android/`), así que ese no es el impedimento.
