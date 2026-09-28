@@ -147,6 +147,8 @@ export interface ProviderPublic extends ProviderCard {
   whatsapp?: string | null;
   telegram?: string | null;
   email_contact?: string | null;
+  /** Solo viene si el perfil es un negocio (routes/providers.ts, GET /providers/:id). */
+  horario?: string | null;
 }
 
 export interface ProviderServiceItem {

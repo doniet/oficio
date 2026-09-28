@@ -5,9 +5,10 @@ import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomShe
 import type { PuntoMapa, ProviderPublic } from '@oficio/shared';
 import { telLink, whatsappLink } from '@oficio/shared';
 import { Boton } from './Boton';
-import { Avatar, Insignia, InsigniaPlan, Valoracion, u } from './ui';
+import { Avatar, EstadoError, Insignia, InsigniaPlan, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
 import { configApi } from '../lib/api';
+import { atrasCierraHoja } from '../lib/hojaPunto';
 import { fuentes, ink, radios, sand } from '../lib/tema';
 
 // Dos anclajes (30 % / 85 %). Se exportan porque explorar.tsx los necesita para reservar el
@@ -24,42 +25,59 @@ const PUNTOS_ANCLAJE = [`${ANCLA_ASOMADA * 100}%`, `${ANCLA_ABIERTA * 100}%`];
 // abre la ficha real que sí existe, en la web.
 const origenWeb = () => configApi.baseUrl.replace(/\/api$/, '');
 
-// `ProviderPublic` (de @oficio/shared) no declara `horario`, pero GET /providers/:id sí lo manda
-// (routes/providers.ts) cuando el perfil es un negocio. No se toca shared/ por esto: se amplía
-// el tipo aquí mismo, igual que Task 9 duplicó tipos en vez de tocarlo.
-type ProveedorConHorario = ProviderPublic & { horario?: string | null };
+// Mismo valor que el timeout interno de crearCliente (shared/src/api.ts), el axios de la web
+// (frontend/src/services/api.ts) y el que ya usa mobile/src/lib/mapa.ts para su propio fetch
+// duplicado: `fetch` no tiene tiempo de espera propio, así que sin esto una conexión cubana
+// lenta que se cuelga deja «Cargando…» para siempre.
+const TIEMPO_ESPERA_MS = 20000;
 
-async function pedirProveedor(id: string, signal: AbortSignal): Promise<ProveedorConHorario> {
+async function pedirProveedor(id: string, signal: AbortSignal): Promise<ProviderPublic> {
   const res = await fetch(`${configApi.baseUrl}/providers/${encodeURIComponent(id)}`, { signal });
   if (!res.ok) throw new Error('No se pudo cargar la ficha');
-  const datos = (await res.json()) as { provider: ProveedorConHorario };
+  const datos = (await res.json()) as { provider: ProviderPublic };
   return datos.provider;
 }
 
 /** Ficha completa (rating, descripción, categorías, contacto) — solo se pide al desplegar la hoja. */
 function FichaCompleta({ punto }: { punto: PuntoMapa }) {
   const { usuario, api } = useSesion();
-  const [perfil, setPerfil] = useState<ProveedorConHorario | null>(null);
+  const [perfil, setPerfil] = useState<ProviderPublic | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
+  // Reintentar (tras un error o una expiración) sin duplicar el efecto de abajo: solo cambia esto.
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
     const control = new AbortController();
+    // Igual que `cargar()` en mobile/src/lib/mapa.ts: un abort porque cambió el punto o el
+    // componente se desmontó (limpieza de abajo) no es un error que mostrar; uno porque expiró
+    // el tiempo de espera sí lo es, y hay que soltar `cargando` en vez de dejarlo eterno.
+    let expiroPorTiempo = false;
+    const tiempoEspera = setTimeout(() => { expiroPorTiempo = true; control.abort(); }, TIEMPO_ESPERA_MS);
     setPerfil(null);
     setError(false);
     setCargando(true);
     pedirProveedor(punto.id, control.signal)
-      .then((p) => { if (!control.signal.aborted) setPerfil(p); })
-      .catch(() => { if (!control.signal.aborted) setError(true); })
-      .finally(() => { if (!control.signal.aborted) setCargando(false); });
-    return () => control.abort();
-  }, [punto.id]);
+      .then((p) => {
+        clearTimeout(tiempoEspera);
+        if (control.signal.aborted) return;
+        setPerfil(p);
+        setCargando(false);
+      })
+      .catch(() => {
+        clearTimeout(tiempoEspera);
+        if (control.signal.aborted && !expiroPorTiempo) return;
+        setError(true);
+        setCargando(false);
+      });
+    return () => { clearTimeout(tiempoEspera); control.abort(); };
+  }, [punto.id, intento]);
 
   if (cargando) {
     return <View style={{ paddingVertical: 24, alignItems: 'center' }}><Text style={u.suave}>Cargando…</Text></View>;
   }
   if (error || !perfil) {
-    return <Text style={[u.suave, { color: '#991b1b' }]}>No pudimos cargar la ficha completa.</Text>;
+    return <EstadoError mensaje="No pudimos cargar la ficha completa." alReintentar={() => setIntento((n) => n + 1)} />;
   }
 
   const lugar = [perfil.municipality_name, perfil.province_name].filter(Boolean).join(', ');
@@ -129,7 +147,7 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!puntoRef.current) return false;
+      if (!atrasCierraHoja(puntoRef.current)) return false;
       // No se llama a onCerrar directo: se le pide a la hoja que se cierre con su propia
       // animación, y es su `onClose` (más abajo) quien avisa al padre cuando ya terminó.
       sheetRef.current?.close();
