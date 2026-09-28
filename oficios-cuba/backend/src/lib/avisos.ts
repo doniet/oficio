@@ -165,7 +165,7 @@ export function avisarChat(conversationId: string, remitente: 'client' | 'provid
     if (!c) return;
     const [destino, de] = remitente === 'client' ? [c.provider_user, c.cliente] : [c.client_id, c.negocio];
     const tramo = Math.floor(Date.now() / 600_000);
-    avisar(destino, 'chat', `💬 ${de} te escribió en Oficios Cuba.`, { url: `/dashboard/mensajes/${conversationId}`, dedupe: `chat:${conversationId}:${destino}:${tramo}` });
+    avisar(destino, 'chat', `💬 ${de} te escribió en Encuentrauno.`, { url: `/dashboard/mensajes/${conversationId}`, dedupe: `chat:${conversationId}:${destino}:${tramo}` });
   } catch (err) {
     console.error('No se pudo apuntar el aviso del chat:', (err as Error).message);
   }

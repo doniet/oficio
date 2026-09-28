@@ -79,7 +79,7 @@ router.post('/test', asyncHandler(async (req: AuthRequest, res) => {
   const minuto = Math.floor(Date.now() / 60_000);
   const ok = db.prepare(`INSERT OR IGNORE INTO notifications (id, user_id, kind, text, dedupe_key, send_after, created_at)
     VALUES (lower(hex(randomblob(16))), ?, 'prueba', ?, ?, ?, ?)`)
-    .run(req.user!.id, '🔔 Aviso de prueba de Oficios Cuba. Si lo ves, todo funciona.', `prueba:${req.user!.id}:${minuto}`, new Date().toISOString(), new Date().toISOString()).changes > 0;
+    .run(req.user!.id, '🔔 Aviso de prueba de Encuentrauno. Si lo ves, todo funciona.', `prueba:${req.user!.id}:${minuto}`, new Date().toISOString(), new Date().toISOString()).changes > 0;
   if (!ok) throw new AppError('Ya enviamos una prueba hace un momento', 429);
   res.status(202).json({ ok: true });
 }));

@@ -105,7 +105,7 @@ export default function Inicio() {
         refreshControl={<RefreshControl refreshing={recargando} onRefresh={recargar} colors={[brand[600]]} />}
       >
         <View style={e.hero}>
-          <Text style={u.eyebrow}>DIRECTORIO DE OFICIOS · TODA CUBA</Text>
+          <Text style={u.eyebrow}>SERVICIOS, PRODUCTOS Y NEGOCIOS · TODA CUBA</Text>
           <Text style={e.titulo}>El que te lo soluciona <Text style={{ color: brand[600] }}>vive cerca.</Text></Text>
           <Text style={e.subtitulo}>
             Electricistas, mecánicos, costureras, profesores y cientos de oficios más. Mira sus trabajos, lee reseñas reales y escríbeles directo.

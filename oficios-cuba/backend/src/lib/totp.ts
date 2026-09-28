@@ -53,4 +53,4 @@ export function verificar(secreto: string, entrada: string, ultimoUsado: number 
 }
 
 export const uriOtpauth = (secreto: string, cuenta: string) =>
-  `otpauth://totp/${encodeURIComponent(`Oficios Cuba:${cuenta}`)}?secret=${secreto}&issuer=${encodeURIComponent('Oficios Cuba')}&algorithm=SHA1&digits=6&period=30`;
+  `otpauth://totp/${encodeURIComponent(`Encuentrauno:${cuenta}`)}?secret=${secreto}&issuer=${encodeURIComponent('Encuentrauno')}&algorithm=SHA1&digits=6&period=30`;

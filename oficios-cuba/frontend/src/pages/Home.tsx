@@ -36,7 +36,7 @@ function Hero({ provinces }: { provinces: Province[] }) {
         style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #DDD0BB 1px, transparent 0)', backgroundSize: '22px 22px' }} />
       <div className="container-page relative grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[1.15fr_1fr] lg:py-20">
         <div className="animate-fade-up">
-          <p className="eyebrow mb-4">Directorio de oficios · Toda Cuba</p>
+          <p className="eyebrow mb-4">Servicios, productos y negocios · Toda Cuba</p>
           <h1 className="text-balance text-[2.4rem] font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl">
             El que te lo soluciona <span className="text-brand-600">vive cerca.</span>
           </h1>

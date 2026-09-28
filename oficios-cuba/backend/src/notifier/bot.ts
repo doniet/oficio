@@ -47,7 +47,7 @@ export async function presentarse(llamar: Llamar) {
   return yo.username as string;
 }
 
-const AYUDA = `Hola 👋 Soy el bot de avisos de Oficios Cuba.\n\nPara recibir avisos de tus citas y mensajes, entra en ${SITIO}/dashboard/cuenta y pulsa «Conectar Telegram».\n\nPara dejar de recibirlos, escribe /stop.`;
+const AYUDA = `Hola 👋 Soy el bot de avisos de Encuentrauno.\n\nPara recibir avisos de tus citas y mensajes, entra en ${SITIO}/dashboard/cuenta y pulsa «Conectar Telegram».\n\nPara dejar de recibirlos, escribe /stop.`;
 
 /** Procesa un mensaje recibido. Devuelve el texto de respuesta (o null si no hay que contestar). */
 export function atenderMensaje(msg: { chat?: { id: number | string; type?: string }; text?: string }): string | null {
@@ -119,7 +119,7 @@ export async function enviarPendientes(llamar: Llamar, lote = 20) {
         text: n.text,
         link_preview_options: { is_disabled: true },
         // Telegram solo acepta botones con URL pública https.
-        ...(n.url?.startsWith('https://') && { reply_markup: { inline_keyboard: [[{ text: 'Abrir en Oficios Cuba', url: n.url }]] } }),
+        ...(n.url?.startsWith('https://') && { reply_markup: { inline_keyboard: [[{ text: 'Abrir en Encuentrauno', url: n.url }]] } }),
       });
       db.prepare("UPDATE notifications SET status = 'sent', sent_at = ?, attempts = attempts + 1 WHERE id = ?").run(new Date().toISOString(), n.id);
       enviados++;
