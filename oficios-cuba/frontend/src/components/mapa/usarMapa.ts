@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiError, mapaApi } from '../../services/api';
 import type { Bbox, PuntoMapa } from '../../types';
 
+// Gemelo de mobile/src/lib/mapa.ts (Expo): mismas cinco reglas de carga del mapa, implementadas
+// dos veces a propósito porque unificarlas exigiría meter React en un paquete que no lo tiene.
+// Si tocas una regla aquí, revisa que el otro archivo siga de acuerdo — el bug que motivó este
+// comentario fue justo que dejaron de estarlo y ningún review lo vio por mirar solo uno.
+
 // El zoom es la petición de más detalle: recarga sola, pero con un poco de aire para no lanzar
 // una petición por cada paso de la rueda del ratón.
 const ANTIRREBOTE_ZOOM_MS = 250;
@@ -59,6 +64,10 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
         setCelda(r.celda);
         setHayMas(r.hay_mas);
         setCargando(false);
+        // Se limpia aquí, no al pulsar el botón: solo se sabe que la zona visible ya no está
+        // sucia cuando la carga de esa zona termina bien. Limpiarla antes deja un reintento
+        // fallido sin botón para volver a intentarlo (ver mobile/src/lib/mapa.ts).
+        setZonaSucia(false);
       })
       .catch((err) => {
         if (controlador.signal.aborted) return;
@@ -82,10 +91,9 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
     }
   }, [programar]);
 
-  const buscarZona = useCallback(() => {
-    setZonaSucia(false);
-    cargar();
-  }, [cargar]);
+  // Carga inicial, botón «Buscar en esta zona» y «Reintentar» tras un error: las tres piden la
+  // misma zona (bboxRef.current), así que es literalmente cargar() otra vez.
+  const buscarZona = cargar;
 
   // Cambiar de pestaña, texto o categoría recarga sola, con su propio antirrebote — pero solo si
   // ya hay una zona visible (el primer bbox lo trae el mapa, no este efecto).

@@ -130,8 +130,13 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: {
           </span>
         )}
         {mapa.error && (
-          <span className="pointer-events-auto rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-card" role="alert">
+          <span className="pointer-events-auto flex items-center gap-2 rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-card" role="alert">
             {mapa.error}
+            {/* Sin esto el usuario se queda atascado: en la conexión que esta app apunta a
+                servir, un fallo de carga es el camino probable, no el caso raro. */}
+            <button type="button" onClick={mapa.buscarZona} className="underline decoration-2 underline-offset-2">
+              Reintentar
+            </button>
           </span>
         )}
         {mapa.hayMas && (

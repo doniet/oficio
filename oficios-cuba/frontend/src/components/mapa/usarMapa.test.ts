@@ -76,6 +76,44 @@ describe('usarMapa', () => {
     // La petición de zona fue cancelada antes de lanzar la de texto: su respuesta tardía se descarta.
     expect(result.current.puntos).toEqual([puntoTexto]);
   });
+
+  it('un zoom que recarga con éxito limpia la zona sucia', async () => {
+    // Divergencia con el gemelo móvil (mobile/src/lib/mapa.ts): allá cualquier recarga exitosa
+    // limpia la bandera, sin importar quién la disparó. Aquí solo lo hacía buscarZona: tras un
+    // paneo seguido de un zoom, el botón «Buscar en esta zona» se quedaba puesto sin sentido.
+    vi.mocked(mapaApi.buscar).mockResolvedValueOnce({ puntos: [], celda: 0.01, hay_mas: false });
+
+    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+
+    act(() => { result.current.alMover(bbox, false); }); // paneo: ensucia la zona, no llama a la API
+    expect(result.current.zonaSucia).toBe(true);
+
+    act(() => { result.current.alMover(bbox, true); }); // zoom: recarga sola con antirrebote de 250 ms
+    await act(async () => { await espera(280); });
+
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
+    expect(result.current.zonaSucia).toBe(false);
+  });
+
+  it('un reintento fallido desde el botón deja la zona sucia (y el botón) disponible', async () => {
+    // Divergencia con el gemelo móvil: allá la bandera se limpia solo al saber que la carga tuvo
+    // éxito. Aquí se limpiaba ANTES de lanzar la petición: en una conexión cubana lenta, un
+    // reintento que falla se queda sin botón para volver a intentarlo.
+    vi.mocked(mapaApi.buscar).mockRejectedValueOnce(new Error('fallo de red'));
+
+    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+
+    act(() => { result.current.alMover(bbox, false); }); // paneo: aparece «Buscar en esta zona»
+    expect(result.current.zonaSucia).toBe(true);
+
+    await act(async () => {
+      result.current.buscarZona(); // pulsa el botón; la petición falla
+      await espera(10);
+    });
+
+    expect(result.current.error).not.toBe('');
+    expect(result.current.zonaSucia).toBe(true);
+  });
 });
 
 describe('MapaExplorar', () => {
