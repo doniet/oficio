@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
 import { telLink, whatsappLink } from '../../lib/format';
-import { Avatar, PlanBadge, RatingInline, Spinner } from '../ui';
+import { Avatar, ErrorState, PlanBadge, RatingInline, Spinner } from '../ui';
 import { NegocioChip } from '../cards';
 import type { ProviderPublic, PuntoMapa } from '../../types';
 
@@ -19,6 +19,12 @@ const ALTO_ASOMADA_VH = 30;
 const UMBRAL_TOQUE = 6;
 // Cuánto hay que pasarse de "asomada" arrastrando hacia abajo para que la hoja se cierre.
 const HOLGURA_CIERRE = 60;
+// Rebote permitido arrastrando hacia arriba, más allá de "abierta" del todo (sensación de tope
+// blando en vez de un corte seco).
+const REBOTE_ARRIBA = 24;
+// Cuánto se deja arrastrar hacia abajo pasado el umbral de cierre antes de topar del todo
+// (algo de margen visual mientras `terminarArrastre` decide si cierra).
+const REBOTE_CIERRE = 80;
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
@@ -40,6 +46,7 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
   const [perfil, setPerfil] = useState<ProviderPublic | null>(null);
   const [cargandoPerfil, setCargandoPerfil] = useState(false);
   const [errorPerfil, setErrorPerfil] = useState('');
+  const [reintentos, setReintentos] = useState(0);
   // Fuerza a recalcular las anclas (en px) si cambia el tamaño de la ventana.
   const [, tocar] = useState(0);
 
@@ -68,6 +75,17 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
     }
   }, []);
 
+  // Quita la marca de nuestra entrada sin navegar, para cuando la hoja se cierra por una vía
+  // que NO es cerrar() (el enlace "Ver perfil completo", u otro que el padre decida): si no se
+  // limpiara, la entrada {hojaPunto:true} queda huérfana bajo la ruta nueva y hace falta un
+  // segundo Atrás, sin efecto visible, para salir de verdad de Explorar.
+  const limpiarEntradaPropia = useCallback(() => {
+    if (historiaEmpujadaRef.current && window.history.state?.hojaPunto) {
+      window.history.replaceState(null, '');
+    }
+    historiaEmpujadaRef.current = false;
+  }, []);
+
   // Al abrir un punto nuevo: vuelve a "asomada", limpia la ficha completa de otro punto y
   // recuerda quién tenía el foco para devolvérselo al cerrar.
   useEffect(() => {
@@ -80,15 +98,23 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
   }, [punto?.id]);
 
   // Una sola entrada de historial por apertura (cambiar de punto sin cerrar no añade otra).
+  // Si `punto` pasa a null sin haber pasado por cerrar() (el padre lo puso en null por su
+  // cuenta), limpia igual la entrada en vez de dejarla huérfana.
   useEffect(() => {
     const abierto = Boolean(punto);
     if (abierto && !habiaPuntoRef.current) {
       window.history.pushState({ hojaPunto: true }, '');
       historiaEmpujadaRef.current = true;
+    } else if (!abierto) {
+      limpiarEntradaPropia();
     }
-    if (!abierto) historiaEmpujadaRef.current = false;
     habiaPuntoRef.current = abierto;
-  }, [Boolean(punto)]);
+  }, [Boolean(punto), limpiarEntradaPropia]);
+
+  // Red de seguridad: si el componente se desmonta entero (p. ej. cambia de ruta) mientras
+  // nuestra entrada de historial sigue siendo la actual, sin haber pasado por ningún camino
+  // de cierre, límpiala igual.
+  useEffect(() => () => limpiarEntradaPropia(), [limpiarEntradaPropia]);
 
   // El botón Atrás del navegador (o cualquier otro pop del historial) cierra la hoja sin
   // recargar la página ni sacar al usuario de Explorar.
@@ -162,11 +188,27 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
     setCargandoPerfil(true);
     setErrorPerfil('');
     providerApi.getById(punto.id)
-      .then((r) => { if (!cancelado) setPerfil(r.data.provider); })
-      .catch((err) => { if (!cancelado) setErrorPerfil(apiError(err, 'No pudimos cargar la ficha completa.')); })
-      .finally(() => { if (!cancelado) setCargandoPerfil(false); });
+      // Sin `.finally()`: `setPerfil` cambia una dependencia de este mismo efecto, así que React
+      // lo desmonta (pone `cancelado = true`) en cuanto se aplica — antes de que un `.finally()`
+      // aparte llegue a mirar la misma variable. Con `.finally()` eso dejaba `cargandoPerfil` en
+      // true para siempre pese a haber cargado bien: apagarlo junto con `setPerfil`, en la misma
+      // pasada, evita la ventana entre un microtask y el otro.
+      .then((r) => {
+        if (cancelado) return;
+        setPerfil(r.data.provider);
+        setCargandoPerfil(false);
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setErrorPerfil(apiError(err, 'No pudimos cargar la ficha completa.'));
+        setCargandoPerfil(false);
+      });
     return () => { cancelado = true; };
-  }, [punto, posicion, perfil]);
+    // `reintentos` no lo lee el cuerpo: solo está para que "Reintentar" fuerce otra pasada,
+    // porque un fallo deja `perfil` en null igual que antes de pedir nada (si no, el efecto no
+    // tendría por qué volver a correr).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [punto, posicion, perfil, reintentos]);
 
   useEffect(() => {
     const onResize = () => tocar((n) => n + 1);
@@ -181,7 +223,7 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
   const offsetBase = posicion === 'abierta' ? 0 : offsetAsomada;
   const offsetActual = offsetArrastre === null
     ? offsetBase
-    : clamp(offsetBase + offsetArrastre, -24, offsetAsomada + HOLGURA_CIERRE + 80);
+    : clamp(offsetBase + offsetArrastre, -REBOTE_ARRIBA, offsetAsomada + HOLGURA_CIERRE + REBOTE_CIERRE);
 
   // Comunica al mapa (fuera de nuestro control) cuánto tapa la hoja ahora mismo.
   useEffect(() => {
@@ -221,14 +263,19 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
 
   if (!punto) return null;
 
-  const nombreContacto = perfil?.whatsapp ?? null;
-  const mostrarWhatsapp = Boolean(nombreContacto) && perfil?.contact_mode !== 'call';
-  const mostrarLlamar = Boolean(nombreContacto) && perfil?.contact_mode !== 'whatsapp';
+  const telefonoContacto = perfil?.whatsapp ?? null;
+  const mostrarWhatsapp = Boolean(telefonoContacto) && perfil?.contact_mode !== 'call';
+  const mostrarLlamar = Boolean(telefonoContacto) && perfil?.contact_mode !== 'whatsapp';
   const lugar = [perfil?.municipality_name, perfil?.province_name].filter(Boolean).join(', ');
 
   return (
     // pointer-events-none: el mapa detrás sigue recibiendo toques salvo bajo la propia hoja.
-    <div className="pointer-events-none fixed inset-0 z-[85]">
+    // z-[500]: por encima de los controles flotantes de MapaExplorar (z-[400], la escala de
+    // Leaflet que usa el resto del mapa — ver ProvinceMapSelector.tsx), incluido el botón
+    // «Buscar en esta zona» que esta hoja existe justamente para no tapar. La variable CSS
+    // --hoja-punto-alto de más abajo no sirve de nada si el botón, aun recolocado, queda
+    // pintado por debajo de la hoja.
+    <div className="pointer-events-none fixed inset-0 z-[500]">
       <div
         ref={sheetRef}
         role="dialog"
@@ -240,7 +287,6 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
           height: `${altoAbierta}px`,
           transform: `translateY(${offsetActual}px)`,
           transition: offsetArrastre === null ? 'transform .32s cubic-bezier(.2,.7,.2,1)' : 'none',
-          touchAction: 'none',
         }}
       >
         <button
@@ -277,7 +323,7 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
             </button>
           </div>
 
-          <Link to={`/proveedor/${punto.id}`} className="link mt-3 inline-block text-sm">
+          <Link to={`/proveedor/${punto.id}`} onClick={limpiarEntradaPropia} className="link mt-3 inline-block text-sm">
             Ver perfil completo
           </Link>
 
@@ -288,7 +334,7 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
                   <Spinner />
                 </div>
               )}
-              {errorPerfil && <p className="text-sm text-red-700">{errorPerfil}</p>}
+              {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => setReintentos((n) => n + 1)} />}
               {perfil && !cargandoPerfil && (
                 <div className="space-y-4">
                   <RatingInline rating={perfil.rating} count={perfil.review_count} />
@@ -300,20 +346,21 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
                       {perfil.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
                     </ul>
                   )}
-                  {(mostrarWhatsapp || mostrarLlamar) && nombreContacto && (
+                  {(mostrarWhatsapp || mostrarLlamar) && telefonoContacto && (
                     <div className="grid grid-cols-2 gap-2">
                       {mostrarWhatsapp && (
                         <a
-                          href={whatsappLink(nombreContacto, `Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.`)}
+                          href={whatsappLink(telefonoContacto, `Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.`)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => providerApi.contact(punto.id, 'whatsapp')}
                           className="btn-whatsapp btn-sm"
                         >
                           WhatsApp
                         </a>
                       )}
                       {mostrarLlamar && (
-                        <a href={telLink(nombreContacto)} className="btn-secondary btn-sm">Llamar</a>
+                        <a href={telLink(telefonoContacto)} onClick={() => providerApi.contact(punto.id, 'call')} className="btn-secondary btn-sm">Llamar</a>
                       )}
                     </div>
                   )}
