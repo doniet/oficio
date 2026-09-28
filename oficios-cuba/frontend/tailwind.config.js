@@ -4,11 +4,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Terracota de ladrillo colonial: acción principal.
+        // Naranja Encuentrauno: la marca. Ojo con el contraste — ver el comentario de abajo.
         brand: {
-          50: '#FDF4F1', 100: '#FBE6DF', 200: '#F6CBBD', 300: '#EFA78F', 400: '#E57A5C',
-          500: '#D85A3A', 600: '#C8472B', 700: '#A63922', 800: '#85301F', 900: '#6C2A1E',
+          50: '#FFF4EA', 100: '#FFE6CC', 200: '#FFCB99', 300: '#FFAD5C', 400: '#FF922E',
+          500: '#FF7A00', 600: '#C25A00', 700: '#B85400', 800: '#8F4200', 900: '#6B3200',
         },
+        // brand-500 es el naranja del logo: vale para fondos, iconos e ilustraciones, pero con
+        // texto blanco encima da 2,6:1 y WCAG AA pide 4,5:1. Los botones rellenos y los enlaces
+        // usan brand-700 (4,9:1). Sobre naranja vivo, el texto va en ink-950.
         // Azul tinta: texto, cabeceras y superficies oscuras.
         ink: {
           50: '#F4F6FA', 100: '#E6EAF2', 200: '#CBD2E1', 300: '#A3AEC6', 400: '#7885A3',
