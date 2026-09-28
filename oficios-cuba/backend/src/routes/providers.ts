@@ -77,12 +77,18 @@ function toCard(row: any) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const { province_id, category, q, sort = 'relevance' } = queryTextos(req.query, ['province_id', 'category', 'q', 'sort'] as const);
+  const { province_id, category, q, sort = 'relevance', kind } = queryTextos(req.query, ['province_id', 'category', 'q', 'sort', 'kind'] as const);
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(48, Math.max(1, Number(req.query.limit) || 12));
 
   let where = 'WHERE pp.is_active = 1';
   const params: unknown[] = [];
+  // El plan manda: segunPlan() muestra como oficio a quien no lo tenga incluido, así que el
+  // SQL tiene que decir lo mismo o un perfil que bajó de plan saldría en la pestaña equivocada.
+  const CON_NEGOCIO = "pp.subscription_plan IN ('pro', 'premium')";
+  if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO}`;
+  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO})`;
+  else if (kind) throw new AppError('Tipo de perfil no válido', 400);
   if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
   if (category) {
     where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
