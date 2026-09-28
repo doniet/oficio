@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   gallery TEXT, -- JSON: fotos del negocio
   agenda TEXT, -- JSON: días y horas en que acepta citas
   show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
+  map_precision TEXT DEFAULT 'exacta',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -399,6 +400,7 @@ CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
 CREATE INDEX IF NOT EXISTS idx_providers_province ON provider_profiles(province_id);
 CREATE INDEX IF NOT EXISTS idx_providers_active ON provider_profiles(is_active);
 CREATE INDEX IF NOT EXISTS idx_providers_subscription ON provider_profiles(subscription_plan);
+CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
 CREATE INDEX IF NOT EXISTS idx_reviews_provider ON reviews(provider_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_provider ON conversations(provider_id);
@@ -577,6 +579,14 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   // 10 — lista de precios renglón a renglón de cada oficio.
   (d) => {
     d.exec('ALTER TABLE services ADD COLUMN price_list TEXT');
+  },
+  // 11 — precisión del punto en el mapa y su índice. `zona` redondea al servir, nunca al guardar,
+  // para que cambiar de opinión no exija volver a marcar el punto.
+  (d) => {
+    d.exec(`
+      ALTER TABLE provider_profiles ADD COLUMN map_precision TEXT DEFAULT 'exacta';
+      CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
+    `);
   },
 ];
 
