@@ -60,6 +60,10 @@ describe('migraciones sobre una base existente', () => {
     // v7: panel de administración.
     expect(db.prepare("SELECT is_admin FROM users WHERE id = 'u-pro'").get()).toEqual({ is_admin: 0 });
     expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'admin_audit'").get()).toEqual({ n: 1 });
+    // v11: precisión del punto en el mapa y su índice geográfico.
+    const colsProveedor = (db.prepare('PRAGMA table_info(provider_profiles)').all() as { name: string; dflt_value: string | null }[]);
+    expect(colsProveedor.find((c) => c.name === 'map_precision')!.dflt_value).toBe("'exacta'");
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_pp_geo'").get()).toBeDefined();
 
     db.prepare('DELETE FROM services WHERE id = ?').run('s1');
     expect(db.prepare('SELECT service_id FROM reviews WHERE id = ?').get('r1')).toEqual({ service_id: null });

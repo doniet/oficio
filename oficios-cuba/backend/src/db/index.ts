@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   gallery TEXT, -- JSON: fotos del negocio
   agenda TEXT, -- JSON: días y horas en que acepta citas
   show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
-  map_precision TEXT DEFAULT 'exacta',
+  map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -584,7 +584,7 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
   // para que cambiar de opinión no exija volver a marcar el punto.
   (d) => {
     d.exec(`
-      ALTER TABLE provider_profiles ADD COLUMN map_precision TEXT DEFAULT 'exacta';
+      ALTER TABLE provider_profiles ADD COLUMN map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona'));
       CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
     `);
   },
