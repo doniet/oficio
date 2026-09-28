@@ -51,10 +51,12 @@ interface Props {
   setSelectedMunicipality: (municipality: Municipality | null) => void;
   onConfirm?: () => void;
   className?: string;
+  /** Cuando la búsqueda solo filtra por provincia (Negocios), no se ofrece elegir municipio. */
+  soloProvincia?: boolean;
 }
 
 export default function ProvinceMapSelector({
-  provinces, municipalities, selectedProvince, setSelectedProvince, selectedMunicipality, setSelectedMunicipality, onConfirm, className = '',
+  provinces, municipalities, selectedProvince, setSelectedProvince, selectedMunicipality, setSelectedMunicipality, onConfirm, className = '', soloProvincia = false,
 }: Props) {
   const [query, setQuery] = useState('');
   const [locating, setLocating] = useState(false);
@@ -66,13 +68,14 @@ export default function ProvinceMapSelector({
     const coords = pendingCoords.current;
     if (!coords || !municipalities.length) return;
     pendingCoords.current = null;
+    if (soloProvincia) return;
     const m = nearest(municipalities, coords.lat, coords.lng);
     if (m) setSelectedMunicipality(m);
-  }, [municipalities, setSelectedMunicipality]);
+  }, [municipalities, soloProvincia, setSelectedMunicipality]);
 
   useEffect(() => setQuery(''), [selectedProvince?.id]);
 
-  const listing = selectedProvince ? municipalities : provinces;
+  const listing = selectedProvince ? (soloProvincia ? [] : municipalities) : provinces;
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
     return q ? listing.filter((x) => normalize(x.name).includes(q)) : listing;
@@ -97,8 +100,10 @@ export default function ProvinceMapSelector({
         if (!p) return;
         pendingCoords.current = { lat: coords.latitude, lng: coords.longitude };
         if (p.id === selectedProvince?.id) {
-          const m = nearest(municipalities, coords.latitude, coords.longitude);
-          if (m) setSelectedMunicipality(m);
+          if (!soloProvincia) {
+            const m = nearest(municipalities, coords.latitude, coords.longitude);
+            if (m) setSelectedMunicipality(m);
+          }
           pendingCoords.current = null;
         } else {
           pickProvince(p);
@@ -134,7 +139,7 @@ export default function ProvinceMapSelector({
               <Tooltip direction="top" offset={[0, -8]}>{p.name}</Tooltip>
             </Marker>
           ))}
-          {selectedProvince && municipalities.map((m) => (
+          {selectedProvince && !soloProvincia && municipalities.map((m) => (
             <Marker
               key={m.id}
               position={[m.lat, m.lng]}
@@ -165,57 +170,63 @@ export default function ProvinceMapSelector({
             <p className="text-sm font-semibold text-ink-700">Elige una provincia</p>
           )}
           {selectedProvince && <p className="font-display text-lg font-bold leading-tight">{selectedProvince.name}</p>}
-          <label className="relative block">
-            <span className="sr-only">{selectedProvince ? 'Buscar municipio' : 'Buscar provincia'}</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={selectedProvince ? 'Buscar municipio…' : 'Buscar provincia…'}
-              className="input py-2 pl-9 text-sm"
-            />
-          </label>
+          {!(soloProvincia && selectedProvince) && (
+            <label className="relative block">
+              <span className="sr-only">{selectedProvince ? 'Buscar municipio' : 'Buscar provincia'}</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={selectedProvince ? 'Buscar municipio…' : 'Buscar provincia…'}
+                className="input py-2 pl-9 text-sm"
+              />
+            </label>
+          )}
           {geoError && <p className="text-xs text-red-700" role="alert">{geoError}</p>}
         </div>
 
-        <ul className="max-h-56 flex-1 overflow-y-auto p-1.5 md:max-h-none" role="listbox" aria-label={selectedProvince ? 'Municipios' : 'Provincias'}>
-          {selectedProvince && (
-            <li>
-              <button
-                type="button"
-                role="option"
-                aria-selected={!selectedMunicipality}
-                onClick={() => setSelectedMunicipality(null)}
-                className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm', !selectedMunicipality ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
-              >
-                <MapPin className="h-4 w-4 shrink-0 opacity-60" /> Toda la provincia
-              </button>
-            </li>
-          )}
-          {filtered.map((item) => {
-            const active = selectedProvince ? item.id === selectedMunicipality?.id : false;
-            return (
-              <li key={item.id}>
+        {soloProvincia && selectedProvince ? (
+          <p className="flex-1 px-4 py-6 text-center text-sm text-ink-400">La búsqueda de negocios es por provincia entera.</p>
+        ) : (
+          <ul className="max-h-56 flex-1 overflow-y-auto p-1.5 md:max-h-none" role="listbox" aria-label={selectedProvince ? 'Municipios' : 'Provincias'}>
+            {selectedProvince && (
+              <li>
                 <button
                   type="button"
                   role="option"
-                  aria-selected={active}
-                  onClick={() => (selectedProvince ? setSelectedMunicipality(item as Municipality) : pickProvince(item as Province))}
-                  className={cn('flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm', active ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
+                  aria-selected={!selectedMunicipality}
+                  onClick={() => setSelectedMunicipality(null)}
+                  className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm', !selectedMunicipality ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
                 >
-                  <span className="truncate">{item.name}</span>
-                  {active && <Check className="h-4 w-4 shrink-0" />}
+                  <MapPin className="h-4 w-4 shrink-0 opacity-60" /> Toda la provincia
                 </button>
               </li>
-            );
-          })}
-          {selectedProvince && !municipalities.length && (
-            <li className="flex justify-center py-6 text-ink-300"><Spinner /></li>
-          )}
-          {filtered.length === 0 && query && (
-            <li className="px-3 py-6 text-center text-sm text-ink-400">Sin resultados para “{query}”.</li>
-          )}
-        </ul>
+            )}
+            {filtered.map((item) => {
+              const active = selectedProvince ? item.id === selectedMunicipality?.id : false;
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => (selectedProvince ? setSelectedMunicipality(item as Municipality) : pickProvince(item as Province))}
+                    className={cn('flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm', active ? 'bg-ink-900 font-semibold text-white' : 'text-ink-700 hover:bg-sand-100')}
+                  >
+                    <span className="truncate">{item.name}</span>
+                    {active && <Check className="h-4 w-4 shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+            {selectedProvince && !municipalities.length && (
+              <li className="flex justify-center py-6 text-ink-300"><Spinner /></li>
+            )}
+            {filtered.length === 0 && query && (
+              <li className="px-3 py-6 text-center text-sm text-ink-400">Sin resultados para “{query}”.</li>
+            )}
+          </ul>
+        )}
 
         {onConfirm && (
           <div className="border-t border-sand-200 p-3">

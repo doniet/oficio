@@ -23,12 +23,21 @@ const SORTS = [
 const PRICE_CAPS = [2000, 5000, 10000, 25000, 50000];
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
 export type Pestaña = 'servicios' | 'productos' | 'negocios';
-// En Productos solo cuenta la ubicación; en Negocios, ubicación y categoría.
+// En Productos solo cuenta la ubicación; en Negocios, provincia y categoría (/providers no
+// filtra por municipio, así que ese filtro no entra aquí: un control que la API no honra es
+// peor que uno ausente).
 // El precio y el tipo de precio son de los oficios y no aplican fuera de Servicios.
 const FILTROS_POR_PESTAÑA: Record<Pestaña, readonly string[]> = {
   servicios: ['category', 'province', 'municipality', 'price_max', 'price_type'],
   productos: ['province', 'municipality'],
-  negocios: ['category', 'province', 'municipality'],
+  negocios: ['category', 'province'],
+};
+// Idem para el orden: /providers (Negocios) no implementa price_asc/price_desc, así que el
+// <select> no debe ofrecerlos ahí (caería en relevancia sin avisar). Productos no tiene orden.
+const SORTS_POR_PESTAÑA: Record<Pestaña, readonly string[]> = {
+  servicios: ['relevance', 'rating', 'price_asc', 'price_desc', 'newest'],
+  productos: [],
+  negocios: ['relevance', 'rating', 'newest'],
 };
 const PAGE_SIZE = 12;
 
@@ -83,7 +92,7 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
             <option value="">Toda Cuba</option>
             {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          {get('province') && (
+          {get('province') && pestaña !== 'negocios' && (
             <select className="input" value={get('municipality')} onChange={(e) => update({ municipality: e.target.value || null })} aria-label="Municipio">
               <option value="">Todos los municipios</option>
               {municipalities.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -122,9 +131,10 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
   );
 }
 
-function MapModal({ open, onClose, provinces, initialProvince, initialMunicipality, onApply }: {
+function MapModal({ open, onClose, provinces, initialProvince, initialMunicipality, onApply, soloProvincia }: {
   open: boolean; onClose: () => void; provinces: Province[];
   initialProvince: string; initialMunicipality: string; onApply: (province: string | null, municipality: string | null) => void;
+  soloProvincia?: boolean;
 }) {
   const [province, setProvince] = useState<Province | null>(null);
   const [municipality, setMunicipality] = useState<Municipality | null>(null);
@@ -163,6 +173,7 @@ function MapModal({ open, onClose, provinces, initialProvince, initialMunicipali
             selectedMunicipality={municipality}
             setSelectedMunicipality={setMunicipality}
             onConfirm={() => { onApply(province?.id ?? null, municipality?.id ?? null); onClose(); }}
+            soloProvincia={soloProvincia}
           />
         </Suspense>
       )}
@@ -338,6 +349,10 @@ export default function Search() {
   const filterKeys = FILTROS_POR_PESTAÑA[pestaña];
   // Un filtro que no aplica a la pestaña actual no se muestra ni cuenta, aunque siga en la URL.
   const puesto = (k: string) => filterKeys.includes(k) && get(k);
+  const sortsDisponibles = SORTS.filter((s) => SORTS_POR_PESTAÑA[pestaña].includes(s.value));
+  // Si llegamos con un sort que esta pestaña no respeta (p. ej. price_asc desde Servicios), el
+  // <select> no puede mostrarlo elegido: la API ya cae en relevancia sin avisar.
+  const sortValue = sortsDisponibles.some((s) => s.value === get('sort')) ? get('sort') : 'relevance';
 
   const chips: { key: string; label: string; clear: Record<string, null> }[] = [];
   if (get('q')) chips.push({ key: 'q', label: `“${get('q')}”`, clear: { q: null } });
@@ -348,6 +363,8 @@ export default function Search() {
   if (puesto('price_type')) chips.push({ key: 'price_type', label: priceTypeLabel[get('price_type') as PriceType] ?? get('price_type'), clear: { price_type: null } });
   const activeFilters = filterKeys.filter((k) => get(k)).length;
   const clearFilters = () => update(Object.fromEntries(filterKeys.map((k) => [k, null])));
+  // Para el vacío de resultados: si el chip de "q" está puesto, el botón tiene que quitarlo también.
+  const clearAll = () => update({ q: null, ...Object.fromEntries(filterKeys.map((k) => [k, null])) });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -430,8 +447,8 @@ export default function Search() {
               </button>
               {pestaña !== 'productos' && <>
                 <label className="sr-only" htmlFor="sort">Ordenar por</label>
-                <select id="sort" value={get('sort') || 'relevance'} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
-                  {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                <select id="sort" value={sortValue} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
+                  {sortsDisponibles.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </>}
             </div>
@@ -459,7 +476,7 @@ export default function Search() {
                 icon={<SearchX className="h-7 w-7" />}
                 title="No encontramos negocios"
                 action={chips.length > 0 ? (
-                  <button onClick={clearFilters} className="btn-secondary">Quitar los filtros</button>
+                  <button onClick={clearAll} className="btn-secondary">Quitar los filtros</button>
                 ) : (
                   <button onClick={() => update({ tab: null })} className="btn-secondary">Buscar servicios</button>
                 )}
@@ -484,7 +501,7 @@ export default function Search() {
                 icon={<SearchX className="h-6 w-6" />}
                 title="No encontramos productos"
                 action={chips.length > 0 ? (
-                  <button onClick={() => update({ q: null, province: null, municipality: null })} className="btn-secondary">Quitar la búsqueda y la zona</button>
+                  <button onClick={clearAll} className="btn-secondary">Quitar la búsqueda y la zona</button>
                 ) : (
                   <button onClick={() => update({ tab: null })} className="btn-secondary">Buscar servicios</button>
                 )}
@@ -512,7 +529,7 @@ export default function Search() {
               icon={<SearchX className="h-6 w-6" />}
               title="No encontramos servicios con esos filtros"
               action={chips.length > 0 ? (
-                <button onClick={() => update({ q: null, ...Object.fromEntries(filterKeys.map((k) => [k, null])) })} className="btn-secondary">Quitar todos los filtros</button>
+                <button onClick={clearAll} className="btn-secondary">Quitar todos los filtros</button>
               ) : (
                 <Link to="/profesionales" className="btn-secondary">Ver profesionales</Link>
               )}
@@ -552,8 +569,9 @@ export default function Search() {
         onClose={() => setMapOpen(false)}
         provinces={provinces}
         initialProvince={province}
-        initialMunicipality={get('municipality')}
-        onApply={(p, m) => update({ province: p, municipality: m })}
+        initialMunicipality={negocios ? '' : get('municipality')}
+        onApply={(p, m) => update({ province: p, municipality: negocios ? null : m })}
+        soloProvincia={negocios}
       />
     </div>
   );
