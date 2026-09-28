@@ -1,12 +1,19 @@
-import { act, renderHook } from '@testing-library/react';
+import { createElement } from 'react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acotarACuba, usarMapa } from './usarMapa';
+import MapaExplorar from './MapaExplorar';
 import { mapaApi } from '../../services/api';
 import type { Bbox, MapaRespuesta, PuntoMapa } from '../../types';
 
-vi.mock('../../services/api', () => ({
-  mapaApi: { buscar: vi.fn() },
-}));
+// Solo se sustituye mapaApi.buscar: con vi.importActual el resto del módulo (apiError,
+// tokenStore, api...) sigue siendo el real. Reemplazar el módulo entero dejaba `apiError`
+// en undefined — nada lo notaba porque ninguna prueba forzaba el `.catch` del hook, pero la
+// próxima que sí lo haga habría fallado con «apiError is not a function» en vez de probar el error.
+vi.mock('../../services/api', async () => {
+  const real = await vi.importActual<typeof import('../../services/api')>('../../services/api');
+  return { ...real, mapaApi: { buscar: vi.fn() } };
+});
 
 const bbox: Bbox = { sur: 22, oeste: -83, norte: 23, este: -82 };
 
@@ -68,5 +75,33 @@ describe('usarMapa', () => {
 
     // La petición de zona fue cancelada antes de lanzar la de texto: su respuesta tardía se descarta.
     expect(result.current.puntos).toEqual([puntoTexto]);
+  });
+});
+
+describe('MapaExplorar', () => {
+  beforeEach(() => {
+    vi.mocked(mapaApi.buscar).mockReset();
+  });
+
+  it('pide el área inicial al montar, cuenta como zoom y no dobla la carga', async () => {
+    // `MapContainer` (react-leaflet) llama a `map.setView()` de forma síncrona dentro del
+    // callback de ref del propio div, en un punto en que `context` todavía es null y `children`
+    // (con nuestro <Eventos>) aún no se montó. Ese `setView` dispara `moveend`/`zoomend` en el
+    // acto (Leaflet: `_resetView` → `fire('load')` con `_loaded` ya en true), así que el
+    // `useMapEvents` de `Eventos` — que engancha sus listeners en un `useEffect`, siempre
+    // posterior al primer commit — nunca los ve. Sin un efecto de montaje aparte, el mapa se
+    // abre sin haber pedido nunca su primera área. Esta prueba monta el componente real (no el
+    // hook) para probar justo esa costura entre React y Leaflet, la única parte que las pruebas
+    // del hook no pueden ver.
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+
+    render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {} }));
+
+    await act(async () => { await espera(280); }); // pasa el antirrebote de zoom (250 ms)
+
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1); // una sola carga: whenReady/zoomend real no la dobla
+    // Si la carga inicial hubiera entrado por la rama de paneo (regla 2), el mapa se abriría sin
+    // datos y con el botón puesto en vez de con la zona ya pedida.
+    expect(screen.queryByText('Buscar en esta zona')).toBeNull();
   });
 });

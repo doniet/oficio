@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
 import L, { type LatLngBounds, type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -35,7 +35,7 @@ function pinIcon(plan: PuntoMapa['plan'], detras: number) {
 }
 
 function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<boolean>; alMover: (b: Bbox, porZoom: boolean) => void }) {
-  useMapEvents({
+  const map = useMapEvents({
     zoomend: (e) => {
       // `moveend` dispara también después de un zoom; este flag se lo indica al handler de abajo
       // para que no ensucie la zona ni saque el botón «Buscar en esta zona» sin motivo.
@@ -47,6 +47,20 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
       if (!zoomRecien.current) alMover(aBbox(e.target.getBounds()), false);
     },
   });
+
+  // `MapContainer` llama a `map.setView()` de forma síncrona dentro del callback de ref del div
+  // que monta Leaflet — en ese momento `context` todavía es null y este componente (con los
+  // listeners de arriba) ni existe. Ese `setView` ya dispara `moveend`/`zoomend` en el acto, así
+  // que `useMapEvents` (que los engancha en un `useEffect`, siempre posterior al primer commit)
+  // nunca los ve: sin este efecto de montaje el mapa se abre sin haber pedido nunca su primera
+  // área — cero marcadores, y si el usuario solo panea, ni siquiera aparece el botón para pedirla.
+  // Cuenta como zoom (no como paneo): la carga inicial no debe dejar puesto el botón «Buscar en
+  // esta zona» — el usuario no debería tener que pedir ver lo que el mapa acaba de abrir.
+  useEffect(() => {
+    alMover(aBbox(map.getBounds()), true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return null;
 }
 
