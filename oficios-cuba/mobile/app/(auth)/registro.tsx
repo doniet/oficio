@@ -100,7 +100,7 @@ export default function Registro() {
 
 const s = StyleSheet.create({
   tipo: { flex: 1, gap: 8, padding: 14, borderRadius: 16, borderWidth: 2, borderColor: sand[200], backgroundColor: '#ffffff' },
-  tipoActivo: { borderColor: brand[500] },
+  tipoActivo: { borderColor: brand[600] },
   tipoIcono: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tipoTitulo: { fontFamily: fuentes.textoNegrita, fontSize: 14, lineHeight: 18, color: ink[900] },
   tipoTexto: { fontFamily: fuentes.texto, fontSize: 12, lineHeight: 16, color: ink[500] },

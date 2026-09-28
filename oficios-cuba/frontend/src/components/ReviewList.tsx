@@ -93,7 +93,7 @@ export function ReviewForm({ serviceId, onCreated }: { serviceId: string; onCrea
             <label key={i} className="cursor-pointer p-0.5" onMouseEnter={() => setHover(i)}>
               <input type="radio" name="rating" value={i} checked={rating === i} onChange={() => setRating(i)} className="peer sr-only" />
               <Star
-                className={cn('h-8 w-8 transition peer-focus-visible:rounded peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500', i <= shown ? 'fill-amber-400 text-amber-400' : 'fill-sand-200 text-sand-200')}
+                className={cn('h-8 w-8 transition peer-focus-visible:rounded peer-focus-visible:ring-2 peer-focus-visible:ring-brand-600', i <= shown ? 'fill-amber-400 text-amber-400' : 'fill-sand-200 text-sand-200')}
                 aria-hidden="true"
               />
               <span className="sr-only">{i} {i === 1 ? 'estrella' : 'estrellas'}</span>

@@ -214,7 +214,7 @@ export default function MySubscription() {
             const isPending = pending?.plan === id;
             const featured = id === 'pro';
             return (
-              <div key={id} className={cn('card relative flex flex-col p-5', isCurrent && 'ring-2 ring-brand-500', featured && !isCurrent && 'ring-1 ring-sea-300')}>
+              <div key={id} className={cn('card relative flex flex-col p-5', isCurrent && 'ring-2 ring-brand-600', featured && !isCurrent && 'ring-1 ring-sea-300')}>
                 {isCurrent && <span className="badge absolute -top-2.5 left-5 bg-brand-600 text-white">Tu plan</span>}
                 {featured && !isCurrent && <span className="badge absolute -top-2.5 left-5 bg-sea-600 text-white">Recomendado</span>}
                 <h3 className="font-sans text-lg font-bold">{planLabel[id]}</h3>
@@ -302,7 +302,7 @@ export default function MySubscription() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   {([['transfer', 'Transferencia', Landmark], ['cash', 'Efectivo', Banknote]] as const).map(([value, label, Icon]) => (
                     <label key={value} className={cn('flex cursor-pointer items-center gap-3 rounded-2xl border p-3 text-sm font-semibold transition',
-                      method === value ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-sand-200 hover:border-sand-300')}>
+                      method === value ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-sand-200 hover:border-sand-300')}>
                       <input type="radio" name="method" value={value} checked={method === value} onChange={() => setMethod(value)} className="sr-only" />
                       <Icon className="h-5 w-5" aria-hidden="true" /> {label}
                     </label>

@@ -78,7 +78,7 @@ function Gallery({ images, title, seed, icon }: { images: string[]; title: strin
             <button
               key={src}
               onClick={() => go(i)}
-              className={cn('h-16 w-20 shrink-0 overflow-hidden rounded-xl ring-2 ring-offset-2 ring-offset-paper transition', i === index ? 'ring-brand-500' : 'ring-transparent opacity-70 hover:opacity-100')}
+              className={cn('h-16 w-20 shrink-0 overflow-hidden rounded-xl ring-2 ring-offset-2 ring-offset-paper transition', i === index ? 'ring-brand-600' : 'ring-transparent opacity-70 hover:opacity-100')}
               aria-label={`Ver foto ${i + 1}`}
               aria-current={i === index}
             >

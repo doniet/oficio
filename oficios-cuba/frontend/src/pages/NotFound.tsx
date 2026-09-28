@@ -14,7 +14,7 @@ export default function NotFound() {
   return (
     <div className="container-page flex min-h-[65vh] flex-col items-center justify-center py-16 text-center">
       <p className="font-display text-[7rem] font-extrabold leading-none text-sand-300 sm:text-[9rem]" aria-hidden="true">
-        4<span className="text-brand-500">0</span>4
+        4<span className="text-brand-600">0</span>4
       </p>
       <h1 className="mt-2 text-balance text-3xl font-bold sm:text-4xl">Esta página no existe</h1>
       <p className="mt-3 max-w-md text-ink-500">

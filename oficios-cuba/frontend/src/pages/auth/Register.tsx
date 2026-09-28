@@ -87,8 +87,8 @@ export default function Register() {
                   key={t.value}
                   className={cn(
                     'relative flex cursor-pointer flex-col gap-2 rounded-2xl border-2 bg-white p-3.5 transition sm:p-4',
-                    'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500 has-[:focus-visible]:ring-offset-2',
-                    active ? 'border-brand-500 shadow-card' : 'border-sand-200 hover:border-sand-300',
+                    'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-600 has-[:focus-visible]:ring-offset-2',
+                    active ? 'border-brand-600 shadow-card' : 'border-sand-200 hover:border-sand-300',
                   )}
                 >
                   <input type="radio" name="user_type" value={t.value} checked={active} onChange={() => setType(t.value)} className="sr-only" />
