@@ -26,6 +26,29 @@ function pseudoAzar(i: number, sal: number): number {
   return x - Math.floor(x);
 }
 
+// Ronda de arreglo 1: "divisible por 3 → pro, por 4 → basic" (la fórmula original del brief) le
+// da los múltiplos de 12 a pro antes de que basic los cuente, y deja 33 %/17 %/50 % en vez del
+// ~35/25/40 objetivo. Un ciclo de 20 (300 = 15 vueltas exactas) sí da el objetivo exacto: 7 pro
+// (35 %), 5 basic (25 %), 8 free (40 %). Verificado contando las filas, no razonando la fórmula.
+function planDe(i: number): 'free' | 'basic' | 'pro' {
+  const ciclo = (i - 1) % 20;
+  if (ciclo < 7) return 'pro';
+  if (ciclo < 12) return 'basic';
+  return 'free';
+}
+
+// Uno de cada cinco perfiles se publica con precisión de "zona" (redondeada a la celda de
+// ~1 km que usa /api/mapa): antes del arreglo, los 300 quedaban en 'exacta' (el default de la
+// columna) porque el INSERT nunca tocaba map_precision, así que el camino de coordenada
+// redondeada no tenía ni un dato de desarrollo que lo mostrara.
+const ZONA_CADA = 5;
+
+// A propósito, tres de esos perfiles "zona" comparten la misma celda de 0,01° al redondear (con
+// suficiente margen — ±0,003° contra medio lado de celda 0,005° — para que caigan siempre en la
+// celda de La Habana, aunque los tres son perfiles distintos con su propio desvío): así hay un
+// caso real de "varios profesionales de zona apilados en el mismo punto" que mirar en desarrollo.
+const ZONA_COMPARTIDA = new Set([5, 10, 15]);
+
 /**
  * Siembra 300 perfiles sintéticos ("Prueba 1".."Prueba 300"), visibles en el mapa, para que la
  * densidad del /api/mapa (un perfil por celda, "+N detrás") se pueda ver y probar en desarrollo.
@@ -57,12 +80,20 @@ export async function seedMapa(): Promise<number> {
 
   const tx = db.transaction(() => {
     for (let i = 1; i <= N; i++) {
-      const plan = i % 3 === 0 ? 'pro' : i % 4 === 0 ? 'basic' : 'free';
+      const plan = planDe(i);
+      const mapPrecision: 'exacta' | 'zona' = i % ZONA_CADA === 0 ? 'zona' : 'exacta';
 
       let provinceId: string;
       let lat: number;
       let lng: number;
-      if (i <= EN_HABANA) {
+      if (ZONA_COMPARTIDA.has(i)) {
+        // Mismo centro que el cuadrado de La Habana: cada uno con su propio desvío (salt 7/8,
+        // distinto del que usa el cuadrado general), pero todos dentro de ±0,003° del centro
+        // exacto de celda (23,10 / −82,38), así los tres redondean siempre a la misma celda.
+        provinceId = habana.id;
+        lat = HABANA_LAT + (pseudoAzar(i, 7) - 0.5) * 0.006;
+        lng = HABANA_LNG + (pseudoAzar(i, 8) - 0.5) * 0.006;
+      } else if (i <= EN_HABANA) {
         provinceId = habana.id;
         lat = HABANA_LAT + (pseudoAzar(i, 1) - 0.5) * LADO_HABANA;
         lng = HABANA_LNG + (pseudoAzar(i, 2) - 0.5) * LADO_HABANA;
@@ -81,10 +112,10 @@ export async function seedMapa(): Promise<number> {
         .run(userId, `prueba.mapa.${i}@oficios.test`, hash, `Prueba ${i}`, `+53500${String(i).padStart(5, '0')}`);
 
       db.prepare(`INSERT INTO provider_profiles
-          (id, user_id, business_name, description, province_id, lat, lng, whatsapp, is_active, subscription_plan, show_on_map)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1)`)
+          (id, user_id, business_name, description, province_id, lat, lng, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
         .run(profileId, userId, `Prueba ${i}`, 'Perfil sintético de prueba para la densidad del mapa.',
-          provinceId, lat, lng, `+53500${String(i).padStart(5, '0')}`, plan);
+          provinceId, lat, lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
 
       // Un oficio activo por perfil: lo exige el tab por defecto (servicios) de /api/mapa.
       db.prepare(`INSERT INTO services (id, provider_id, category_id, title, price_type, is_active)
