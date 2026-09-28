@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, NativeSyntheticEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,9 @@ const ZOOM_INICIAL = 6.3;
 // Zoom al que se acerca «Cerca de mí»: nivel de ciudad, suficiente para distinguir profesionales cercanos.
 const ZOOM_CERCA_DE_MI = 13;
 // Diferencia de zoom mínima para tratar un cambio de región como "hizo zoom" y no como paneo.
+// Valor empírico sin verificar en hardware real (no hay emulador en este host): al probar en un
+// teléfono, comprobar que un pinch-zoom real siempre cruza este umbral y que la inercia de un
+// paneo nunca lo cruza por sí sola — si no, ajustar aquí.
 const UMBRAL_ZOOM = 0.05;
 
 function bboxDeLimites([oeste, sur, este, norte]: LngLatBounds): Bbox {
@@ -54,9 +57,13 @@ const COLOR_PIN: Record<PuntoMapa['plan'], string> = {
   free: ink[500],
 };
 
-function Pin({ punto, onPress }: { punto: PuntoMapa; onPress: () => void }) {
+// Memoizado: sin esto, cada cambio de `cargando` o `buscandoUbicacion` en el padre (que no toca
+// `puntos`) volvería a renderizar los hasta 200 marcadores en pantalla por nada. `onAbrir` se pasa
+// tal cual (no envuelto en una clausura nueva por marcador) para que la identidad de las props no
+// cambie entre renders y el memo funcione de verdad.
+const Pin = memo(function Pin({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p: PuntoMapa): void }) {
   return (
-    <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} onPress={onPress}>
+    <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} onPress={() => onAbrir(punto)}>
       <View style={e.pinEnvoltorio}>
         <View style={[e.pin, { backgroundColor: COLOR_PIN[punto.plan] }]}>
           <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={16} color="#ffffff" />
@@ -69,7 +76,7 @@ function Pin({ punto, onPress }: { punto: PuntoMapa; onPress: () => void }) {
       </View>
     </Marker>
   );
-}
+});
 
 export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: string; q: string; category: string; onAbrir(p: PuntoMapa): void }) {
   const { puntos, cargando, error, zonaSucia, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
@@ -137,7 +144,7 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
         onRegionDidChange={alCambiarRegion}
       >
         <Camera ref={camaraRef} initialViewState={{ center: CENTRO_INICIAL, zoom: ZOOM_INICIAL }} maxBounds={LIMITES_CUBA} />
-        {puntos.map((p) => <Pin key={p.id} punto={p} onPress={() => onAbrir(p)} />)}
+        {puntos.map((p) => <Pin key={p.id} punto={p} onAbrir={onAbrir} />)}
       </MapaLibre>
 
       {cargando ? (

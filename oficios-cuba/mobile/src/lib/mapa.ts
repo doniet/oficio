@@ -19,6 +19,10 @@ export function acotarACuba(lat: number, lng: number): { lat: number; lng: numbe
 
 const ANTIRREBOTE_ZOOM_MS = 250;
 const ANTIRREBOTE_TEXTO_MS = 300;
+// Mismo valor que el timeout interno de crearCliente (shared/src/api.ts) y el de axios en la web
+// (frontend/src/services/api.ts): `fetch` no tiene tiempo de espera propio, así que sin este
+// temporizador una conexión cubana lenta que se cuelga deja `cargando: true` para siempre.
+const TIEMPO_ESPERA_MS = 20000;
 
 async function pedirMapa(
   bbox: Bbox,
@@ -54,22 +58,35 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   const bboxVisible = useRef<Bbox | null>(null);
   const controlador = useRef<AbortController | null>(null);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tiempoEspera = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function limpiarTiempoEspera() {
+    if (tiempoEspera.current) { clearTimeout(tiempoEspera.current); tiempoEspera.current = null; }
+  }
 
   const cargar = useCallback((bbox: Bbox) => {
     // Regla 4: se cancela la petición en vuelo antes de lanzar la siguiente. Sin esto, escribir
     // mientras una zona grande sigue cargando pinta el resultado viejo encima del fresco.
     controlador.current?.abort();
+    limpiarTiempoEspera();
     const propio = new AbortController();
     controlador.current = propio;
+    // Se distingue de la cancelación de la regla 4 con esta bandera propia del cierre: un abort
+    // por "llegó otra petición" no es un error (rama de abajo), uno por tiempo de espera sí lo es.
+    let expiroPorTiempo = false;
+    tiempoEspera.current = setTimeout(() => { expiroPorTiempo = true; propio.abort(); }, TIEMPO_ESPERA_MS);
     setEstado((e) => ({ ...e, cargando: true, error: false }));
     pedirMapa(bbox, { tab, q: q || undefined, category: category || undefined }, propio.signal)
       .then((r) => {
+        limpiarTiempoEspera();
         if (propio.signal.aborted) return;
         setEstado({ puntos: r.puntos, cargando: false, error: false, zonaSucia: false, hayMas: r.hay_mas });
       })
       .catch(() => {
-        // Una petición cancelada a propósito no es un error que mostrar.
-        if (propio.signal.aborted) return;
+        limpiarTiempoEspera();
+        // Cancelada a propósito porque llegó otra petición (regla 4): no es un error que mostrar.
+        // Cancelada porque expiró el tiempo de espera: sí lo es, y hay que soltar `cargando`.
+        if (propio.signal.aborted && !expiroPorTiempo) return;
         setEstado((e) => ({ ...e, cargando: false, error: true }));
       });
   }, [tab, q, category]);
@@ -88,7 +105,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, q, category]);
 
-  useEffect(() => () => { controlador.current?.abort(); limpiarTemporizador(); }, []);
+  useEffect(() => () => { controlador.current?.abort(); limpiarTemporizador(); limpiarTiempoEspera(); }, []);
 
   /** El mapa llama a esto en cada cambio de región (onRegionDidChange). */
   const alMoverMapa = useCallback((bbox: Bbox, esZoom: boolean) => {
