@@ -3,6 +3,7 @@ import request from 'supertest';
 import app from '../src/app.js';
 import { api, categoriaId, crearServicio, db, ponerPlan, registrar } from './helpers.js';
 import { conMargen, leerBbox, tamanoCelda } from '../src/lib/mapa.js';
+import { seedMapa } from '../src/db/seed-mapa.js';
 
 describe('leerBbox', () => {
   it('lee cuatro números en orden sur,oeste,norte,este', () => {
@@ -244,6 +245,21 @@ describe('GET /api/mapa', () => {
   it('la celda se deriva del rectángulo visible, no del inflado', async () => {
     const r = await request(app).get(`/api/mapa?bbox=23,-83,24,-82`);
     expect(r.body.celda).toBeCloseTo(0.2); // 1° / 5, no 2° / 5
+  });
+
+  it('con 300 perfiles, el tope de 200 se activa y lo dice', async () => {
+    await seedMapa();
+    const r = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}`);
+    expect(r.body.puntos.length).toBeLessThanOrEqual(200);
+    if (r.body.puntos.length === 200) expect(r.body.hay_mas).toBe(true);
+
+    // El recorte sigue siendo determinista sobre el conjunto más grande de toda la suite (300
+    // perfiles de prueba, repartidos entre muchas más celdas que las 4 de la prueba de arriba):
+    // dos peticiones iguales dan los mismos ids en el mismo orden. Nota: con celda ≈ 1° (Cuba
+    // entera cabe en ~5×12 celdas) esto no llega a agotar el LIMIT 201 interno — ver el informe
+    // de la tarea, que documenta por qué 300 perfiles no alcanzan a desbordarlo con este bbox.
+    const otra = await request(app).get(`/api/mapa?bbox=${CUBA_ENTERA}`);
+    expect(otra.body.puntos.map((p: any) => p.id)).toEqual(r.body.puntos.map((p: any) => p.id));
   });
 });
 
