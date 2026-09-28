@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { nombreVisible, priceFrom, ServiceSummary } from '@oficio/shared';
 import { useTasa } from '../lib/tasa';
 import { fuentes, ink, sand } from '../lib/tema';
-import { Esqueleto, Insignia, InsigniaPlan, Portada, u, Valoracion } from './ui';
+import { Esqueleto, Insignia, Portada, u, Valoracion } from './ui';
 
 /** ServiceCard de la web. */
 export function TarjetaServicio({ s }: { s: ServiceSummary }) {
@@ -30,7 +30,6 @@ export function TarjetaServicio({ s }: { s: ServiceSummary }) {
       <View style={e.cuerpo}>
         <View style={e.filaArriba}>
           <Valoracion rating={s.rating} count={s.review_count} />
-          <InsigniaPlan plan={s.subscription_plan} />
         </View>
         <Text style={e.titulo} numberOfLines={2}>{s.title}</Text>
         <Text style={e.negocio} numberOfLines={1}>{nombreVisible(s)}</Text>

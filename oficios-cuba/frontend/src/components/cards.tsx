@@ -3,7 +3,7 @@ import { MapPin, Images, Store } from 'lucide-react';
 import type { ProviderCard as ProviderCardType, ServiceSummary } from '../types';
 import { priceFrom } from '../lib/format';
 import { useTasa } from '../hooks/useTasa';
-import { Avatar, CoverImage, PlanBadge, RatingInline, cn } from './ui';
+import { Avatar, CoverImage, RatingInline, cn } from './ui';
 
 export function NegocioChip({ className = '' }: { className?: string }) {
   return (
@@ -45,7 +45,6 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
       <div className="flex flex-1 flex-col p-4">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <RatingInline rating={service.rating} count={service.review_count} />
-          <PlanBadge plan={service.subscription_plan} />
         </div>
         <h3 className="line-clamp-2 font-sans text-[1.02rem] font-bold leading-snug text-ink-900 group-hover:text-brand-700">
           {service.title}
@@ -96,7 +95,6 @@ export function ProviderCard({ provider }: { provider: ProviderCardType }) {
       <div className="relative h-28 overflow-hidden bg-sand-100">
         <CoverImage src={provider.cover} seed={provider.categories[0] ?? name} alt="" className="transition duration-500 group-hover:scale-[1.04]" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950/40 to-transparent" />
-        <PlanBadge plan={provider.subscription_plan} className="absolute right-3 top-3 shadow-sm" />
       </div>
       <div className="relative flex flex-1 flex-col px-4 pb-4">
         <Avatar src={provider.avatar_url} name={name} size="lg" square className="-mt-8 border-4 border-white shadow-card" />

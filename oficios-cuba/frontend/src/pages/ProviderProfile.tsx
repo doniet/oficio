@@ -11,7 +11,7 @@ import ContactActions from '../components/ContactActions';
 import ProviderCatalog from '../components/catalog/ProviderCatalog';
 import { NegocioChip } from '../components/cards';
 import { RatingBreakdown, ReviewItem } from '../components/ReviewList';
-import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, Spinner } from '../components/ui';
+import { Avatar, Breadcrumbs, CoverImage, EmptyState, ErrorState, PageLoader, RatingInline, Spinner } from '../components/ui';
 
 const PlaceMap = lazy(() => import('../components/PlaceMap'));
 
@@ -215,8 +215,8 @@ export default function ProviderProfile() {
             no flote sobre una foto clara. Ya no tiene que proteger ningún texto. */}
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950/30 via-ink-950/5 to-ink-950/15" />
         <div className="container-page relative pt-4">
-          <Link to="/profesionales" className="btn-sm inline-flex items-center gap-1 rounded-xl bg-white/90 px-3 py-1.5 font-semibold text-ink-800 shadow-sm backdrop-blur sm:hidden">
-            <ArrowLeft className="h-4 w-4" /> Profesionales
+          <Link to="/explorar" className="btn-sm inline-flex items-center gap-1 rounded-xl bg-white/90 px-3 py-1.5 font-semibold text-ink-800 shadow-sm backdrop-blur sm:hidden">
+            <ArrowLeft className="h-4 w-4" /> Explorar
           </Link>
         </div>
       </div>
@@ -230,11 +230,12 @@ export default function ProviderProfile() {
           <Avatar src={provider.avatar_url} name={name} size="xl" square className="-mt-12 shrink-0 border-4 border-paper shadow-card sm:-mt-14" />
           <div className="min-w-0 flex-1 sm:pb-1">
             <div className="hidden sm:mb-2 sm:block">
-              <Breadcrumbs items={[{ label: 'Inicio', to: '/' }, { label: 'Profesionales', to: '/profesionales' }, { label: name }]} />
+              {/* «Explorar», no «Profesionales»: el sistema muestra Servicios, Productos y Negocios.
+                  Además es de donde llega la gente — /profesionales ya no está en el menú. */}
+              <Breadcrumbs items={[{ label: 'Inicio', to: '/' }, { label: 'Explorar', to: '/explorar' }, { label: name }]} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-balance text-3xl font-bold leading-tight">{name}</h1>
-              <PlanBadge plan={provider.subscription_plan} />
               {provider.kind === 'negocio' && <NegocioChip />}
             </div>
             {provider.business_name && <p className="text-ink-500">{provider.owner_name}</p>}

@@ -1,8 +1,8 @@
 import { ReactNode, useState } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { initials, Plan } from '@oficio/shared';
+import { Ionicons } from '@expo/vector-icons';
+import { initials } from '@oficio/shared';
 import { urlImagen } from '../lib/api';
 import { ambar, brand, fuentes, ink, radios, sand, sea, sombra } from '../lib/tema';
 
@@ -36,17 +36,9 @@ export function Chip({ texto, activo, icono, pequeno }: { texto: string; activo?
   );
 }
 
-/** .badge. `plan` = PlanBadge (solo Profesional), `negocio` = NegocioChip, `suave` = categoría. */
-export function Insignia({ tipo, texto }: { tipo: 'plan' | 'negocio' | 'suave' | 'blanca'; texto?: string }) {
-  if (tipo === 'plan') {
-    return (
-      <View style={[u.badge, { backgroundColor: ink[900] }]}>
-        {/* La corona de la web (lucide Crown): Ionicons no tiene corona. */}
-        <MaterialCommunityIcons name="crown-outline" size={14} color={ambar[300]} />
-        <Text style={[u.badgeTexto, { color: ambar[300] }]}>Profesional</Text>
-      </View>
-    );
-  }
+/** .badge. `negocio` = NegocioChip, `suave` = categoría, `blanca` = sobre foto.
+ *  Ya no hay variante de plan: «Profesional» es un plan de pago, no una etiqueta pública. */
+export function Insignia({ tipo, texto }: { tipo: 'negocio' | 'suave' | 'blanca'; texto?: string }) {
   if (tipo === 'negocio') {
     return (
       <View style={[u.badge, { backgroundColor: sea[100] }]}>
@@ -61,8 +53,6 @@ export function Insignia({ tipo, texto }: { tipo: 'plan' | 'negocio' | 'suave' |
     </View>
   );
 }
-
-export const InsigniaPlan = ({ plan }: { plan: Plan }) => (plan === 'pro' ? <Insignia tipo="plan" /> : null);
 
 /** RatingInline de la web. */
 export function Valoracion({ rating, count, tamano = 14 }: { rating: number; count: number; tamano?: number }) {

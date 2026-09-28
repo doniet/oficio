@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Crown, Loader2, Star, X } from 'lucide-react';
+import { Loader2, Star, X } from 'lucide-react';
 import { initials, planLabel } from '../lib/format';
 import type { Plan } from '../types';
 
@@ -93,14 +93,9 @@ export function RatingInline({ rating, count, className = '' }: { rating: number
   );
 }
 
-// Es la insignia del plan, no una verificación de identidad: no puede decir "Verificado".
-export function PlanBadge({ plan, className = '' }: { plan: Plan; className?: string }) {
-  if (plan === 'pro') {
-    return <span className={cn('badge bg-ink-900 text-amber-300', className)}><Crown className="h-3.5 w-3.5" aria-hidden="true" /> Profesional</span>;
-  }
-  return null;
-}
-
+/** Solo para el panel del propio dueño: ahí ver tu plan ES el objetivo. Nunca en superficies
+ *  públicas — el plan de pago de un negocio no es asunto de quien lo busca, y además «Profesional»
+ *  se leería como un distintivo de calidad cuando solo significa que paga más. */
 export function PlanPill({ plan }: { plan: Plan }) {
   const styles: Record<Plan, string> = {
     free: 'bg-sand-100 text-ink-600',

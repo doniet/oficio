@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProviderCard } from '@oficio/shared';
 import { fuentes, ink, sand } from '../lib/tema';
-import { Avatar, Esqueleto, Insignia, InsigniaPlan, Portada, u, Valoracion } from './ui';
+import { Avatar, Esqueleto, Insignia, Portada, u, Valoracion } from './ui';
 
 /**
  * ProviderCard de la web. Sin enlace: el perfil del profesional todavía no existe en la app
@@ -16,7 +16,6 @@ export function TarjetaProfesional({ p }: { p: ProviderCard }) {
       <View style={e.portada}>
         <Portada src={p.cover} semilla={p.categories[0] ?? nombre} />
         <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(to top, rgba(14,21,41,0.4), transparent)' }]} />
-        <View style={{ position: 'absolute', top: 12, right: 12 }}><InsigniaPlan plan={p.subscription_plan} /></View>
       </View>
       <View style={e.cuerpo}>
         <Avatar src={p.avatar_url} nombre={nombre} tamano={64} cuadrado estilo={e.avatar} />

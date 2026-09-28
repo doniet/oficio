@@ -7,7 +7,7 @@ import type { Favorite } from '../../types';
 import { plural } from '../../lib/format';
 import { PageTitle } from '../../components/DashboardLayout';
 import { ProviderCardSkeleton } from '../../components/cards';
-import { Avatar, CoverImage, EmptyState, ErrorState, PlanBadge, RatingInline, Spinner } from '../../components/ui';
+import { Avatar, CoverImage, EmptyState, ErrorState, RatingInline, Spinner } from '../../components/ui';
 
 export default function Favorites() {
   const toast = useToast();
@@ -75,7 +75,6 @@ export default function Favorites() {
                 <Link to={`/proveedor/${f.provider_id}`} className="group flex flex-1 flex-col">
                   <div className="relative h-24 overflow-hidden bg-sand-100">
                     <CoverImage src={f.cover} seed={name} alt="" className="transition duration-500 group-hover:scale-[1.04]" />
-                    <PlanBadge plan={f.subscription_plan} className="absolute left-3 top-3 shadow-sm" />
                   </div>
                   <div className="flex flex-1 flex-col px-4 pb-4">
                     <Avatar src={f.avatar_url} name={name} size="lg" square className="-mt-8 border-4 border-white shadow-card" />

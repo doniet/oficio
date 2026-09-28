@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
 import { telLink, whatsappLink } from '../../lib/format';
-import { Avatar, ErrorState, PlanBadge, RatingInline, Spinner } from '../ui';
+import { Avatar, ErrorState, RatingInline, Spinner } from '../ui';
 import { NegocioChip } from '../cards';
 import type { ProviderPublic, PuntoMapa } from '../../types';
 
@@ -309,7 +309,6 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <h2 id={tituloId} className="truncate text-lg font-bold text-ink-900">{punto.nombre}</h2>
                 {punto.tipo === 'negocio' && <NegocioChip />}
-                {punto.plan === 'pro' && <PlanBadge plan="pro" />}
               </div>
               {punto.resumen && <p className="mt-1 line-clamp-2 text-sm text-ink-600">{punto.resumen}</p>}
             </div>

@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ErrorApi, esquemaMensaje, ETIQUETA_TIPO_PRECIO, precioDetalle, precioRenglon, relativeTime, Review, ServiceDetail } from '@oficio/shared';
 import { Campo } from '../../src/componentes/Campo';
 import { Boton } from '../../src/componentes/Boton';
-import { Avatar, EstadoError, EstadoVacio, Estrellas, Insignia, InsigniaPlan, Portada, Tarjeta, u, Valoracion } from '../../src/componentes/ui';
+import { Avatar, EstadoError, EstadoVacio, Estrellas, Insignia, Portada, Tarjeta, u, Valoracion } from '../../src/componentes/ui';
 import { requiereSesion, useSesion } from '../../src/lib/contexto';
 import { opcionesContacto } from '../../src/lib/contacto';
 import { useTasa } from '../../src/lib/tasa';
@@ -209,7 +209,6 @@ export default function Servicio() {
               <Text style={e.nombreProfesional}>{nombre}</Text>
               {service.subscription_plan === 'pro' || service.kind === 'negocio' ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  <InsigniaPlan plan={service.subscription_plan} />
                   {service.kind === 'negocio' ? <Insignia tipo="negocio" /> : null}
                 </View>
               ) : null}

@@ -9,7 +9,7 @@ import type { Review, ServiceDetail as ServiceDetailType, ServiceSummary } from 
 import ContactActions from '../components/ContactActions';
 import { NegocioChip, ServiceCard } from '../components/cards';
 import { ReviewForm, ReviewItem } from '../components/ReviewList';
-import { Alert, Avatar, Breadcrumbs, CategoryCover, EmptyState, ErrorState, PageLoader, PlanBadge, RatingInline, cn } from '../components/ui';
+import { Alert, Avatar, Breadcrumbs, CategoryCover, EmptyState, ErrorState, PageLoader, RatingInline, cn } from '../components/ui';
 import axios from 'axios';
 
 function Gallery({ images, title, seed, icon }: { images: string[]; title: string; seed: string; icon: string }) {
@@ -332,7 +332,6 @@ export default function ServiceDetail() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link to={`/proveedor/${service.provider_id}`} className="text-lg font-bold text-ink-900 hover:text-brand-700">{providerName}</Link>
-                  <PlanBadge plan={service.subscription_plan} />
                   {service.kind === 'negocio' && <NegocioChip />}
                 </div>
                 {service.business_name && <p className="text-sm text-ink-500">{service.owner_name}</p>}

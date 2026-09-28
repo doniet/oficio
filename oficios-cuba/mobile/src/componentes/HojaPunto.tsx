@@ -5,7 +5,7 @@ import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomShe
 import type { PuntoMapa, ProviderPublic } from '@oficio/shared';
 import { telLink, whatsappLink } from '@oficio/shared';
 import { Boton } from './Boton';
-import { Avatar, EstadoError, Insignia, InsigniaPlan, Valoracion, u } from './ui';
+import { Avatar, EstadoError, Insignia, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
 import { configApi } from '../lib/api';
 import { atrasCierraHoja } from '../lib/hojaPunto';
@@ -191,7 +191,6 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                   <Text style={e.nombre} numberOfLines={1}>{punto.nombre}</Text>
                   {punto.tipo === 'negocio' ? <Insignia tipo="negocio" /> : null}
-                  <InsigniaPlan plan={punto.plan} />
                 </View>
                 {punto.resumen ? <Text style={[u.suave, e.resumen]} numberOfLines={2}>{punto.resumen}</Text> : null}
               </View>
