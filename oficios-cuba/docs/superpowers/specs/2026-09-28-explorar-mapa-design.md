@@ -148,7 +148,9 @@ del rectángulo que manda.
 
 Los tres filtros son acumulativos y ninguno es opcional:
 
-1. `PERFIL_VISIBLE` — el mismo predicado que ya usa el resto del sitio.
+1. `pp.is_active = 1` — el mismo predicado de visibilidad que usa el listado de
+   `/providers`. (La spec anterior lo llamaba `PERFIL_VISIBLE`; esa constante no
+   existe en el código.)
 2. `show_on_map = 1`.
 3. `lat` y `lng` no nulos.
 
@@ -169,6 +171,14 @@ productos: «un punto por perfil, con los artículos que casan dentro».
 `kind: 'oficio'` cuando el plan no incluye negocio, así que un perfil que bajó
 de plan saldría en la pestaña mostrándose como oficio. Es la misma trampa que ya
 documentó la Entrega 1 y tiene prueba propia.
+
+Ese criterio **tampoco se escribe de nuevo**. Hoy vive como una constante local
+dentro del handler de `providers.ts`:
+`CON_NEGOCIO = "pp.subscription_plan IN ('pro', 'premium')"`. Hay que **sacarla a
+`backend/src/db/index.ts`** junto a `PLAN_WEIGHT_SQL` y que la importen las dos
+rutas. Es el mismo riesgo que el del orden por plan: dos definiciones de «esto es
+un negocio» se separan en cuanto aparezca un plan nuevo, y entonces la lista y el
+mapa dirían cosas distintas del mismo perfil.
 
 ## 5. El algoritmo
 
