@@ -88,7 +88,7 @@ export default function ContactActions({
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
     }
-    setText(serviceTitle ? `Hola, vi tu servicio "${serviceTitle}" en Oficios Cuba. ¿Tienes disponibilidad esta semana?` : 'Hola, vi tu perfil en Oficios Cuba y me gustaría consultarte un trabajo.');
+    setText(serviceTitle ? `Hola, vi tu servicio "${serviceTitle}" en Encuentrauno. ¿Tienes disponibilidad esta semana?` : 'Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.');
     setError('');
     setOpen(true);
   };
@@ -110,8 +110,8 @@ export default function ContactActions({
   };
 
   const waText = serviceTitle
-    ? `Hola, vi tu servicio "${serviceTitle}" en Oficios Cuba y me interesa.`
-    : 'Hola, vi tu perfil en Oficios Cuba y me gustaría consultarte un trabajo.';
+    ? `Hola, vi tu servicio "${serviceTitle}" en Encuentrauno y me interesa.`
+    : 'Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.';
 
   const record = (via: 'whatsapp' | 'call') => { providerApi.contact(providerId, via); };
 

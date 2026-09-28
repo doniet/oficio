@@ -144,7 +144,7 @@ export default function Layout() {
       <header className="sticky top-0 z-40 border-b border-sand-200/80 bg-paper/90 backdrop-blur-md">
         <div className="container-page flex h-16 items-center justify-between gap-4">
           <div className="flex items-center gap-8">
-            <Link to="/" aria-label="Oficios Cuba, inicio"><Logo /></Link>
+            <Link to="/" aria-label="Encuentrauno, inicio"><Logo /></Link>
             <nav className="hidden items-center gap-1 md:flex" aria-label="Secciones">
               <NavLink to="/buscar" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
                 Explorar servicios
@@ -190,7 +190,7 @@ export default function Layout() {
               <div>
                 <Logo light />
                 <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-400">
-                  El directorio de oficios de Cuba: encuentra quién te arregle, construya o enseñe cerca de tu casa, y habla directo con él.
+                  Personas, servicios, productos y negocios, todo en un solo lugar. Encuentra lo que necesitas cerca de ti y habla directo con quien lo ofrece.
                 </p>
               </div>
               <div>
@@ -216,7 +216,7 @@ export default function Layout() {
               </div>
             </div>
             <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-ink-500 sm:flex-row sm:justify-between">
-              <p>© {new Date().getFullYear()} Oficios Cuba · Un proyecto de DARDOIT</p>
+              <p>© {new Date().getFullYear()} Encuentrauno · Un proyecto de DARDOIT</p>
               <p>Hecho para funcionar bien con poca conexión.</p>
             </div>
           </div>

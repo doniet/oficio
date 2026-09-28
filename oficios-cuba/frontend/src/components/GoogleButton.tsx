@@ -66,7 +66,7 @@ export function useDestinoGoogle() {
       toast('¡Cuenta creada en el plan Gratis! Completa tu perfil para aparecer en las búsquedas.');
       navigate('/dashboard/perfil', { replace: true });
     } else {
-      if (isNew) toast('¡Te damos la bienvenida a Oficios Cuba!');
+      if (isNew) toast('¡Te damos la bienvenida a Encuentrauno!');
       navigate(next ?? '/dashboard', { replace: true });
     }
   };
@@ -87,7 +87,7 @@ export function UserTypeStep({ nombre, loading, onPick }: { nombre?: string; loa
   ];
   return (
     <div>
-      <p className="font-bold text-ink-900">¿Cómo vas a usar Oficios Cuba?</p>
+      <p className="font-bold text-ink-900">¿Cómo vas a usar Encuentrauno?</p>
       {nombre && <p className="mt-1 text-sm text-ink-500">Es la primera vez que entras, {nombre}.</p>}
       <div className="mt-4 grid gap-2.5">
         {opciones.map((o) => (

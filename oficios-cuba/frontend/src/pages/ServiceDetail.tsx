@@ -219,8 +219,8 @@ export default function ServiceDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (service) document.title = `${service.title} · Oficios Cuba`;
-    return () => { document.title = 'Oficios Cuba'; };
+    if (service) document.title = `${service.title} · Encuentrauno`;
+    return () => { document.title = 'Encuentrauno'; };
   }, [service]);
 
   if (loading) return <PageLoader />;
@@ -373,7 +373,7 @@ export default function ServiceDetail() {
             )}
             <p className="flex items-start gap-2 border-t border-sand-200 pt-4 text-xs leading-relaxed text-ink-400">
               <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              Acuerda precio, fecha y lugar {service.has_chat ? 'por el chat' : 'por WhatsApp o por teléfono'} antes de empezar el trabajo. Oficios Cuba no cobra comisión.
+              Acuerda precio, fecha y lugar {service.has_chat ? 'por el chat' : 'por WhatsApp o por teléfono'} antes de empezar el trabajo. Encuentrauno no cobra comisión.
             </p>
           </div>
         </aside>

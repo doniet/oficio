@@ -24,7 +24,7 @@ function Perks() {
   ];
   return (
     <div className="rounded-3xl bg-ink-950 p-8 text-ink-200">
-      <p className="eyebrow text-amber-300">Oficios Cuba</p>
+      <p className="eyebrow text-amber-300">Encuentrauno</p>
       <p className="mt-3 font-display text-2xl font-bold leading-snug text-white">El oficio que buscas, en tu mismo municipio.</p>
       <ul className="mt-8 space-y-6">
         {items.map((i) => (

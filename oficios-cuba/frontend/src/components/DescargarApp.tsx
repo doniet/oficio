@@ -61,7 +61,7 @@ export function SeccionApp() {
         <div className="relative grid items-center gap-10 md:grid-cols-[1fr_auto]">
           <div className="max-w-xl">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-300">App para Android</p>
-            <h2 id="titulo-app" className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl">Oficios Cuba en tu teléfono</h2>
+            <h2 id="titulo-app" className="mt-3 text-balance text-3xl font-bold text-white sm:text-4xl">Encuentrauno en tu teléfono</h2>
             <p className="mt-3 text-ink-300">
               Busca, escríbele al profesional y recibe un aviso cuando te responda. Gratis, sin tienda de apps y pensada para conexiones lentas.
             </p>

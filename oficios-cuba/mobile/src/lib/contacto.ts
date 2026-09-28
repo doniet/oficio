@@ -10,7 +10,7 @@ export function opcionesContacto(s: ServicioContacto, usuario: { user_type: User
   const tel = s.whatsapp?.trim() || null;
   const chat = s.has_chat && usuario?.user_type !== 'provider';
   const whatsapp = tel && s.contact_mode !== 'call'
-    ? whatsappLink(tel, `Hola, vi tu servicio «${s.title}» en Oficios Cuba y me interesa.`)
+    ? whatsappLink(tel, `Hola, vi tu servicio «${s.title}» en Encuentrauno y me interesa.`)
     : null;
   const llamar = tel && s.contact_mode !== 'whatsapp' ? telLink(tel) : null;
   return { chat, whatsapp, llamar, nada: !chat && !whatsapp && !llamar };

@@ -63,7 +63,7 @@ export default function Register() {
         toast('¡Cuenta creada! Completa tu perfil para aparecer en las búsquedas.');
         navigate('/dashboard/perfil', { replace: true });
       } else {
-        toast('¡Te damos la bienvenida a Oficios Cuba!');
+        toast('¡Te damos la bienvenida a Encuentrauno!');
         navigate(next ?? '/dashboard', { replace: true });
       }
     } catch (err) {

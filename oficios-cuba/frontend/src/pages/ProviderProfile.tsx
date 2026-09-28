@@ -134,8 +134,8 @@ export default function ProviderProfile() {
     : null), [provider, name]);
 
   useEffect(() => {
-    if (name) document.title = `${name} · Oficios Cuba`;
-    return () => { document.title = 'Oficios Cuba'; };
+    if (name) document.title = `${name} · Encuentrauno`;
+    return () => { document.title = 'Encuentrauno'; };
   }, [name]);
 
   const loadMore = async () => {
@@ -221,7 +221,7 @@ export default function ProviderProfile() {
               {place && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" aria-hidden="true" /> {place}</span>}
               {provider.years_experience > 0 && <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" aria-hidden="true" /> {provider.years_experience} años de oficio</span>}
               {provider.kind === 'negocio' && provider.horario && <span className="flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" /> {provider.horario}</span>}
-              <span className="flex items-center gap-1"><CalendarDays className="h-4 w-4" aria-hidden="true" /> En Oficios Cuba desde {memberSince(provider.created_at)}</span>
+              <span className="flex items-center gap-1"><CalendarDays className="h-4 w-4" aria-hidden="true" /> En Encuentrauno desde {memberSince(provider.created_at)}</span>
             </div>
           </div>
         </header>

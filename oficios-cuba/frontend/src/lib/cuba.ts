@@ -95,7 +95,7 @@ export interface EventoCalendario { id: string; titulo: string; inicio: string; 
 /** Archivo .ics con avisos 1 día y 1 hora antes. En UTC: cada calendario lo pasa a su zona. */
 export function archivoIcs(e: EventoCalendario) {
   const lineas = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Oficios Cuba//Agenda//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Encuentrauno//Agenda//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT',
     `UID:${e.id}@oficio.dardoit.com`,
     `DTSTAMP:${utcCompacto(Date.now())}`,

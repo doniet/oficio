@@ -7,7 +7,7 @@ export default function NotFound() {
 
   useEffect(() => {
     const prev = document.title;
-    document.title = 'Página no encontrada · Oficios Cuba';
+    document.title = 'Página no encontrada · Encuentrauno';
     return () => { document.title = prev; };
   }, []);
 

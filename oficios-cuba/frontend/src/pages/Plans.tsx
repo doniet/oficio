@@ -21,7 +21,7 @@ const FAQ = [
   { q: '¿Cobran comisión por cada trabajo?', a: 'No. El cliente te contacta y acuerdan el precio entre ustedes. El plan es una cuota mensual fija.' },
   { q: '¿Cuántas fotos puedo poner?', a: 'Con el plan Gratis, una foto de tu trabajo además de tu logo. Con el Básico, hasta 5 fotos en cada uno de tus oficios y hasta 10 fotos de tu negocio. Con el Profesional, hasta 6 por oficio y 30 del negocio.' },
   { q: '¿Qué es la lista de precios?', a: 'Una lista renglón a renglón dentro de cada oficio, como la carta de un menú: el concepto a la izquierda y su precio a la derecha. Es opcional y va con los planes Básico y Profesional.' },
-  { q: '¿Qué incluye el chat interno?', a: 'El chat dentro de Oficios Cuba es del plan Profesional. Con los planes Gratis y Básico los clientes te contactan por WhatsApp o por llamada, como hayas elegido.' },
+  { q: '¿Qué incluye el chat interno?', a: 'El chat dentro de Encuentrauno es del plan Profesional. Con los planes Gratis y Básico los clientes te contactan por WhatsApp o por llamada, como hayas elegido.' },
   { q: '¿Cómo funcionan las citas?', a: 'Con el plan Profesional eliges qué días y a qué horas atiendes. Los clientes piden cita desde tu perfil entrando con su cuenta de Google, y tú la confirmas o la cancelas desde tu panel.' },
   { q: '¿Qué es el punto de venta DardoVentas?', a: 'Es una app de punto de venta para tu teléfono Android: inventario, cobros y ventas sin conexión. El plan Profesional te da acceso desde tu panel.' },
   { q: '¿Cómo se paga?', a: 'Los precios están en USD; el equivalente en CUP se calcula con la tasa del mercado informal del día. Desde tu panel eliges el plan y el método de pago (transferencia o efectivo). Cuando se confirma el pago, el plan se activa por un mes.' },

@@ -46,8 +46,8 @@ export default function CatalogItemModal({ item, vendedor, onClose, profileLink 
   const p = catalogPrice(item, tasa);
   const precio = [p.prefix, p.amount].filter(Boolean).join(' ');
   const mensaje = item.available
-    ? `Hola, me interesa «${item.name}» (${precio}) que vi en Oficios Cuba.`
-    : `Hola, vi «${item.name}» en tu catálogo de Oficios Cuba. ¿Vuelve a haber?`;
+    ? `Hola, me interesa «${item.name}» (${precio}) que vi en Encuentrauno.`
+    : `Hola, vi «${item.name}» en tu catálogo de Encuentrauno. ¿Vuelve a haber?`;
   const accion = item.available ? 'Lo quiero' : 'Preguntar si vuelve a haber';
   const phone = vendedor.whatsapp;
   const conWhatsapp = Boolean(phone) && vendedor.contactMode !== 'call';
