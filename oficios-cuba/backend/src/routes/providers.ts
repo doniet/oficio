@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import { CATEGORIAS_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import { q, qOne, tx } from '../db/acceso.js';
 import { hayQueRecalcular, puntoPublico } from '../lib/ubicacion.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -39,9 +40,9 @@ const PUBLIC_COLUMNS = `
   pp.rating, pp.review_count, pp.subscription_plan, pp.created_at, pp.kind, pp.contact_mode, pp.gallery,
   p.name AS province_name, m.name AS municipality_name,
   u.full_name AS owner_name, u.avatar_url,
-  (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) AS service_count,
+  (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = true) AS service_count,
   ${CATEGORIAS_SQL} AS categories,
-  (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) AS cover_images
+  (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = true AND s.images IS NOT NULL AND s.images <> '[]'::jsonb ORDER BY s.created_at LIMIT 1) AS cover_images
 `;
 
 const PUBLIC_JOINS = `
@@ -66,85 +67,95 @@ export function segunPlan(row: any) {
 }
 
 function toCard(row: any) {
-  const { cover_images, categories, gallery: _g, ...rest } = row;
-  let cats: string[] = [];
-  try { cats = JSON.parse(categories || '[]'); } catch { cats = []; }
+  const { cover_images, categories, gallery: _g, service_count, ...rest } = row;
+  // CATEGORIAS_SQL ya devuelve jsonb (Tarea 5): un array listo, o null cuando el perfil no tiene
+  // oficios activos. Nada de JSON.parse.
+  const cats: string[] = Array.isArray(categories) ? categories : [];
   const visible = segunPlan(row);
   const cover = visible.photos_allowed ? visible.gallery[0] ?? parseImages(cover_images)[0] ?? null : null;
   const { gallery: _v, photos_allowed: _p, ...flags } = visible;
-  return { ...rest, ...flags, categories: cats, cover };
+  // COUNT(*) llega como cadena (bigint de pg).
+  return { ...rest, service_count: Number(service_count), ...flags, categories: cats, cover };
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const { province_id, category, q, sort = 'relevance', kind } = queryTextos(req.query, ['province_id', 'category', 'q', 'sort', 'kind'] as const);
+  const { province_id, category, q: texto, sort = 'relevance', kind } = queryTextos(req.query, ['province_id', 'category', 'q', 'sort', 'kind'] as const);
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(48, Math.max(1, Number(req.query.limit) || 12));
 
-  let where = 'WHERE pp.is_active = 1';
+  let where = 'WHERE pp.is_active = true';
   const params: unknown[] = [];
   if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
-  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT ${CON_NEGOCIO_SQL})`;
+  else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT (${CON_NEGOCIO_SQL}))`;
   else if (kind) throw new AppError('Tipo de perfil no válido', 400);
-  if (province_id) { where += ' AND pp.province_id = ?'; params.push(province_id); }
+  if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
   if (category) {
-    where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
-      WHERE s.is_active = 1 AND (c.id = ? OR c.slug = ? OR c.parent_id IN (SELECT id FROM categories WHERE id = ? OR slug = ?)))`;
     params.push(category, category, category, category);
+    const n = params.length;
+    where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
+      WHERE s.is_active = true AND (c.id = $${n - 3} OR c.slug = $${n - 2} OR c.parent_id IN (SELECT id FROM categories WHERE id = $${n - 1} OR slug = $${n})))`;
   }
-  if (q && q.trim()) {
-    where += ' AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)';
-    const term = `%${q.trim()}%`;
+  if (texto && texto.trim()) {
+    const term = `%${texto.trim()}%`;
     params.push(term, term, term);
+    const n = params.length;
+    where += ` AND (pp.business_name ILIKE $${n - 2} OR pp.description ILIKE $${n - 1} OR u.full_name ILIKE $${n})`;
   }
 
+  // NULLS LAST explícito: pp.rating no admite NULL hoy (DEFAULT 0), pero SQLite ponía los NULL
+  // primero en ASC y Postgres los pone últimos, así que cualquier ORDER BY sobre una columna que
+  // algún día vuelva a admitir NULL cambiaría de orden en silencio si esto no estuviera fijado.
   const orders: Record<string, string> = {
-    relevance: `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC`,
-    rating: 'pp.rating DESC, pp.review_count DESC',
+    relevance: `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC NULLS LAST, pp.review_count DESC`,
+    rating: 'pp.rating DESC NULLS LAST, pp.review_count DESC',
     reviews: 'pp.review_count DESC',
     newest: 'pp.created_at DESC',
   };
 
-  const total = (db.prepare(`SELECT COUNT(*) AS count ${PUBLIC_JOINS} ${where}`).get(...params) as { count: number }).count;
-  const rows = db.prepare(`SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS} ${where} ORDER BY ${orders[sort] ?? orders.relevance} LIMIT ? OFFSET ?`)
-    .all(...params, limit, (page - 1) * limit);
+  const total = Number((await qOne<{ count: string }>(`SELECT COUNT(*) AS count ${PUBLIC_JOINS} ${where}`, params))!.count);
+  const limitParams = [...params, limit, (page - 1) * limit];
+  const rows = await q<any>(
+    `SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS} ${where} ORDER BY ${orders[sort] ?? orders.relevance} LIMIT $${limitParams.length - 1} OFFSET $${limitParams.length}`,
+    limitParams,
+  );
 
   res.json({ providers: rows.map(toCard), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
 }));
 
 router.get('/featured', asyncHandler(async (req, res) => {
   const limit = Math.min(12, Math.max(1, Number(req.query.limit) || 6));
-  const rows = db.prepare(`
+  const rows = await q<any>(`
     SELECT ${PUBLIC_COLUMNS} ${PUBLIC_JOINS}
-    WHERE pp.is_active = 1
-      AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1)
-    ORDER BY ${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC
-    LIMIT ?
-  `).all(limit);
+    WHERE pp.is_active = true
+      AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = true)
+    ORDER BY ${PLAN_WEIGHT_SQL} DESC, pp.rating DESC NULLS LAST, pp.review_count DESC
+    LIMIT $1
+  `, [limit]);
   res.set('Cache-Control', 'public, max-age=60');
   res.json({ providers: rows.map(toCard) });
 }));
 
-function serviceAreasOf(providerId: string) {
-  return db.prepare(`
+async function serviceAreasOf(providerId: string) {
+  return q(`
     SELECT sa.id, sa.municipality_id, m.name AS municipality_name, p.name AS province_name
     FROM service_areas sa
     JOIN municipalities m ON sa.municipality_id = m.id
     JOIN provinces p ON m.province_id = p.id
-    WHERE sa.provider_id = ? ORDER BY m.name
-  `).all(providerId);
+    WHERE sa.provider_id = $1 ORDER BY m.name
+  `, [providerId]);
 }
 
 router.get('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
-  const provider = db.prepare(`
+  const provider = await qOne<any>(`
     SELECT pp.*, p.name AS province_name, m.name AS municipality_name, u.full_name AS owner_name, u.avatar_url
     FROM provider_profiles pp
     JOIN users u ON pp.user_id = u.id
     LEFT JOIN provinces p ON pp.province_id = p.id
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
-    WHERE pp.user_id = ?
-  `).get(req.user!.id);
+    WHERE pp.user_id = $1
+  `, [req.user!.id]);
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
-  res.json({ provider: { ...provider, gallery: parseImages(provider.gallery), agenda: undefined }, serviceAreas: serviceAreasOf(provider.id), limits: planDe(provider.subscription_plan) });
+  res.json({ provider: { ...provider, gallery: parseImages(provider.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: planDe(provider.subscription_plan) });
 }));
 
 router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
@@ -152,8 +163,17 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
   // lat/lng/map_precision/map_lat_pub vienen para decidir si hay que volver a sortear el punto
   // publicado: solo cuando el dueño mueve su ubicación o cambia de precisión, nunca al guardar
   // el resto del perfil, o su pin saltaría de sitio cada vez que corrige un teléfono.
-  const provider = db.prepare('SELECT id, subscription_plan, gallery, lat, lng, map_precision, map_lat_pub, map_lng_pub FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as
-    { id: string; subscription_plan: string; gallery: string | null; lat: number | null; lng: number | null; map_precision: string | null; map_lat_pub: number | null; map_lng_pub: number | null } | undefined;
+  // map_lat_pub/map_lng_pub ya no son columnas (la migración las sustituyó por punto_pub,
+  // geography): se sacan aquí con ST_Y/ST_X para no tocar lib/ubicacion.ts, que sigue esperando
+  // esa forma exacta de objeto.
+  const provider = await qOne<{
+    id: string; subscription_plan: string; gallery: unknown; lat: number | null; lng: number | null;
+    map_precision: string | null; map_lat_pub: number | null; map_lng_pub: number | null;
+  }>(`
+    SELECT id, subscription_plan, gallery, lat, lng, map_precision,
+      ST_Y(punto_pub::geometry) AS map_lat_pub, ST_X(punto_pub::geometry) AS map_lng_pub
+    FROM provider_profiles WHERE user_id = $1
+  `, [req.user!.id]);
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
   const plan = planDe(provider.subscription_plan);
 
@@ -169,15 +189,16 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
   // El plan Gratis solo lleva nombre, logo, descripción, dirección y teléfono.
   if (!plan.maxPhotos) { data.telegram = undefined; data.email_contact = undefined; }
 
-  if (!db.prepare('SELECT 1 FROM provinces WHERE id = ?').get(data.province_id)) throw new AppError('Provincia no válida', 400);
+  if (!(await qOne('SELECT 1 FROM provinces WHERE id = $1', [data.province_id]))) throw new AppError('Provincia no válida', 400);
   if (data.municipality_id) {
-    const ok = db.prepare('SELECT 1 FROM municipalities WHERE id = ? AND province_id = ?').get(data.municipality_id, data.province_id);
+    const ok = await qOne('SELECT 1 FROM municipalities WHERE id = $1 AND province_id = $2', [data.municipality_id, data.province_id]);
     if (!ok) throw new AppError('El municipio no pertenece a la provincia elegida', 400);
   }
   if (data.service_area_ids?.length) {
     const ids = [...new Set(data.service_area_ids)];
-    const { n } = db.prepare(`SELECT COUNT(*) AS n FROM municipalities WHERE id IN (${ids.map(() => '?').join(',')})`).get(...ids) as { n: number };
-    if (n !== ids.length) throw new AppError('Alguna zona de servicio no existe', 400);
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+    const row = await qOne<{ n: string }>(`SELECT count(*) AS n FROM municipalities WHERE id IN (${placeholders})`, ids);
+    if (Number(row?.n ?? 0) !== ids.length) throw new AppError('Alguna zona de servicio no existe', 400);
   }
 
   // La coordenada publicada: se sortea aquí, una vez, y solo si cambió lo que la define. Este es
@@ -189,33 +210,42 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     : { lat: provider.map_lat_pub, lng: provider.map_lng_pub };
 
   // Formulario completo: los campos vacíos se guardan como NULL para poder borrarlos.
-  const tx = db.transaction(() => {
-    db.prepare(`
-      UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
-        lat = ?, lng = ?, map_lat_pub = ?, map_lng_pub = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
-        contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, map_precision = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
-      data.lat ?? null, data.lng ?? null, pub.lat, pub.lng, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
+  await tx(async (c) => {
+    await c.q(`
+      UPDATE provider_profiles SET business_name = $1, description = $2, province_id = $3, municipality_id = $4, address = $5,
+        lat = $6, lng = $7,
+        punto_pub = CASE WHEN $8::double precision IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($9::double precision, $8::double precision), 4326)::geography END,
+        whatsapp = $10, telegram = $11, email_contact = $12, years_experience = $13,
+        contact_mode = $14, kind = $15, horario = $16, gallery = $17, show_on_map = $18, map_precision = $19, updated_at = now()
+      WHERE id = $20
+    `, [
+      data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
+      data.lat ?? null, data.lng ?? null, pub.lat, pub.lng,
+      data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
       data.years_experience ?? 0, data.contact_mode, data.kind, data.kind === 'negocio' ? data.horario ?? null : null,
-      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, data.map_precision, provider.id);
+      // La regla de negocio no es solo el tipo (boolean en vez de 1/0): show_on_map solo se marca
+      // si además hay coordenadas. Un show_on_map=true sin punto dejaría el mapa filtrando por
+      // punto_pub NULL, es decir, invisible pero con la bandera encendida — inconsistente.
+      JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null, data.map_precision,
+      provider.id,
+    ]);
 
     if (data.service_area_ids) {
-      db.prepare('DELETE FROM service_areas WHERE provider_id = ?').run(provider.id);
-      const insert = db.prepare('INSERT OR IGNORE INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)');
-      for (const muniId of data.service_area_ids) insert.run(uuidv4(), provider.id, muniId);
+      await c.q('DELETE FROM service_areas WHERE provider_id = $1', [provider.id]);
+      for (const muniId of data.service_area_ids) {
+        await c.q('INSERT INTO service_areas (id, provider_id, municipality_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [uuidv4(), provider.id, muniId]);
+      }
     }
   });
-  tx();
 
-  const updated = db.prepare(`
+  const updated = await qOne<any>(`
     SELECT pp.*, p.name AS province_name, m.name AS municipality_name
     FROM provider_profiles pp
     LEFT JOIN provinces p ON pp.province_id = p.id
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
-    WHERE pp.id = ?
-  `).get(provider.id);
-  res.json({ provider: { ...updated, gallery: parseImages(updated.gallery), agenda: undefined }, serviceAreas: serviceAreasOf(provider.id), limits: plan });
+    WHERE pp.id = $1
+  `, [provider.id]);
+  res.json({ provider: { ...updated, gallery: parseImages(updated.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: plan });
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
@@ -223,48 +253,52 @@ router.get('/:id', asyncHandler(async (req, res) => {
   // endpoint es público y sin autenticar, así que un perfil `zona` tiene que salir redondeado
   // aquí igual que en GET /api/mapa — si no, esta puerta publica la casa exacta que la otra ya
   // protege.
-  const provider = db.prepare(`
+  const provider = await qOne<any>(`
     SELECT ${PUBLIC_COLUMNS}, pp.address, pp.whatsapp, pp.telegram, pp.email_contact, pp.horario,
       ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng, pp.show_on_map
-    ${PUBLIC_JOINS} WHERE pp.id = ? AND pp.is_active = 1
-  `).get(req.params.id);
+    ${PUBLIC_JOINS} WHERE pp.id = $1 AND pp.is_active = true
+  `, [req.params.id]);
   if (!provider) throw new AppError('Proveedor no encontrado', 404);
   const visible = segunPlan(provider);
 
-  const services = db.prepare(`
+  const services = (await q<any>(`
     SELECT s.id, s.title, s.description, s.price_min, s.price_max, s.price_type, s.price_currency, s.images, s.created_at,
       c.name AS category_name, c.icon AS category_icon, c.slug AS category_slug
     FROM services s JOIN categories c ON s.category_id = c.id
-    WHERE s.provider_id = ? AND s.is_active = 1
+    WHERE s.provider_id = $1 AND s.is_active = true
     ORDER BY s.created_at
-  `).all(req.params.id).map((s: any) => {
+  `, [req.params.id])).map((s: any) => {
     const images = parseImages(s.images);
     const { images: _i, ...rest } = s;
     return { ...rest, cover: visible.photos_allowed ? images[0] ?? null : null };
   });
 
-  const reviews = db.prepare(`
+  // reviews.provider_profile_id (Tarea 3): es el id del PERFIL, el nombre ya lo dice; no confundir
+  // con provider_id (usuario) de otras tablas.
+  const reviews = await q<any>(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar, s.title AS service_title
     FROM reviews r JOIN users u ON r.client_id = u.id LEFT JOIN services s ON r.service_id = s.id
-    WHERE r.provider_id = ? ORDER BY r.created_at DESC LIMIT 20
-  `).all(req.params.id);
+    WHERE r.provider_profile_id = $1 ORDER BY r.created_at DESC LIMIT 20
+  `, [req.params.id]);
 
-  const distribution = db.prepare('SELECT rating, COUNT(*) AS count FROM reviews WHERE provider_id = ? GROUP BY rating').all(req.params.id);
+  const distribution = (await q<{ rating: number; count: string }>(
+    'SELECT rating, count(*) AS count FROM reviews WHERE provider_profile_id = $1 GROUP BY rating', [req.params.id],
+  )).map((d) => ({ rating: d.rating, count: Number(d.count) }));
 
   // lat/lng solo en el detalle y solo si el profesional marcó su punto en el mapa para que lo encuentren.
   const { lat, lng, show_on_map, ...card } = toCard(provider);
   res.json({
     provider: { ...card, ...(show_on_map ? { lat, lng } : {}), gallery: visible.gallery, horario: visible.kind === 'negocio' ? provider.horario : null },
-    services, serviceAreas: serviceAreasOf(req.params.id), reviews, distribution,
+    services, serviceAreas: await serviceAreasOf(req.params.id), reviews, distribution,
   });
 }));
 
 // Un cliente con sesión pulsó WhatsApp o Llamar: queda constancia para poder reseñar después.
 router.post('/:id/contact', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
   const { via } = z.object({ via: z.enum(['whatsapp', 'call']) }).parse(req.body);
-  if (req.user?.user_type === 'client' && db.prepare('SELECT 1 FROM provider_profiles WHERE id = ? AND is_active = 1').get(req.params.id)) {
-    db.prepare('INSERT OR IGNORE INTO contacts (client_id, provider_id, via, created_at) VALUES (?, ?, ?, ?)')
-      .run(req.user.id, req.params.id, via, new Date().toISOString());
+  if (req.user?.user_type === 'client' && await qOne('SELECT 1 FROM provider_profiles WHERE id = $1 AND is_active = true', [req.params.id])) {
+    await q('INSERT INTO contacts (client_id, provider_id, via, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+      [req.user.id, req.params.id, via, new Date().toISOString()]);
   }
   res.status(204).end();
 }));

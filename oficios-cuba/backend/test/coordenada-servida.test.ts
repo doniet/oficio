@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { api, db, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
+import { api, registrar } from './helpers.js';
 import { metrosEntre, puntoPublico, RADIO_APROX_MAX_M, RADIO_APROX_MIN_M } from '../src/lib/ubicacion.js';
 
 // Las dos puertas que publican ubicación —GET /api/mapa y GET /providers/:id— tienen que contar
@@ -8,14 +9,14 @@ import { metrosEntre, puntoPublico, RADIO_APROX_MAX_M, RADIO_APROX_MIN_M } from 
 // el desplazamiento en sí (eso es aritmética), sino las dos propiedades de las que depende que
 // sirva de algo: que el punto publicado NO sea el real, y que NO cambie entre peticiones.
 
-function provinciaId() {
-  return (db.prepare('SELECT id FROM provinces LIMIT 1').get() as { id: string }).id;
+async function provinciaId() {
+  return (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!.id;
 }
 
 async function crearProveedorConMapa(opts: { nombre: string; lat: number; lng: number; mapPrecision?: string }) {
   const pro = await registrar('provider');
   const res = await api.put('/api/providers/me/profile').set(pro.auth).send({
-    business_name: opts.nombre, province_id: provinciaId(), contact_mode: 'whatsapp',
+    business_name: opts.nombre, province_id: await provinciaId(), contact_mode: 'whatsapp',
     lat: opts.lat, lng: opts.lng, show_on_map: true,
     map_precision: opts.mapPrecision === 'zona' ? 'zona' : 'exacta',
   });
@@ -68,7 +69,7 @@ describe('GET /api/providers/:id — coordenada servida', () => {
 
     // Mismo punto, misma precisión, otro campo: el pin no puede saltar porque corrijan un teléfono.
     const res = await api.put('/api/providers/me/profile').set(pro.auth).send({
-      business_name: 'Zona Quieta', province_id: provinciaId(), contact_mode: 'whatsapp',
+      business_name: 'Zona Quieta', province_id: await provinciaId(), contact_mode: 'whatsapp',
       lat: 22.9, lng: -80.5, show_on_map: true, map_precision: 'zona', whatsapp: '+5352000999',
     });
     expect(res.status).toBe(200);
@@ -83,7 +84,7 @@ describe('GET /api/providers/:id — coordenada servida', () => {
     const antes = (await api.get(`/api/providers/${pro.providerId}`)).body.provider;
 
     await api.put('/api/providers/me/profile').set(pro.auth).send({
-      business_name: 'Zona Mudanza', province_id: provinciaId(), contact_mode: 'whatsapp',
+      business_name: 'Zona Mudanza', province_id: await provinciaId(), contact_mode: 'whatsapp',
       lat: 21.81, lng: -79.99, show_on_map: true, map_precision: 'zona',
     });
     const despues = (await api.get(`/api/providers/${pro.providerId}`)).body.provider;
@@ -91,13 +92,14 @@ describe('GET /api/providers/:id — coordenada servida', () => {
   });
 
   it('ningún perfil con punto se queda sin coordenada publicada', async () => {
-    // LAT_SERVIDA es la columna, sin respaldo a pp.lat: un perfil al que le falte desaparece del
-    // mapa. Es el fallo seguro, pero tiene que no ocurrir nunca por un camino de escritura.
-    const huerfanos = db.prepare(`
+    // LAT_SERVIDA/LNG_SERVIDA leen punto_pub (antes map_lat_pub/map_lng_pub, migradas a una sola
+    // columna geography): sin respaldo a pp.lat, un perfil al que le falte desaparece del mapa.
+    // Es el fallo seguro, pero tiene que no ocurrir nunca por un camino de escritura.
+    const huerfanos = await qOne<{ n: string }>(`
       SELECT COUNT(*) AS n FROM provider_profiles
-      WHERE lat IS NOT NULL AND lng IS NOT NULL AND (map_lat_pub IS NULL OR map_lng_pub IS NULL)
-    `).get() as { n: number };
-    expect(huerfanos.n).toBe(0);
+      WHERE lat IS NOT NULL AND lng IS NOT NULL AND punto_pub IS NULL
+    `);
+    expect(Number(huerfanos!.n)).toBe(0);
   });
 });
 

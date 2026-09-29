@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { api, db, ponerPlan, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
+import { api, ponerPlan, registrar } from './helpers.js';
 
-function provinciaId() {
-  return (db.prepare('SELECT id FROM provinces LIMIT 1').get() as { id: string }).id;
+async function provinciaId() {
+  return (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!.id;
 }
 
 /** Un perfil de plan Profesional marcado como negocio. */
 async function crearNegocio(nombre: string) {
   const pro = await registrar('provider');
-  ponerPlan(pro.providerId!, 'pro');
+  await ponerPlan(pro.providerId!, 'pro');
   const res = await api.put('/api/providers/me/profile').set(pro.auth).send({
-    business_name: nombre, province_id: provinciaId(), kind: 'negocio', contact_mode: 'whatsapp',
+    business_name: nombre, province_id: await provinciaId(), kind: 'negocio', contact_mode: 'whatsapp',
   });
   expect(res.status).toBe(200);
   return pro;
@@ -43,7 +44,7 @@ describe('filtrar el listado de proveedores por tipo', () => {
   // Si el SQL no exigiera el plan, saldría en la pestaña Negocios contradiciendo su propia tarjeta.
   it('un negocio que baja al plan Básico deja de salir como negocio y pasa a oficio', async () => {
     const negocio = await crearNegocio('Barbería Central');
-    ponerPlan(negocio.providerId!, 'basic');
+    await ponerPlan(negocio.providerId!, 'basic');
 
     const comoNegocio = await api.get('/api/providers?kind=negocio&limit=48');
     expect(ids(comoNegocio.body)).not.toContain(negocio.providerId);
@@ -65,5 +66,17 @@ describe('filtrar el listado de proveedores por tipo', () => {
     const res = await api.get('/api/providers?kind=cualquiera');
     expect(res.status).toBe(400);
     expect(res.body.providers).toBeUndefined();
+  });
+});
+
+describe('orden de ?sort=rating', () => {
+  // SQLite pone los NULL primero en ASC; Postgres los pone últimos. pp.rating no admite NULL hoy
+  // (DEFAULT 0), pero el ORDER BY lleva NULLS LAST explícito para que esto no dependa de que nadie
+  // recuerde la diferencia si la columna vuelve a admitir NULL.
+  it('los perfiles sin reseñas salen después de los valorados', async () => {
+    const { body } = await api.get('/api/providers?sort=rating');
+    const valorados = body.providers.filter((p: { rating: number }) => p.rating > 0).length;
+    const primeros = body.providers.slice(0, valorados);
+    expect(primeros.every((p: { rating: number }) => p.rating > 0)).toBe(true);
   });
 });
