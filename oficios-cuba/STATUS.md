@@ -479,3 +479,10 @@
 - Blockers: ninguno. Pendiente de Dariel: la sesión de j-u tiene un merge local sin subir (su
   entrada de Camagüey en STATUS.md); `master` se ha movido mucho desde entonces, así que al
   resolverlo tocará conservar las dos entradas en orden cronológico, como siempre.
+
+## 2026-09-29 03:55 UTC — cc-jarvis-ubuntu — Web: tarjetas, zoom, mapa; y APK 0.2.2
+- Changes: web (`abd7e9d`, `14622ed`, `d7b555c`, `c20abb8`): las tarjetas de listado recuperan un filo gris y una sombra mínima (sin marco no se distinguían sobre el blanco); **sin zoom de página salvo en los mapas** (viewport `maximum-scale=1, user-scalable=no`, `touch-action: manipulation`, y un `gesturestart` que frena el pellizco de iOS fuera de `.leaflet-container`; campos a 16 px en móvil); el mapa **recorta a Cuba** el área pedida (`acotarBbox`: en móvil vertical el rectángulo pasaba de 19–24° y `/api/mapa` daba 400, el mapa abría vacío); **arrastrar recarga solo** (500 ms, fuera «Buscar en esta zona»; `cargarCelda` usa la zona PINTADA, `bboxPintadoRef`); mapas **estilo Positron** con un filtro sobre `.leaflet-tile-pane` (OSM no ofrece otro estilo). App 0.2.2 / versionCode 5 (`b262644`): lo mismo en la app (`raster-saturation/contrast/brightness`, recarga al arrastrar, `acotarBbox`).
+- Tests: pass — web 23/23, app 47/47, typechecks. **APK probada en emulador contra producción** (variante x86_64 del mismo código): estilo aplicado, pines cargados, tras arrastrar al oriente aparecen solos Holguín y Santiago, sin botón ni error. Publicada: sha256 `f0c1d573…66527`, igual en origen y por Cloudflare.
+- Security: N/A. El bloqueo de zoom quita el zoom a quien lo necesita para leer (WCAG 1.4.4): decisión de Dariel, reversible en tres líneas.
+- Next: probar las URLs de teselas desde Cuba (si se quiere Positron real: CARTO exige clave y tope comercial desde 23-sep; OpenFreeMap sin clave pero ~4× más datos). En la app el área aproximada sigue siendo un disco de tamaño fijo.
+- Blockers: ninguno.
