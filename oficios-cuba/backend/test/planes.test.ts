@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { activos, api, categoriaId, crearServicio, db, ponerPlan, registrar } from './helpers.js';
+import { activos, api, categoriaId, crearServicio, ponerPlan, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
 
 const FOTO = '/demo/electricidad-1.webp';
 const FOTO2 = '/demo/electricidad-2.webp';
 const PRECIOS = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `Trabajo ${i + 1}`, price: 500 + i }));
 
 async function perfilBase(auth: Record<string, string>, extra: Record<string, unknown> = {}) {
-  const provincia = (db.prepare("SELECT id FROM provinces WHERE name = 'La Habana'").get() as { id: string }).id;
+  const provincia = (await qOne<{ id: string }>("SELECT id FROM provinces WHERE name = 'La Habana'"))!.id;
   return api.put('/api/providers/me/profile').set(auth).send({ business_name: 'Mi Taller', province_id: provincia, whatsapp: '+53 5 111 2222', ...extra });
 }
 
@@ -45,9 +46,9 @@ describe('plan Gratis', () => {
 
   it('al bajar a Gratis las fotos de más y la lista de precios dejan de verse, pero no se borran', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'basic');
+    await ponerPlan(p.providerId!, 'basic');
     const s = (await crearServicio(p.auth, { images: [FOTO, FOTO2], price_list: PRECIOS(3) })).body.service.id;
-    ponerPlan(p.providerId!, 'free');
+    await ponerPlan(p.providerId!, 'free');
 
     const publico = (await api.get(`/api/services/${s}`)).body.service;
     expect(publico.images).toEqual([FOTO]);
@@ -62,10 +63,10 @@ describe('plan Gratis', () => {
 describe('plan Básico', () => {
   it('hasta 5 oficios y 10 fotos del negocio', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'basic');
+    await ponerPlan(p.providerId!, 'basic');
     for (let i = 0; i < 5; i++) expect((await crearServicio(p.auth)).status).toBe(201);
     expect((await crearServicio(p.auth)).status).toBe(403);
-    expect(activos(p.providerId!)).toBe(5);
+    expect(await activos(p.providerId!)).toBe(5);
 
     expect((await perfilBase(p.auth, { gallery: Array(10).fill(FOTO) })).status).toBe(200);
     expect((await perfilBase(p.auth, { gallery: Array(11).fill(FOTO) })).status).toBe(403);
@@ -73,7 +74,7 @@ describe('plan Básico', () => {
 
   it('hasta 5 fotos en cada oficio', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'basic');
+    await ponerPlan(p.providerId!, 'basic');
     const cinco = await crearServicio(p.auth, { images: Array(5).fill(FOTO) });
     expect(cinco.status).toBe(201);
     expect((await api.get(`/api/services/${cinco.body.service.id}`)).body.service.images).toHaveLength(5);
@@ -85,13 +86,14 @@ describe('plan Básico', () => {
 
   it('pone una lista de precios renglón a renglón, hasta 30 renglones', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'basic');
+    await ponerPlan(p.providerId!, 'basic');
     const s = (await crearServicio(p.auth, { price_list: [{ name: 'Corte de pelo', price: 500 }] })).body.service.id;
     expect((await api.get(`/api/services/${s}`)).body.service.price_list).toEqual([{ name: 'Corte de pelo', price: 500 }]);
 
     // Editar la lista la reemplaza completa.
+    const catId = await categoriaId();
     const editar = (price_list: unknown) => api.put(`/api/services/${s}`).set(p.auth)
-      .send({ category_id: categoriaId(), title: 'Servicio de prueba', price_type: 'negotiable', price_list });
+      .send({ category_id: catId, title: 'Servicio de prueba', price_type: 'negotiable', price_list });
     expect((await editar(PRECIOS(30))).status).toBe(200);
     expect((await api.get(`/api/services/${s}`)).body.service.price_list).toHaveLength(30);
     expect((await editar(PRECIOS(31))).status).toBe(403);
@@ -102,7 +104,7 @@ describe('plan Básico', () => {
 describe('plan Profesional', () => {
   it('admite hasta 100 renglones en la lista de precios', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     expect((await crearServicio(p.auth, { price_list: PRECIOS(100) })).status).toBe(201);
     expect((await crearServicio(p.auth, { price_list: PRECIOS(101) })).status).toBe(403);
   });
@@ -111,7 +113,7 @@ describe('plan Profesional', () => {
 describe('precios en CUP o USD', () => {
   it('guarda la moneda del precio (CUP por defecto)', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     const cup = (await crearServicio(p.auth, { price_type: 'fixed', price_min: 5000 })).body.service.id;
     const usd = (await crearServicio(p.auth, { price_type: 'fixed', price_min: 40, price_currency: 'USD' })).body.service.id;
     expect((await api.get(`/api/services/${cup}`)).body.service.price_currency).toBe('CUP');
@@ -130,12 +132,12 @@ describe('chat solo en el plan Profesional', () => {
     const c = await registrar('client');
     const abrir = () => api.post('/api/conversations').set(c.auth).send({ provider_id: p.providerId, initial_message: 'Hola' });
     expect((await abrir()).status).toBe(403);
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     const conv = await abrir();
     expect(conv.status).toBe(201);
 
     // Si deja el plan, la conversación se lee pero no se puede seguir escribiendo.
-    ponerPlan(p.providerId!, 'basic');
+    await ponerPlan(p.providerId!, 'basic');
     const id = conv.body.conversation.id;
     expect((await api.get(`/api/conversations/${id}`).set(c.auth)).status).toBe(200);
     expect((await api.post(`/api/conversations/${id}/messages`).set(p.auth).send({ content: 'Hola' })).status).toBe(403);
@@ -156,18 +158,19 @@ describe('reseñas sin chat', () => {
   it('un visitante anónimo no deja constancia de contacto', async () => {
     const p = await registrar('provider');
     expect((await api.post(`/api/providers/${p.providerId}/contact`).send({ via: 'call' })).status).toBe(204);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM contacts WHERE provider_id = ?').get(p.providerId)).toEqual({ n: 0 });
+    const fila = await qOne<{ n: string }>('SELECT count(*) AS n FROM contacts WHERE provider_id = $1', [p.providerId]);
+    expect(Number(fila!.n)).toBe(0);
   });
 });
 
 describe('negocio (plan Profesional)', () => {
   it('registra un negocio con horario; al perder el plan vuelve a verse como oficio', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     const res = await perfilBase(p.auth, { kind: 'negocio', horario: 'Lunes a viernes 9-5' });
     expect(res.status).toBe(200);
     expect((await api.get(`/api/providers/${p.providerId}`)).body.provider).toMatchObject({ kind: 'negocio', horario: 'Lunes a viernes 9-5' });
-    ponerPlan(p.providerId!, 'free');
+    await ponerPlan(p.providerId!, 'free');
     expect((await api.get(`/api/providers/${p.providerId}`)).body.provider).toMatchObject({ kind: 'oficio', horario: null });
   });
 });
@@ -182,7 +185,7 @@ describe('agenda de citas', () => {
     const p = await registrar('provider');
     const c = await registrar('client');
     const otro = await registrar('client');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     await api.put('/api/appointments/config').set(p.auth).send({ dias: [0, 1, 2, 3, 4, 5, 6], desde: '08:00', hasta: '18:00', duracion: 60 });
 
     const huecos = (await api.get(`/api/appointments/provider/${p.providerId}/slots`)).body.days;
@@ -226,7 +229,7 @@ describe('agenda de citas', () => {
 describe('filtro de precio en CUP', () => {
   it('convierte los precios en USD antes de comparar', async () => {
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     await crearServicio(p.auth, { price_type: 'fixed', price_min: 50, price_currency: 'USD' });
     await crearServicio(p.auth, { price_type: 'fixed', price_min: 5000 });
     const res = await api.get('/api/services').query({ provider_id: p.providerId, price_max: 10000 });
