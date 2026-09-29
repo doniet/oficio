@@ -180,7 +180,7 @@ export async function avisarChat(conversationId: string, remitente: 'client' | '
   try {
     const c = await qOne<{ client_id: string; provider_user: string; cliente: string; negocio: string }>(
       `SELECT c.client_id, pp.user_id AS provider_user, cu.full_name AS cliente, COALESCE(pp.business_name, pu.full_name) AS negocio
-      FROM conversations c JOIN provider_profiles pp ON c.provider_id = pp.id JOIN users pu ON pp.user_id = pu.id JOIN users cu ON c.client_id = cu.id
+      FROM conversations c JOIN provider_profiles pp ON c.provider_profile_id = pp.id JOIN users pu ON pp.user_id = pu.id JOIN users cu ON c.client_id = cu.id
       WHERE c.id = $1`, [conversationId],
     );
     if (!c) return;

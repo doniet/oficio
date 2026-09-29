@@ -326,7 +326,7 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
     throw e;
   }
 
-  avisarCita({ id, provider_id: providerId, client_id: req.user!.id, starts_at: iso(inicio), status }, 'nueva', 'client');
+  await avisarCita({ id, provider_id: providerId, client_id: req.user!.id, starts_at: iso(inicio), status }, 'nueva', 'client');
   res.status(201).json({ appointment: await citaPara(req, id) });
 }));
 
@@ -384,7 +384,7 @@ router.patch('/:id', authMiddleware, asyncHandler(async (req: AuthRequest, res) 
   await q('UPDATE appointments SET status = $1, cancelled_by = $2, updated_at = $3 WHERE id = $4',
     [status, status === 'cancelled' ? (esCliente ? 'client' : 'provider') : null, iso(Date.now()), cita.id]);
   if (status === 'confirmed' || status === 'cancelled') {
-    avisarCita(cita, status === 'confirmed' ? 'confirmada' : 'cancelada', esCliente ? 'client' : 'provider');
+    await avisarCita(cita, status === 'confirmed' ? 'confirmada' : 'cancelada', esCliente ? 'client' : 'provider');
   }
   res.json({ appointment: await citaPara(req, cita.id) });
 }));
@@ -434,7 +434,7 @@ router.post('/:id/reschedule', authMiddleware, asyncHandler(async (req: AuthRequ
     }
     throw e;
   }
-  avisarCita({ id, provider_id: cita.provider_id, client_id: cita.client_id, starts_at: iso(nueva.inicio), status }, 'movida', esCliente ? 'client' : 'provider');
+  await avisarCita({ id, provider_id: cita.provider_id, client_id: cita.client_id, starts_at: iso(nueva.inicio), status }, 'movida', esCliente ? 'client' : 'provider');
   res.status(201).json({ appointment: await citaPara(req, id) });
 }));
 

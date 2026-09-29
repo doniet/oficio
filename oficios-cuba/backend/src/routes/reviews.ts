@@ -60,8 +60,9 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
   );
   await refreshProviderRating(service.provider_id);
   // avisarResena (lib/avisos.ts) ya envuelve su propio cuerpo en try/catch: un aviso que falle no
-  // debe tumbar la reseña.
-  avisarResena(service.provider_id, req.user!.id, data.rating);
+  // debe tumbar la reseña. El await es para que quede apuntado antes de responder, no para
+  // propagar errores (no puede lanzar).
+  await avisarResena(service.provider_id, req.user!.id, data.rating);
 
   const review = await qOne(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar

@@ -30,7 +30,7 @@ async function participantes(conversationId: string) {
     SELECT c.client_id, pp.user_id AS provider_user_id, cu.full_name AS client_name,
       COALESCE(pp.business_name, pu.full_name) AS provider_name, s.title AS service_title
     FROM conversations c
-    JOIN provider_profiles pp ON c.provider_id = pp.id
+    JOIN provider_profiles pp ON c.provider_profile_id = pp.id
     JOIN users pu ON pp.user_id = pu.id
     JOIN users cu ON c.client_id = cu.id
     LEFT JOIN services s ON c.service_id = s.id

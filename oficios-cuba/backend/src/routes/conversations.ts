@@ -13,18 +13,6 @@ router.use(authMiddleware);
 
 const SIN_CHAT = 'El chat es del plan Profesional. Contacta a este profesional por WhatsApp o llamada.';
 
-// avisarNuevaSolicitud/avisarNuevoMensaje viven en src/push/avisos.ts, que sigue en SQLite (Tarea 13,
-// fuera de mi alcance): su consulta interna (participantes()) lanza mientras esa tabla no esté
-// portada. Las trato fire-and-forget, igual que ya hacen avisarChat/avisarResena en el resto del
-// código: un aviso que falle no debe tumbar el chat.
-function avisar(fn: () => void) {
-  try {
-    fn();
-  } catch (err) {
-    console.error('No se pudo apuntar el aviso del chat:', (err as Error).message);
-  }
-}
-
 // conversations.provider_profile_id es el id del PERFIL de proveedor, no el del usuario (Tarea 3).
 // El contrato JSON de la API no cambia: sigue llamándose provider_id (lo consumen el frontend y las
 // dos apps móviles).
@@ -134,8 +122,10 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
     return { id: convId, nueva: esNueva };
   });
 
-  avisar(() => (nueva ? avisarNuevaSolicitud(id) : avisarNuevoMensaje(id, 'client')));
-  avisar(() => avisarChat(id, 'client'));
+  // avisarNuevaSolicitud/avisarNuevoMensaje (push/avisos.ts) y avisarChat (lib/avisos.ts) ya
+  // envuelven su cuerpo en try/catch: un aviso que falle no tumba la conversación.
+  if (nueva) await avisarNuevaSolicitud(id); else await avisarNuevoMensaje(id, 'client');
+  await avisarChat(id, 'client');
   res.status(201).json({ conversation: { id } });
 }));
 
@@ -161,8 +151,8 @@ router.post('/:id/messages', asyncHandler(async (req: AuthRequest, res) => {
   );
   await q('UPDATE conversations SET last_message = $1, last_message_at = now() WHERE id = $2', [content, conversation.id]);
   await markRead(conversation.id, req.user!.user_type);
-  avisar(() => avisarNuevoMensaje(conversation.id, req.user!.user_type));
-  avisar(() => avisarChat(conversation.id, req.user!.user_type));
+  await avisarNuevoMensaje(conversation.id, req.user!.user_type);
+  await avisarChat(conversation.id, req.user!.user_type);
   res.status(201).json({ message: { id, sender_id: req.user!.id, sender_type: req.user!.user_type, content, read_at: null, created_at: inserted!.created_at } });
 }));
 
