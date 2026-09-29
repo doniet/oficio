@@ -67,11 +67,12 @@
   .card { @apply rounded-2xl border border-sand-200 bg-white; }
   .card-hover { @apply transition duration-200 hover:border-sand-300 hover:shadow-card; }
 
-  /* Tarjeta de listado: SIN marco. Sobre blanco, la foto redondeada es la que da estructura, y
-     dibujarle además un borde o una sombra a cada una convierte la retícula en una tabla. Al
-     pasar el ratón se tiñe apenas, que es toda la respuesta que necesita. */
-  .tarjeta-lista { @apply rounded-2xl bg-transparent transition duration-200; }
-  .tarjeta-lista:hover { @apply bg-sand-100; }
+  /* Tarjeta de listado: filo gris y una sombra casi imperceptible. La versión sin marco (2026-09-29)
+     dejaba la parte del texto flotando sobre el blanco y las fotos claras se fundían con la página:
+     no se distinguía dónde acababa una tarjeta y empezaba la siguiente. El filo es el mínimo que
+     da recinto sin devolver el peso que el tema quitó; al pasar el ratón sube un poco. */
+  .tarjeta-lista { @apply rounded-2xl border border-sand-300 bg-white transition duration-200; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06); }
+  .tarjeta-lista:hover { border-color: #cfcfd8; box-shadow: 0 4px 14px rgba(16, 24, 40, 0.1); }
 
   .chip {
     @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-sand-300 bg-white px-3.5 py-1.5 text-sm font-medium text-ink-700 transition hover:border-ink-300;
