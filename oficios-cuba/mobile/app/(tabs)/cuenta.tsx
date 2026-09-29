@@ -37,14 +37,14 @@ export default function Cuenta() {
   // Mientras se comprueba el token guardado, no se flashea la vista de invitado.
   if (estado === 'cargando') {
     return (
-      <Pantalla cabecera titulo="Cuenta">
+      <Pantalla cabecera>
         <ActivityIndicator color={colores.acento} />
       </Pantalla>
     );
   }
 
   return (
-    <Pantalla cabecera titulo="Cuenta" subtitulo={usuario ? 'Tus datos de acceso.' : undefined}>
+    <Pantalla cabecera subtitulo={usuario ? 'Tus datos de acceso.' : undefined}>
       {estado === 'sinRed' ? <BannerSinRed onReintentar={reintentar} /> : null}
       {usuario ? (
         <Tarjeta estilo={s.tarjeta}>

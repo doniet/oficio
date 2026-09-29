@@ -493,3 +493,10 @@
 - Security: N/A.
 - Next: confirmar en el P8 Lite. Si siguiera negro, siguiente sospechoso: el filtro `raster-*` (único cambio de dibujado de la 0.2.2).
 - Blockers: ninguno.
+
+## 2026-09-29 16:45 UTC — cc-jarvis-ubuntu — APK 0.2.4: sin barra del logo ni títulos grandes en las pestañas
+- Changes: pedido de Dariel: la barra de navegación inferior ya dice dónde estás. Fuera `Cabecera` (logo + «Entrar») de Inicio, Explorar, Mensajes y Cuenta, y el componente borrado; fuera los títulos grandes («Explorar servicios», «Mensajes», «Cuenta»). `Pantalla` sigue pintando `titulo` en las pantallas del Stack (entrar, registro) y ahora pinta `subtitulo` aunque no haya título (el de Mensajes explica que el chat es del plan Profesional). Entrar sigue a mano en Cuenta y en el vacío de Mensajes. **Se conserva el hero de Inicio** («El que te lo soluciona vive cerca»): es contenido, no el título de una sección. versionCode 7.
+- Tests: pass — app 47/47, typecheck. En emulador: las cuatro pestañas y la vista de mapa, sin barra ni títulos y con margen correcto bajo la barra de estado.
+- Security: N/A.
+- Next: confirmar 0.2.3/0.2.4 (pantalla negra del mapa) en el P8 Lite.
+- Blockers: ninguno.

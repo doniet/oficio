@@ -5,7 +5,6 @@ import { router, useScrollToTop } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { CategoryStat, ErrorApi, textoNumServicios } from '@oficio/shared';
-import { Cabecera } from '../../src/componentes/Cabecera';
 import { Boton } from '../../src/componentes/Boton';
 import { TarjetaServicio, TarjetaServicioEsqueleto } from '../../src/componentes/TarjetaServicio';
 import { TarjetaProfesional, TarjetaProfesionalEsqueleto } from '../../src/componentes/TarjetaProfesional';
@@ -98,7 +97,6 @@ export default function Inicio() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: paper }} edges={['top']}>
-      <Cabecera />
       <ScrollView
         ref={lista}
         keyboardShouldPersistTaps="handled"

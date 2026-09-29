@@ -6,7 +6,6 @@ import { useLocalSearchParams, useScrollToTop } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ErrorApi, type PuntoMapa } from '@oficio/shared';
-import { Cabecera } from '../../src/componentes/Cabecera';
 import { Boton } from '../../src/componentes/Boton';
 import { TarjetaServicio, TarjetaServicioEsqueleto } from '../../src/componentes/TarjetaServicio';
 import { Chip, EstadoError, EstadoVacio, u } from '../../src/componentes/ui';
@@ -77,8 +76,6 @@ export default function Explorar() {
 
   const filtros = (
     <View style={{ gap: 16 }}>
-      <Text style={u.h1}>Explorar servicios</Text>
-
       <View style={e.switch}>
         <Pressable
           onPress={() => setVista('lista')}
@@ -163,7 +160,6 @@ export default function Explorar() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: paper }} edges={['top']}>
-        <Cabecera />
 
         {vista === 'mapa' ? <View style={e.filtrosFijos}>{filtros}</View> : null}
 

@@ -28,7 +28,7 @@ export default function Mensajes() {
   // Mientras se comprueba el token guardado, no se flashea "Entra para ver tus mensajes".
   if (estado === 'cargando') {
     return (
-      <Pantalla cabecera titulo="Mensajes">
+      <Pantalla cabecera>
         <ActivityIndicator color={colores.acento} />
       </Pantalla>
     );
@@ -36,7 +36,7 @@ export default function Mensajes() {
 
   if (!usuario) {
     return (
-      <Pantalla cabecera titulo="Mensajes">
+      <Pantalla cabecera>
         {estado === 'sinRed' ? <BannerSinRed onReintentar={reintentar} /> : null}
         <EstadoVacio icono="chatbubble-outline" titulo="Entra para ver tus mensajes"
           texto="Tus conversaciones con los profesionales aparecen aquí."
@@ -48,7 +48,7 @@ export default function Mensajes() {
   const conversaciones = consulta.data?.conversations ?? [];
 
   return (
-    <Pantalla cabecera titulo="Mensajes" subtitulo={subtitulo} scroll={false}>
+    <Pantalla cabecera subtitulo={subtitulo} scroll={false}>
       {consulta.isLoading ? <ActivityIndicator color={colores.acento} /> : null}
       {consulta.isError ? (
         <EstadoError mensaje={consulta.error instanceof ErrorApi ? consulta.error.message : 'No pudimos cargar tus mensajes.'} alReintentar={() => consulta.refetch()} />
