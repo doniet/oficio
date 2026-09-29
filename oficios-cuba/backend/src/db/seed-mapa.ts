@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db from './index.js';
+import { q, qOne, tx } from './acceso.js';
 import { puntoPublico } from '../lib/ubicacion.js';
 import { seedBase } from './seed.js';
 
@@ -77,29 +77,31 @@ export async function seedMapa(): Promise<number> {
 
   // El centinela es el correo, no el nombre del negocio: los nombres ahora son creíbles y
   // variados, así que ya no sirven para reconocer lo sembrado. El correo sí es estable.
-  const yaExiste = db.prepare("SELECT 1 FROM users WHERE email = 'prueba.mapa.1@oficios.test'").get();
+  const yaExiste = await qOne("SELECT 1 FROM users WHERE email = 'prueba.mapa.1@oficios.test'");
   if (yaExiste) return 0;
 
   // seedBase() es idempotente (revisa lo que ya existe antes de insertar): llamarla aquí deja
-  // a seedMapa() valerse por sí sola con solo initDatabase(), como hace su propia prueba.
-  seedBase();
+  // a seedMapa() valerse por sí sola con solo migrar(), como hace su propia prueba.
+  await seedBase();
 
-  const categoria = db.prepare('SELECT id FROM categories WHERE parent_id IS NOT NULL LIMIT 1').get() as { id: string } | undefined;
+  const categoria = await qOne<{ id: string }>('SELECT id FROM categories WHERE parent_id IS NOT NULL LIMIT 1');
   if (!categoria) throw new Error('seedMapa necesita las categorías ya sembradas (seedBase primero)');
 
-  const provincias = db.prepare('SELECT id, name, lat, lng FROM provinces ORDER BY name').all() as
-    { id: string; name: string; lat: number; lng: number }[];
+  const provincias = await q<{ id: string; name: string; lat: number; lng: number }>(
+    'SELECT id, name, lat, lng FROM provinces ORDER BY name',
+  );
   if (provincias.length === 0) throw new Error('seedMapa necesita las provincias ya sembradas (seedBase primero)');
   const habana = provincias.find((p) => p.name === 'La Habana') ?? provincias[0];
 
-  const municipios = db.prepare('SELECT id, name, province_id, lat, lng FROM municipalities ORDER BY name').all() as
-    { id: string; name: string; province_id: string; lat: number; lng: number }[];
+  const municipios = await q<{ id: string; name: string; province_id: string; lat: number; lng: number }>(
+    'SELECT id, name, province_id, lat, lng FROM municipalities ORDER BY name',
+  );
   if (municipios.length === 0) throw new Error('seedMapa necesita los municipios ya sembrados (seedBase primero)');
   const deHabana = municipios.filter((m) => m.province_id === habana.id);
 
   const hash = await bcrypt.hash(SEED_MAPA_PASSWORD, 10);
 
-  const tx = db.transaction(() => {
+  await tx(async (c) => {
     for (let i = 1; i <= N; i++) {
       const plan = planDe(i);
       const mapPrecision: 'exacta' | 'zona' = i % ZONA_CADA === 0 ? 'zona' : 'exacta';
@@ -131,25 +133,37 @@ export async function seedMapa(): Promise<number> {
       const userId = uuidv4();
       const profileId = uuidv4();
 
-      db.prepare(`INSERT INTO users (id, email, password_hash, full_name, phone, user_type, is_verified)
-        VALUES (?, ?, ?, ?, ?, 'provider', 1)`)
-        .run(userId, `prueba.mapa.${i}@oficios.test`, hash, `Prueba ${i}`, `+53500${String(i).padStart(5, '0')}`);
+      await c.q(
+        `INSERT INTO users (id, email, password_hash, full_name, phone, user_type, is_verified)
+         VALUES ($1, $2, $3, $4, $5, 'provider', true)`,
+        [userId, `prueba.mapa.${i}@oficios.test`, hash, `Prueba ${i}`, `+53500${String(i).padStart(5, '0')}`],
+      );
 
-      // El punto publicado se sortea aquí, igual que lo haría el formulario: así el sembrado
-      // ejercita de verdad el camino aproximado y no una versión de juguete.
+      // El punto publicado se sortea aquí, igual que lo haría el formulario (routes/providers.ts):
+      // así el sembrado ejercita de verdad el camino aproximado y no una versión de juguete.
+      // punto_pub ya no son las columnas map_lat_pub/map_lng_pub: es geography, y ST_MakePoint
+      // toma (x, y) = (lng, lat) — el mismo orden que ya usa el UPDATE de providers.ts.
       const pub = puntoPublico(lat, lng, mapPrecision);
-      db.prepare(`INSERT INTO provider_profiles
-          (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, map_lat_pub, map_lng_pub, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
-        .run(profileId, userId, nombre, 'Perfil sintético de prueba para la densidad del mapa.',
-          provinceId, municipalityId, direccion, lat, lng, pub.lat, pub.lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
+      await c.q(
+        `INSERT INTO provider_profiles
+            (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng,
+             punto_pub, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+             CASE WHEN $10::double precision IS NULL THEN NULL
+                  ELSE ST_SetSRID(ST_MakePoint($11::double precision, $10::double precision), 4326)::geography END,
+             $12, true, $13, true, $14)`,
+        [profileId, userId, nombre, 'Perfil sintético de prueba para la densidad del mapa.',
+          provinceId, municipalityId, direccion, lat, lng, pub.lat, pub.lng,
+          `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision],
+      );
 
       // Un oficio activo por perfil: lo exige el tab por defecto (servicios) de /api/mapa.
-      db.prepare(`INSERT INTO services (id, provider_id, category_id, title, price_type, is_active)
-        VALUES (?, ?, ?, ?, 'negotiable', 1)`)
-        .run(uuidv4(), profileId, categoria.id, `${RUBROS[i % RUBROS.length]}: servicio ${i}`);
+      await c.q(
+        `INSERT INTO services (id, provider_id, category_id, title, price_type, is_active)
+         VALUES ($1, $2, $3, $4, 'negotiable', true)`,
+        [uuidv4(), profileId, categoria.id, `${RUBROS[i % RUBROS.length]}: servicio ${i}`],
+      );
     }
   });
-  tx();
   return N;
 }

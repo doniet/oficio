@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import app from '../src/app.js';
-import { api, categoriaId, crearServicio, db, ponerPlan, registrar } from './helpers.js';
+import { api, crearServicio, ponerPlan, registrar } from './helpers.js';
+import { q, qOne } from '../src/db/acceso.js';
 import { conMargen, leerBbox, tamanoCelda } from '../src/lib/mapa.js';
 import { metrosEntre, RADIO_APROX_MAX_M, RADIO_APROX_MIN_M } from '../src/lib/ubicacion.js';
 import { seedMapa } from '../src/db/seed-mapa.js';
@@ -59,8 +60,8 @@ describe('conMargen', () => {
 // comprueban las pruebas (TOTAL_VISIBLES, la celda compartida) dependen de que nadie más toque
 // esta base entre pruebas.
 
-function provinciaId() {
-  return (db.prepare('SELECT id FROM provinces LIMIT 1').get() as { id: string }).id;
+async function provinciaId() {
+  return (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!.id;
 }
 
 
@@ -118,11 +119,11 @@ async function crearProveedorConMapa(opts: {
   mapPrecision?: 'exacta' | 'zona';
 }) {
   const pro = await registrar('provider');
-  if (opts.kind === 'negocio') ponerPlan(pro.providerId!, 'pro'); // el plan Profesional es requisito para guardar kind='negocio'
+  if (opts.kind === 'negocio') await ponerPlan(pro.providerId!, 'pro'); // el plan Profesional es requisito para guardar kind='negocio'
   // La precisión va en el PUT, no en un UPDATE posterior: el punto publicado se calcula al
-  // guardar (migración 13), así que tocar map_precision por detrás ya no recalcula nada.
+  // guardar (routes/providers.ts), así que tocar map_precision por detrás ya no recalcula nada.
   const res = await api.put('/api/providers/me/profile').set(pro.auth).send({
-    business_name: opts.nombre, province_id: provinciaId(), contact_mode: 'whatsapp',
+    business_name: opts.nombre, province_id: await provinciaId(), contact_mode: 'whatsapp',
     kind: opts.kind ?? 'oficio', lat: opts.lat, lng: opts.lng, show_on_map: opts.showOnMap,
     map_precision: opts.mapPrecision ?? 'exacta',
   });
@@ -137,13 +138,13 @@ beforeAll(async () => {
   ID_NEGOCIO_A = a.providerId!; // ya queda en plan 'pro' (ver crearProveedorConMapa)
 
   const b = await crearProveedorConMapa({ nombre: 'Negocio Prueba Básico', lat: LAT_B, lng: LNG_B, showOnMap: true, kind: 'negocio' });
-  ponerPlan(b.providerId!, 'basic'); // se registró Profesional para poder marcar kind='negocio', y luego bajó a Básico
+  await ponerPlan(b.providerId!, 'basic'); // se registró Profesional para poder marcar kind='negocio', y luego bajó a Básico
   ID_NEGOCIO_B = b.providerId!;
   // B (el que debe PERDER por plan) queda con mejor rating que A: si alguien quitara
   // PLAN_WEIGHT_SQL del ORDER BY, el desempate seguiría siendo determinista (B ganaría por
   // rating) en vez de caer en pp.id — un uuid al azar que solo detectaría la regresión la mitad
   // de las veces. Antes ambos se quedaban en rating=0/review_count=0 por defecto.
-  db.prepare('UPDATE provider_profiles SET rating = 4.8, review_count = 20 WHERE id = ?').run(b.providerId);
+  await q('UPDATE provider_profiles SET rating = $1, review_count = $2 WHERE id = $3', [4.8, 20, b.providerId]);
   // Un artículo de catálogo sobre B (su plan Básico ya lo permite): sirve para probar el
   // resumen y la búsqueda de la pestaña Productos sin sembrar un perfil aparte que alteraría
   // TOTAL_VISIBLES.
@@ -151,24 +152,24 @@ beforeAll(async () => {
   expect(articulo.status).toBe(201);
 
   const sinPlan = await crearProveedorConMapa({ nombre: 'Negocio Bajado De Plan', lat: LAT_SIN_PLAN, lng: LNG_SIN_PLAN, showOnMap: true, kind: 'negocio' });
-  ponerPlan(sinPlan.providerId!, 'free'); // bajó hasta Gratis: tampoco cuenta como negocio
+  await ponerPlan(sinPlan.providerId!, 'free'); // bajó hasta Gratis: tampoco cuenta como negocio
   ID_NEGOCIO_SIN_PLAN = sinPlan.providerId!;
 
   const zona = await crearProveedorConMapa({ nombre: 'Perfil Precision Zona', lat: LAT_EXACTA, lng: LNG_EXACTA, showOnMap: true, mapPrecision: 'zona' });
   ID_PERFIL_ZONA = zona.providerId!;
 
-  // Un perfil con punto propio al que se le borra la coordenada PUBLICADA. Desde la migración 13
-  // esa columna es la que decide, y a propósito no tiene respaldo a pp.lat: un perfil así debe
+  // Un perfil con punto propio al que se le borra la coordenada PUBLICADA (punto_pub, geography).
+  // Esa columna es la que decide, y a propósito no tiene respaldo a pp.lat: un perfil así debe
   // desaparecer del mapa (fallo seguro), nunca caer de vuelta en publicar su punto exacto.
   const tercero = await crearProveedorConMapa({ nombre: 'Perfil Sin Publica', lat: LAT_TERCERO, lng: LNG_TERCERO, showOnMap: true });
-  db.prepare('UPDATE provider_profiles SET map_lat_pub = NULL, map_lng_pub = NULL WHERE id = ?').run(tercero.providerId);
+  await q('UPDATE provider_profiles SET punto_pub = NULL WHERE id = $1', [tercero.providerId]);
   ID_PERFIL_TERCERO = tercero.providerId!;
 
   // Perfil para la paridad de q en Servicios: nombre de negocio que NO contiene TERMINO_SERVICIO,
   // con un oficio cuyo título sí lo contiene.
   const progreso = await registrar('provider');
   const perfilProgreso = await api.put('/api/providers/me/profile').set(progreso.auth).send({
-    business_name: 'Taller El Progreso', province_id: provinciaId(), contact_mode: 'whatsapp',
+    business_name: 'Taller El Progreso', province_id: await provinciaId(), contact_mode: 'whatsapp',
     lat: LAT_PROGRESO, lng: LNG_PROGRESO, show_on_map: true,
   });
   expect(perfilProgreso.status).toBe(200);
@@ -373,7 +374,7 @@ describe('GET /api/mapa', () => {
 describe('PUT /api/providers/me/profile — map_precision', () => {
   it('acepta map_precision y rechaza un valor inventado', async () => {
     const pro = await registrar('provider');
-    const perfil = { business_name: 'Perfil De Prueba Precision', province_id: provinciaId(), contact_mode: 'whatsapp' };
+    const perfil = { business_name: 'Perfil De Prueba Precision', province_id: await provinciaId(), contact_mode: 'whatsapp' };
 
     const ok = await api.put('/api/providers/me/profile').set(pro.auth).send({ ...perfil, map_precision: 'zona' });
     expect(ok.status).toBe(200);

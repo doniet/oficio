@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import app from '../src/app.js';
-import { api, crearServicio, db, registrar } from './helpers.js';
+import { api, crearServicio, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
 
 // GET /api/mapa/celda: los negocios de UNA celda. Hasta esta entrega `detras` era solo una
 // insignia — si una celda tenía cinco, veías uno y los otros cuatro eran inalcanzables desde el
@@ -10,14 +11,14 @@ import { api, crearServicio, db, registrar } from './helpers.js';
 
 const CELDA_BBOX = '22.9,-82.5,23.3,-82.1';
 
-function provinciaId() {
-  return (db.prepare('SELECT id FROM provinces LIMIT 1').get() as { id: string }).id;
+async function provinciaId() {
+  return (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!.id;
 }
 
 async function sembrar(nombre: string, lat: number, lng: number, precision: 'exacta' | 'zona' = 'exacta') {
   const pro = await registrar('provider');
   const res = await api.put('/api/providers/me/profile').set(pro.auth).send({
-    business_name: nombre, province_id: provinciaId(), contact_mode: 'whatsapp',
+    business_name: nombre, province_id: await provinciaId(), contact_mode: 'whatsapp',
     lat, lng, show_on_map: true, map_precision: precision,
   });
   expect(res.status).toBe(200);
