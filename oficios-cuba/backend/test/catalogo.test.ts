@@ -148,4 +148,17 @@ describe('catálogo', () => {
     expect(res.items.map((i: { name: string }) => i.name)).not.toContain('Zapatilla Única agotada');
     expect(res.items[0]).toHaveProperty('provider_name');
   });
+
+  // Mismo bug de la migración que providers.ts/services.ts/stats.ts (commit 71f88d1): comparar un
+  // valor sin forma de uuid contra pp.province_id/pp.municipality_id lanza 22P02, que errorHandler
+  // traduce a 404 sobre el listado entero. catalog.ts se quedó fuera de aquel fix.
+  it('/api/catalog/search con province_id o municipality_id que no son uuid da 200 con lista vacía, no 404', async () => {
+    const porProvincia = await api.get('/api/catalog/search').query({ province_id: 'esto-no-es-un-uuid' });
+    expect(porProvincia.status).toBe(200);
+    expect(porProvincia.body.items).toEqual([]);
+
+    const porMunicipio = await api.get('/api/catalog/search').query({ municipality_id: 'esto-no-es-un-uuid' });
+    expect(porMunicipio.status).toBe(200);
+    expect(porMunicipio.body.items).toEqual([]);
+  });
 });

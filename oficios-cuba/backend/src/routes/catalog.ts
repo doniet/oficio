@@ -5,7 +5,7 @@ import { CON_CATALOGO_SQL, enforcePlanLimit, planDelPerfil, PLAN_WEIGHT_SQL, pro
 import { q, qOne, tx } from '../db/acceso.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { imagenPermitida, queryTextos } from '../lib/entrada.js';
+import { imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
 import { consultaSQL, termino } from '../lib/buscador.js';
 import { borrarSiHuerfana } from './uploads.js';
 
@@ -92,9 +92,15 @@ router.get('/search', asyncHandler(async (req, res) => {
     params.push(...t.params);
     coincide = `ts_rank(ci.busca, ${consultaSQL(idxTermino)})`;
   }
-  if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
-  if (municipality_id) {
-    params.push(municipality_id, municipality_id);
+  // province_id/municipality_id se comparan contra columnas uuid: si no tienen forma de uuid, se
+  // cambian por un filtro que nunca puede coincidir (ver uuidQuery en providers.ts/services.ts/
+  // stats.ts), no se ignoran ni se deja que Postgres los rechace con un 22P02 (que errorHandler
+  // traduciría a 404 sobre el listado entero).
+  const provinceIdF = uuidQuery(province_id);
+  if (provinceIdF) { params.push(provinceIdF); where += ` AND pp.province_id = $${params.length}`; }
+  const municipalityIdF = uuidQuery(municipality_id);
+  if (municipalityIdF) {
+    params.push(municipalityIdF, municipalityIdF);
     const n = params.length;
     where += ` AND (pp.municipality_id = $${n - 1} OR EXISTS (SELECT 1 FROM service_areas sa WHERE sa.provider_id = pp.id AND sa.municipality_id = $${n}))`;
   }
