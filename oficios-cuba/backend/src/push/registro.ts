@@ -1,5 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db/index.js';
+// Todo este archivo es de la Tarea 13 (src/push/*). borrarDispositivosDe() es la única excepción:
+// routes/auth.ts (Tarea 6) la llama al cambiar la contraseña para cerrar las demás sesiones, así
+// que necesita funcionar contra Postgres ya. El resto del archivo se queda tal cual hasta su tarea.
+import { q } from '../db/acceso.js';
 
 export type Canal = 'fcm';
 
@@ -21,8 +25,8 @@ export function borrarDispositivo(token: string) {
   db.prepare('DELETE FROM push_devices WHERE token = ?').run(token);
 }
 
-export function borrarDispositivosDe(userId: string) {
-  db.prepare('DELETE FROM push_devices WHERE user_id = ?').run(userId);
+export async function borrarDispositivosDe(userId: string) {
+  await q('DELETE FROM push_devices WHERE user_id = $1', [userId]);
 }
 
 export function dispositivosDe(userId: string): { canal: Canal; token: string }[] {

@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.hoisted(() => { process.env.DEMO_MODE = 'true'; });
 
 import { SignJWT, exportJWK, generateKeyPair, createLocalJWKSet } from 'jose';
-import { api, db, registrar } from './helpers.js';
+import { api, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
 import { verificarIdTokenGoogle } from '../src/lib/google.js';
 
 describe('Google simulado (DEMO_MODE)', () => {
@@ -15,7 +16,7 @@ describe('Google simulado (DEMO_MODE)', () => {
     const alta = await api.post('/api/auth/google').send({ ...cuenta, user_type: 'provider' });
     expect(alta.status).toBe(201);
     expect(alta.body.user).toMatchObject({ user_type: 'provider', google: true, has_password: false });
-    const perfil = db.prepare('SELECT subscription_plan FROM provider_profiles pp JOIN users u ON u.id = pp.user_id WHERE u.email = ?').get(cuenta.email);
+    const perfil = await qOne('SELECT subscription_plan FROM provider_profiles pp JOIN users u ON u.id = pp.user_id WHERE u.email = $1', [cuenta.email]);
     expect(perfil).toEqual({ subscription_plan: 'free' });
 
     const otraVez = await api.post('/api/auth/google').send(cuenta);

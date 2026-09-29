@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { api, crearServicio, db, registrar } from './helpers.js';
+import { api, crearServicio, registrar } from './helpers.js';
+import { q } from '../src/db/acceso.js';
 
 describe('sesiones', () => {
   it('cambiar la contraseña invalida los tokens anteriores y devuelve uno nuevo', async () => {
@@ -16,7 +17,7 @@ describe('sesiones', () => {
 
   it('el token de un usuario borrado deja de valer', async () => {
     const u = await registrar('client');
-    db.prepare('DELETE FROM users WHERE id = ?').run(u.userId);
+    await q('DELETE FROM users WHERE id = $1', [u.userId]);
     expect((await api.get('/api/auth/me').set(u.auth)).status).toBe(401);
   });
 
@@ -29,13 +30,19 @@ describe('sesiones', () => {
     }
     expect(ultimo).toBe(429);
   });
+
+  it('un id que no es uuid da 404, no 500', async () => {
+    for (const ruta of ['/api/providers/abc', '/api/services/no-es-uuid', '/api/reviews/provider/xxx']) {
+      expect((await api.get(ruta)).status, ruta).toBe(404);
+    }
+  });
 });
 
 describe('perfil público del proveedor', () => {
   it('no expone coordenadas si el profesional no eligió mostrarlas en el mapa', async () => {
     const pro = await registrar('provider');
     await crearServicio(pro.auth);
-    db.prepare('UPDATE provider_profiles SET lat = 23.1, lng = -82.3 WHERE id = ?').run(pro.providerId);
+    await q('UPDATE provider_profiles SET lat = 23.1, lng = -82.3 WHERE id = $1', [pro.providerId]);
     const perfil = await api.get(`/api/providers/${pro.providerId}`);
     expect(perfil.body.provider).not.toHaveProperty('lat');
     expect(perfil.body.provider).not.toHaveProperty('lng');
@@ -72,8 +79,9 @@ describe('subidas', () => {
   it('tiene cuota diaria por usuario', async () => {
     const a = await registrar('provider');
     const hoy = new Date().toISOString();
-    const ins = db.prepare('INSERT INTO uploads (name, user_id, created_at) VALUES (?, ?, ?)');
-    for (let i = 0; i < 60; i++) ins.run(`relleno-${a.userId}-${i}.png`, a.userId, hoy);
+    for (let i = 0; i < 60; i++) {
+      await q('INSERT INTO uploads (name, user_id, created_at) VALUES ($1, $2, $3)', [`relleno-${a.userId}-${i}.png`, a.userId, hoy]);
+    }
     expect((await api.post('/api/uploads').set(a.auth).send({ data: png })).status).toBe(429);
   });
 });

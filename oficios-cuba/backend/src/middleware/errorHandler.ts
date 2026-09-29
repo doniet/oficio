@@ -49,6 +49,12 @@ export function errorHandler(err: Error & { status?: number; type?: string }, re
     return res.status(401).json({ error: 'No autorizado' });
   }
 
+  // Un id que no es un uuid no es un error del servidor: es un recurso que no
+  // existe. Con columnas TEXT esto daba 404 solo; con uuid, Postgres lanza 22P02.
+  if ((err as { code?: string }).code === '22P02') {
+    return res.status(404).json({ error: 'No encontrado' });
+  }
+
   return res.status(500).json({
     error: 'Error interno del servidor',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
