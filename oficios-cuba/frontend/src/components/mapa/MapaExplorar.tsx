@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import { Circle, MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
 import L, { type LatLngBounds, type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed } from 'lucide-react';
 import { Spinner } from '../ui';
 import { acotarACuba, usarMapa } from './usarMapa';
-import type { Bbox, PuntoMapa } from '../../types';
+import { RADIO_APROX_M, ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '../../types';
 
 const CUBA_CENTER: [number, number] = [21.6, -79.6];
 const CUBA_BOUNDS: L.LatLngBoundsExpression = [[19, -85.5], [24, -73.5]];
@@ -16,20 +16,39 @@ function aBbox(b: LatLngBounds): Bbox {
 
 // divIcon en vez del icono por defecto de Leaflet, igual que PlaceMap/MapPointPicker: el default
 // carga PNGs por URL relativa que Vite no empaqueta.
-function pinIcon(plan: PuntoMapa['plan'], detras: number) {
+function pinIcon(plan: PuntoMapa['plan'], detras: number, aproximado: boolean) {
   // Solo el plan pro usa brand-600: brand-500 no lleva texto ni sirve de indicador sobre fondo
   // claro (2,43:1, por debajo del 3:1 que pide WCAG 1.4.11). Los demás planes van en ink-700.
   const color = plan === 'pro' ? 'bg-brand-600' : 'bg-ink-700';
   const insignia = detras > 0
     ? `<span class="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-950 px-1 text-[10px] font-bold leading-none text-white">+${detras}</span>`
     : '';
+  // El aro de lo aproximado es de TAMAÑO FIJO en píxeles: no crece con el zoom, así que no puede
+  // solaparse con el del vecino. Dice «esto es aproximado» sin afirmar cuánto; el cuánto lo dice
+  // el círculo cuando el mapa entra en modo zona.
+  const aro = aproximado
+    ? '<span class="absolute inset-0 rounded-full border-2 border-dashed border-brand-600/70"></span>'
+    : '';
   return L.divIcon({
     className: 'map-pin',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
     html: `<span class="relative flex h-7 w-7 items-center justify-center">
+      ${aro}
       <span class="block h-5 w-5 rounded-full border-2 border-white ${color} shadow"></span>
       ${insignia}
+    </span>`,
+  });
+}
+
+/** La etiqueta que va en el centro de un área: «N negocios en esta zona». */
+function etiquetaZona(n: number) {
+  return L.divIcon({
+    className: 'map-zona',
+    iconSize: [120, 22],
+    iconAnchor: [60, 11],
+    html: `<span class="flex h-[22px] items-center justify-center rounded-full bg-white/95 px-2 text-[11px] font-bold text-ink-800 shadow-card backdrop-blur">
+      ${n === 1 ? '1 negocio aquí' : `${n} negocios aquí`}
     </span>`,
   });
 }
@@ -64,10 +83,25 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, onAbrir }: {
-  tab: string; q: string; category: string; onAbrir: (p: PuntoMapa) => void;
+export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }: {
+  tab: string; q: string; category: string;
+  onAbrir: (p: PuntoMapa) => void;
+  /** Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). */
+  onAbrirLista: (puntos: PuntoMapa[]) => void;
 }) {
   const mapa = usarMapa({ tab, q, category });
+
+  // Modo zona: por debajo de este tamaño de celda el área de 600 m ya no cabe en ella, así que
+  // los círculos de celdas vecinas se solaparían por fuerza. Sale de la geometría, no del gusto.
+  const modoZona = mapa.celda > 0 && mapa.celda < ZONA_DESDE_GRADOS;
+
+  // Un punto suelto abre su ficha; un grupo abre la lista de su celda. Es la misma interacción
+  // para el «+N» y para el área: enseñarle al usuario dos formas de decir «aquí hay varios»
+  // sería pedirle que aprenda dos cosas para el mismo hecho.
+  const abrir = useCallback((p: PuntoMapa) => {
+    if (p.detras > 0) mapa.cargarCelda(p.cy, p.cx).then((lista) => onAbrirLista(lista.length ? lista : [p]));
+    else onAbrir(p);
+  }, [mapa, onAbrir, onAbrirLista]);
   const zoomRecien = useRef(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const [localizando, setLocalizando] = useState(false);
@@ -114,12 +148,37 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: {
         />
         <Eventos zoomRecien={zoomRecien} alMover={mapa.alMover} />
         {mapa.puntos.map((p) => (
-          <Marker
-            key={p.id}
-            position={[p.lat, p.lng]}
-            icon={pinIcon(p.plan, p.detras)}
-            eventHandlers={{ click: () => onAbrir(p) }}
-          />
+          // En modo zona un punto aproximado deja de fingir un punto y se dibuja como área. Los
+          // exactos siguen siendo pin, porque el suyo sí es cierto: mezclarlos mentiría sobre los
+          // dos. Una celda puede tener de los dos tipos y el servidor devuelve UN representante,
+          // así que la representación sigue a ese representante y la celda no se parte en dos
+          // marcadores — que es de lo que depende que nada se solape.
+          modoZona && p.aproximado ? (
+            <Circle
+              key={p.id}
+              center={[p.lat, p.lng]}
+              radius={RADIO_APROX_M}
+              pathOptions={{ color: '#B85400', weight: 2, fillColor: '#B85400', fillOpacity: 0.12 }}
+              eventHandlers={{ click: () => abrir(p) }}
+            />
+          ) : null
+        ))}
+        {mapa.puntos.map((p) => (
+          modoZona && p.aproximado ? (
+            <Marker
+              key={`etq-${p.id}`}
+              position={[p.lat, p.lng]}
+              icon={etiquetaZona(p.detras + 1)}
+              eventHandlers={{ click: () => abrir(p) }}
+            />
+          ) : (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lng]}
+              icon={pinIcon(p.plan, p.detras, p.aproximado)}
+              eventHandlers={{ click: () => abrir(p) }}
+            />
+          )
         ))}
       </MapContainer>
 

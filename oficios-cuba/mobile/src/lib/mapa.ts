@@ -44,9 +44,11 @@ export type EstadoMapa = {
   /** Regla 2: el usuario paneó sin recargar — hay que ofrecerle «Buscar en esta zona». */
   zonaSucia: boolean;
   hayMas: boolean;
+  /** Tamaño de celda que devolvió el servidor. Decide si lo aproximado se dibuja como área. */
+  celda: number;
 };
 
-const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, zonaSucia: false, hayMas: false };
+const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, zonaSucia: false, hayMas: false, celda: 0 };
 
 /**
  * El mismo hook de carga que usarMapa.ts de la web (frontend/src/components/mapa/), con las
@@ -80,7 +82,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
       .then((r) => {
         limpiarTiempoEspera();
         if (propio.signal.aborted) return;
-        setEstado({ puntos: r.puntos, cargando: false, error: false, zonaSucia: false, hayMas: r.hay_mas });
+        setEstado({ puntos: r.puntos, cargando: false, error: false, zonaSucia: false, hayMas: r.hay_mas, celda: r.celda });
       })
       .catch(() => {
         limpiarTiempoEspera();

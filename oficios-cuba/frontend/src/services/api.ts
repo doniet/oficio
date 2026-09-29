@@ -190,6 +190,15 @@ export const mapaApi = {
       params: { bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, ...params },
       signal,
     }).then((r) => r.data),
+
+  /** Los negocios de UNA celda. El bbox tiene que ser EL MISMO con el que se pintó el mapa: el
+   *  servidor deduce de él el tamaño de celda, así que con otro bbox los índices no significan
+   *  lo mismo y la lista no coincidiría con el «+N» que la anunció. */
+  celda: (bbox: Bbox, cy: number, cx: number, params: { tab?: string; q?: string; category?: string }, signal?: AbortSignal) =>
+    api.get<MapaRespuesta>('/mapa/celda', {
+      params: { bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, cy, cx, ...params },
+      signal,
+    }).then((r) => r.data),
 };
 
 export const telegramApi = {

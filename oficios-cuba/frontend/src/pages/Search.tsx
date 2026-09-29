@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../compo
 import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
 import CatalogItemModal from '../components/catalog/CatalogItemModal';
 import HojaPunto from '../components/mapa/HojaPunto';
+import ListaCelda from '../components/mapa/ListaCelda';
 
 // Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa (o cambia a la vista de mapa).
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
@@ -245,6 +246,12 @@ export default function Search() {
   // no lo enseña. `vista=mapa` es explícito y sobrevive a compartir el enlace.
   const enMapa = get('vista') === 'mapa';
   const [puntoAbierto, setPuntoAbierto] = useState<PuntoMapa | null>(null);
+  // Los negocios de una celda, cuando se toca un grupo. Vive aquí y no en el mapa por la misma
+  // razón que el punto abierto: sobrevive a los re-render del mapa.
+  const [listaCelda, setListaCelda] = useState<PuntoMapa[] | null>(null);
+  // Hoja y lista son excluyentes: si se abren a la vez se pisan y no se entiende cuál manda.
+  const abrirPunto = useCallback((p: PuntoMapa) => { setListaCelda(null); setPuntoAbierto(p); }, []);
+  const abrirLista = useCallback((ps: PuntoMapa[]) => { setPuntoAbierto(null); setListaCelda(ps); }, []);
   const [negs, setNegs] = useState<ProviderCardType[]>([]);
   const [negPag, setNegPag] = useState<Pagination | null>(null);
   const [prod, setProd] = useState<CatalogSearchPage | null>(null);
@@ -508,7 +515,7 @@ export default function Search() {
           {enMapa ? (
             <div className="h-[70vh] min-h-[420px]">
               <Suspense fallback={<PageLoader />}>
-                <MapaExplorar tab={pestaña} q={get('q')} category={get('category')} onAbrir={setPuntoAbierto} />
+                <MapaExplorar tab={pestaña} q={get('q')} category={get('category')} onAbrir={abrirPunto} onAbrirLista={abrirLista} />
               </Suspense>
             </div>
           ) : error ? (
@@ -625,6 +632,13 @@ export default function Search() {
          MapaExplorar (ver el escaneo de conflictos de la Entrega 2), y sobrevive aunque se
          vuelva a la lista mientras se cierra la hoja. */}
       <HojaPunto punto={puntoAbierto} onCerrar={() => setPuntoAbierto(null)} />
+      {/* Elegir uno de la lista abre su ficha y cierra la lista: Atrás vuelve al mapa, no a una
+          lista fantasma detrás de la hoja. */}
+      <ListaCelda
+        puntos={listaCelda}
+        onElegir={abrirPunto}
+        onCerrar={() => setListaCelda(null)}
+      />
     </div>
   );
 }

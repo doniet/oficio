@@ -12,7 +12,7 @@ import {
   type StyleSpecification,
   type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
-import type { Bbox, PuntoMapa } from '@oficio/shared';
+import { ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '@oficio/shared';
 import { Boton } from './Boton';
 import { acotarACuba, CUBA, usarMapa } from '../lib/mapa';
 import { brand, fuentes, ink, radios, sand, sombra } from '../lib/tema';
@@ -65,6 +65,9 @@ const Pin = memo(function Pin({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p:
   return (
     <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} onPress={() => onAbrir(punto)}>
       <View style={e.pinEnvoltorio}>
+        {/* Aro de tamaño FIJO en píxeles para lo aproximado: no crece con el zoom, así que nunca
+            se solapa con el del vecino. Dice «esto es aproximado» sin afirmar cuánto. */}
+        {punto.aproximado ? <View style={e.aroAprox} /> : null}
         <View style={[e.pin, { backgroundColor: COLOR_PIN[punto.plan] }]}>
           <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={16} color="#ffffff" />
         </View>
@@ -78,8 +81,37 @@ const Pin = memo(function Pin({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p:
   );
 });
 
+/**
+ * Un punto aproximado en modo zona: deja de fingir un punto y se dibuja como área con su cuenta.
+ *
+ * DIVERGENCIA DELIBERADA CON LA WEB, y conviene saberla: en la web el área es un círculo de 300 m
+ * REALES (Leaflet tiene `Circle` con radio en metros), así que crece al acercarse. Aquí es un
+ * disco de tamaño fijo en píxeles. Dibujar 300 m exactos en MapLibre pide GeoJSONSource + Layer
+ * con un polígono, y esto se escribió en un host sin emulador: no había forma de comprobarlo
+ * antes de meterlo en un APK que va a teléfonos reales. Comunica lo mismo —«es una zona, no un
+ * punto»— sin poder romperse en ejecución. Queda pendiente de igualar tras probarlo en emulador.
+ */
+const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p: PuntoMapa): void }) {
+  const n = punto.detras + 1;
+  return (
+    <Marker id={`zona-${punto.id}`} lngLat={[punto.lng, punto.lat]} onPress={() => onAbrir(punto)}>
+      <View style={e.zonaEnvoltorio}>
+        <View style={e.zonaDisco} />
+        <View style={e.zonaEtiqueta}>
+          <Text style={e.zonaTexto}>{n === 1 ? '1 negocio aquí' : `${n} negocios aquí`}</Text>
+        </View>
+      </View>
+    </Marker>
+  );
+});
+
 export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: string; q: string; category: string; onAbrir(p: PuntoMapa): void }) {
-  const { puntos, cargando, error, zonaSucia, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
+  const { puntos, cargando, error, zonaSucia, celda, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
+
+  // Mismo umbral que la web (ZONA_DESDE_GRADOS, en @oficio/shared): por debajo de este tamaño de
+  // celda el área ya no cabe en ella. Una constante y dos clientes, o el mismo negocio se vería
+  // distinto en cada uno.
+  const modoZona = celda > 0 && celda < ZONA_DESDE_GRADOS;
 
   const mapaRef = useRef<MapRef>(null);
   const camaraRef = useRef<CameraRef>(null);
@@ -144,7 +176,12 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
         onRegionDidChange={alCambiarRegion}
       >
         <Camera ref={camaraRef} initialViewState={{ center: CENTRO_INICIAL, zoom: ZOOM_INICIAL }} maxBounds={LIMITES_CUBA} />
-        {puntos.map((p) => <Pin key={p.id} punto={p} onAbrir={onAbrir} />)}
+        {puntos.map((p) => (
+          // Los exactos siguen siendo pin: su punto sí es cierto y mezclarlos mentiría sobre los dos.
+          modoZona && p.aproximado
+            ? <AreaZona key={p.id} punto={p} onAbrir={onAbrir} />
+            : <Pin key={p.id} punto={p} onAbrir={onAbrir} />
+        ))}
       </MapaLibre>
 
       {cargando ? (
@@ -201,6 +238,21 @@ const e = StyleSheet.create({
     backgroundColor: ink[900], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: '#ffffff',
   },
   insigniaTexto: { fontFamily: fuentes.textoFuerte, fontSize: 10, color: '#ffffff' },
+  // Aro de lo aproximado: tamaño fijo en píxeles, así que no puede solaparse con el del vecino.
+  aroAprox: {
+    position: 'absolute', width: 48, height: 48, borderRadius: 24,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: brand[600], opacity: 0.7,
+  },
+  zonaEnvoltorio: { alignItems: 'center', justifyContent: 'center' },
+  zonaDisco: {
+    position: 'absolute', width: 96, height: 96, borderRadius: 48,
+    backgroundColor: brand[600], opacity: 0.12, borderWidth: 2, borderColor: brand[600],
+  },
+  zonaEtiqueta: {
+    backgroundColor: '#ffffff', borderRadius: radios.chip, paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 1, borderColor: sand[200], ...sombra.card,
+  },
+  zonaTexto: { fontFamily: fuentes.textoFuerte, fontSize: 11, color: ink[800] },
   pildoraCarga: {
     position: 'absolute', top: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#ffffff', borderRadius: radios.chip, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: sand[200], ...sombra.card,

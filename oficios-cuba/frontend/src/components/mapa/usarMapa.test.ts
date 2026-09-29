@@ -133,7 +133,7 @@ describe('MapaExplorar', () => {
     // del hook no pueden ver.
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
 
-    render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {} }));
+    render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {} }));
 
     await act(async () => { await espera(280); }); // pasa el antirrebote de zoom (250 ms)
 

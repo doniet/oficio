@@ -108,5 +108,18 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
     controladorRef.current?.abort();
   }, []);
 
-  return { puntos, celda, hayMas, cargando, error, zonaSucia, alMover, buscarZona };
+  /**
+   * Los negocios de una celda concreta. Usa el bbox guardado —el mismo con el que se pintó el
+   * mapa— porque el servidor deduce de él el tamaño de celda: pedirlo con otro rectángulo haría
+   * que los índices significaran otra cosa y la lista no cuadrara con el «+N» que la anunció.
+   */
+  const cargarCelda = useCallback((cy: number, cx: number) => {
+    const bbox = bboxRef.current;
+    if (!bbox) return Promise.resolve([] as PuntoMapa[]);
+    const { tab, q, category } = paramsRef.current;
+    return mapaApi.celda(bbox, cy, cx, { tab: tab || undefined, q: q || undefined, category: category || undefined })
+      .then((r) => r.puntos);
+  }, []);
+
+  return { puntos, celda, hayMas, cargando, error, zonaSucia, alMover, buscarZona, cargarCelda };
 }
