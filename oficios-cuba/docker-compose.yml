@@ -98,7 +98,7 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DATABASE_PATH=/app/data/oficios.db
+      - DATABASE_URL=postgresql://oficio:${POSTGRES_PASSWORD}@oficio_db:5432/oficio
       - NOTIFIER_KEYS_DIR=/app/keys
       - TZ=America/Havana
       # Push de las apps: si el archivo no existe, el push queda apagado y Telegram sigue igual.
@@ -109,9 +109,12 @@ services:
       - ./secrets/fcm:/app/fcm:ro
     networks:
       - net_dmz
+      # Para llegar a oficio_db (interna, sin exponer puertos). net_dmz sigue siendo la única
+      # salida a internet: oficio_net es "internal: true" y no la contradice.
+      - oficio_net
     mem_limit: 128m
     healthcheck:
-      test: ["CMD", "node", "-e", "const d=require('better-sqlite3')('/app/data/oficios.db',{readonly:true});const r=d.prepare(\"SELECT value FROM telegram_state WHERE key='heartbeat'\").get();process.exit(r&&Date.now()-Date.parse(r.value)<120000?0:1)"]
+      test: ["CMD", "node", "-e", "const{Client}=require('pg');const c=new Client({connectionString:process.env.DATABASE_URL});c.connect().then(()=>c.query(\"SELECT value FROM telegram_state WHERE key='heartbeat'\")).then(r=>{const v=r.rows[0]?.value;process.exit(v&&Date.now()-Date.parse(v)<120000?0:1)}).catch(()=>process.exit(1))"]
       interval: 60s
       timeout: 10s
       start_period: 30s
