@@ -13,6 +13,15 @@ router.use(authMiddleware);
 
 const SIN_CHAT = 'El chat es del plan Profesional. Contacta a este profesional por WhatsApp o llamada.';
 
+// ?after= se compara contra c.created_at (timestamptz): un valor sin forma de fecha lanza 22007
+// en el bind, y errorHandler solo traduce 22P02 (una columna uuid) a 404. Con SQLite era una
+// comparación léxica que nunca fallaba, así que este filtro se validó aparte, en la ruta y no en
+// errorHandler: un id mal formado es "ese recurso no existe" (404), pero un ?after= mal formado
+// es una petición mal hecha (400) — dos códigos para el mismo 22007 según de dónde viniera no
+// tiene una regla única, y el frontend ya manda siempre un ISO válido, así que zod (ya
+// dependencia) alcanza sin tener que enseñarle a errorHandler a distinguir un caso del otro.
+const afterQuerySchema = z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'El parámetro after no es una fecha válida').optional();
+
 // conversations.provider_profile_id es el id del PERFIL de proveedor, no el del usuario (Tarea 3).
 // El contrato JSON de la API no cambia: sigue llamándose provider_id (lo consumen el frontend y las
 // dos apps móviles).
@@ -131,7 +140,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res) => {
 
 router.get('/:id', asyncHandler(async (req: AuthRequest, res) => {
   const conversation = await loadConversation(req);
-  const after = typeof req.query.after === 'string' ? req.query.after : null;
+  const after = afterQuerySchema.parse(typeof req.query.after === 'string' ? req.query.after : undefined) ?? null;
   const messages = after
     ? await q('SELECT id, sender_id, sender_type, content, read_at, created_at FROM messages WHERE conversation_id = $1 AND created_at > $2 ORDER BY created_at ASC', [conversation.id, after])
     : await q('SELECT id, sender_id, sender_type, content, read_at, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC', [conversation.id]);
