@@ -3,7 +3,7 @@ import { q, qOne } from '../db/acceso.js';
 import { CATEGORIAS_SQL, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { categoriaColumna, queryTextos } from '../lib/entrada.js';
-import { termino } from '../lib/buscador.js';
+import { consultaSQL, termino } from '../lib/buscador.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
 import { segunPlan } from './providers.js';
 
@@ -115,13 +115,17 @@ function filtroDeVisibles(
   // negocio. Negocios es la excepción a propósito: ahí no hay un "servicio que coincide" que
   // mostrar, así que sí busca en los campos del propio perfil (pp.busca).
   if (tab === 'servicios') {
-    where += ` AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = true`;
-    // pp.business_name igual que services.ts — el nombre del negocio es un término válido en la
-    // lista, y sin él aquí el mismo término vacía el mapa al cambiar de vista.
+    // El LIKE original también buscaba en el nombre del negocio y en el de la categoría (y su
+    // categoría padre): mismas cuatro columnas que la lista (services.ts), o cambiar de vista con
+    // un término escrito podría vaciar el mapa por una coincidencia que la lista sí encontraba.
+    where += ` AND EXISTS (SELECT 1 FROM services s
+      LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+      WHERE s.provider_id = pp.id AND s.is_active = true`;
     const idx = params.length + 1;
     const t = termino(texto, 's.busca', idx);
     if (t) {
-      where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idx})))`;
+      where += ` AND (${t.sql} OR pp.busca @@ ${consultaSQL(idx)}
+        OR c.busca @@ ${consultaSQL(idx)} OR parent.busca @@ ${consultaSQL(idx)})`;
       params.push(...t.params);
     }
     where += ')';
@@ -134,7 +138,7 @@ function filtroDeVisibles(
     const idx = params.length + 1;
     const t = termino(texto, 'ci.busca', idx);
     if (t) {
-      where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idx})))`;
+      where += ` AND (${t.sql} OR pp.busca @@ ${consultaSQL(idx)})`;
       params.push(...t.params);
     }
     where += ')';
@@ -148,8 +152,14 @@ function filtroDeVisibles(
       WHERE s.is_active = true AND (c.${campo} = $${n} OR c.parent_id IN (SELECT id FROM categories WHERE ${campo} = $${n})))`;
   }
   if (tab === 'negocios') {
-    const t = termino(texto, 'pp.busca', params.length + 1);
-    if (t) { where += ` AND ${t.sql}`; params.push(...t.params); }
+    // El LIKE original también buscaba en el nombre del dueño (u.full_name): u ya está unida en
+    // la CTE de fuera (FROM provider_profiles pp JOIN users u ON pp.user_id = u.id).
+    const idx = params.length + 1;
+    const t = termino(texto, 'pp.busca', idx);
+    if (t) {
+      where += ` AND (${t.sql} OR u.busca @@ ${consultaSQL(idx)})`;
+      params.push(...t.params);
+    }
   }
   return { where, params };
 }

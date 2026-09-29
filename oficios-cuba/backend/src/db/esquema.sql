@@ -35,6 +35,15 @@ CREATE TABLE users (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Búsqueda por el nombre de la persona (routes/providers.ts, mapa.ts pestaña Negocios): el
+-- LIKE original de esas dos rutas también buscaba en el nombre del dueño, no solo en el del
+-- negocio — sin esta columna, buscar a alguien por su nombre dejaría de encontrar su perfil.
+ALTER TABLE users ADD COLUMN busca tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('spanish', inmutable_unaccent(regexp_replace(coalesce(full_name, ''), '/', ' ', 'g')))
+  ) STORED;
+CREATE INDEX idx_users_busca ON users USING GIN (busca);
+
 -- Provinces of Cuba
 CREATE TABLE provinces (
   id uuid PRIMARY KEY,
@@ -67,6 +76,25 @@ CREATE TABLE categories (
   sort_order integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Búsqueda por nombre de categoría (routes/services.ts, mapa.ts pestaña Servicios): el LIKE
+-- original buscaba también en el nombre de la categoría del oficio y en el de su categoría
+-- padre — se cubre uniendo services.category_id -> categories dos veces (c y su parent), cada
+-- una comparada contra esta columna.
+--
+-- regexp_replace(..., '/', ' ', 'g'): varias categorías se llaman "Fontanería/Plomería",
+-- "Fotografía/Video", etc. El parser de texto de Postgres reconoce "palabra/palabra" (sin
+-- espacios) como un token de tipo "file" (ruta de archivo) y lo manda ENTERO al diccionario
+-- `simple`, sin partirlo ni pasarlo por el stemmer español — buscar "video" no encontraría
+-- "Fotografía/Video" (sí lo encontraría un LIKE, porque para un LIKE es solo texto). Cambiar la
+-- "/" por un espacio ANTES de tokenizar hace que se indexen "fotografia" y "video" por separado,
+-- como si el nombre llevara un espacio. Verificado con ts_debug(): un guion sí se indexa bien
+-- solo ("Post-Obra" da 'post', 'obra' Y 'post-obr'), la barra no.
+ALTER TABLE categories ADD COLUMN busca tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('spanish', inmutable_unaccent(regexp_replace(coalesce(name, ''), '/', ' ', 'g')))
+  ) STORED;
+CREATE INDEX idx_categories_busca ON categories USING GIN (busca);
 
 -- Provider profiles
 CREATE TABLE provider_profiles (
@@ -116,7 +144,7 @@ CREATE INDEX idx_pp_plan ON provider_profiles (subscription_plan);
 -- Negocios). GENERATED ... STORED: se mantiene sola, nadie tiene que acordarse de actualizarla.
 ALTER TABLE provider_profiles ADD COLUMN busca tsvector
   GENERATED ALWAYS AS (
-    to_tsvector('spanish', inmutable_unaccent(coalesce(business_name, '') || ' ' || coalesce(description, '')))
+    to_tsvector('spanish', inmutable_unaccent(regexp_replace(coalesce(business_name, '') || ' ' || coalesce(description, ''), '/', ' ', 'g')))
   ) STORED;
 CREATE INDEX idx_pp_busca ON provider_profiles USING GIN (busca);
 
@@ -146,7 +174,7 @@ CREATE INDEX idx_services_active ON services (is_active);
 -- Búsqueda de oficios por título y descripción (routes/services.ts, mapa.ts pestaña Servicios).
 ALTER TABLE services ADD COLUMN busca tsvector
   GENERATED ALWAYS AS (
-    to_tsvector('spanish', inmutable_unaccent(coalesce(title, '') || ' ' || coalesce(description, '')))
+    to_tsvector('spanish', inmutable_unaccent(regexp_replace(coalesce(title, '') || ' ' || coalesce(description, ''), '/', ' ', 'g')))
   ) STORED;
 CREATE INDEX idx_s_busca ON services USING GIN (busca);
 
@@ -322,7 +350,7 @@ CREATE INDEX idx_catalog_provider ON catalog_items (provider_id, section, name);
 ALTER TABLE catalog_items ADD COLUMN busca tsvector
   GENERATED ALWAYS AS (
     to_tsvector('spanish',
-      inmutable_unaccent(coalesce(name, '') || ' ' || coalesce(description, '') || ' ' || coalesce(section, ''))
+      inmutable_unaccent(regexp_replace(coalesce(name, '') || ' ' || coalesce(description, '') || ' ' || coalesce(section, ''), '/', ' ', 'g'))
     )
   ) STORED;
 CREATE INDEX idx_ci_busca ON catalog_items USING GIN (busca);

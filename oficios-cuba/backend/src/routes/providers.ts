@@ -7,7 +7,7 @@ import { hayQueRecalcular, puntoPublico } from '../lib/ubicacion.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { categoriaColumna, imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
-import { termino } from '../lib/buscador.js';
+import { consultaSQL, termino } from '../lib/buscador.js';
 import { planDe } from '../config.js';
 
 const router = Router();
@@ -101,8 +101,14 @@ router.get('/', asyncHandler(async (req, res) => {
     where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
       WHERE s.is_active = true AND (c.${campo} = $${n} OR c.parent_id IN (SELECT id FROM categories WHERE ${campo} = $${n})))`;
   }
-  const t = termino(texto, 'pp.busca', params.length + 1);
-  if (t) { where += ` AND ${t.sql}`; params.push(...t.params); }
+  const idxTermino = params.length + 1;
+  const t = termino(texto, 'pp.busca', idxTermino);
+  if (t) {
+    // El LIKE original también buscaba en el nombre del dueño (u.full_name), no solo en el del
+    // negocio: u ya está unida por PUBLIC_JOINS.
+    where += ` AND (${t.sql} OR u.busca @@ ${consultaSQL(idxTermino)})`;
+    params.push(...t.params);
+  }
 
   // NULLS LAST explícito: pp.rating no admite NULL hoy (DEFAULT 0), pero SQLite ponía los NULL
   // primero en ASC y Postgres los pone últimos, así que cualquier ORDER BY sobre una columna que

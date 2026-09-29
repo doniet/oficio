@@ -6,7 +6,7 @@ import { q, qOne, tx } from '../db/acceso.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
-import { termino } from '../lib/buscador.js';
+import { consultaSQL, termino } from '../lib/buscador.js';
 import { borrarSiHuerfana } from './uploads.js';
 
 const router = Router();
@@ -88,9 +88,9 @@ router.get('/search', asyncHandler(async (req, res) => {
   if (t) {
     // El nombre del negocio también es un término válido (igual que en services.ts): se
     // reusa el mismo parámetro $idxTermino contra las dos columnas, no se repite el valor.
-    where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
+    where += ` AND (${t.sql} OR pp.busca @@ ${consultaSQL(idxTermino)})`;
     params.push(...t.params);
-    coincide = `ts_rank(ci.busca, websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
+    coincide = `ts_rank(ci.busca, ${consultaSQL(idxTermino)})`;
   }
   if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
   if (municipality_id) {

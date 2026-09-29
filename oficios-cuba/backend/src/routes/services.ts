@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { parseImages, parsePriceList, PLAN_WEIGHT_SQL, providerProfileIdFor, refreshProviderRating } from '../db/index.js';
 import { q, qOne, tx } from '../db/acceso.js';
 import { categoriaColumna, imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
-import { termino } from '../lib/buscador.js';
+import { consultaSQL, termino } from '../lib/buscador.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { planDe, TASA_CUP_USD } from '../config.js';
@@ -121,9 +121,11 @@ router.get('/', asyncHandler(async (req, res) => {
   const idxTermino = params.length + 1;
   const t = termino(texto, 's.busca', idxTermino);
   if (t) {
-    // El nombre del negocio también es un término válido — el mismo parámetro contra las dos
-    // columnas, no dos búsquedas por separado.
-    where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
+    // El LIKE original también buscaba en el nombre del negocio y en el de la categoría (y su
+    // categoría padre): c/parent ya están unidas por LIST_JOINS, así que se suman con OR en vez
+    // de perder esa coincidencia — el mismo parámetro contra las cuatro columnas.
+    where += ` AND (${t.sql} OR pp.busca @@ ${consultaSQL(idxTermino)}
+      OR c.busca @@ ${consultaSQL(idxTermino)} OR parent.busca @@ ${consultaSQL(idxTermino)})`;
     params.push(...t.params);
   }
 
