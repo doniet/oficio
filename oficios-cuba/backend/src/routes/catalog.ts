@@ -6,6 +6,7 @@ import { q, qOne, tx } from '../db/acceso.js';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
+import { termino } from '../lib/buscador.js';
 import { borrarSiHuerfana } from './uploads.js';
 
 const router = Router();
@@ -55,11 +56,8 @@ router.get('/provider/:providerId', asyncHandler(async (req, res) => {
   let where = '';
   const params: unknown[] = [req.params.providerId];
   if (section) { params.push(section); where += ` AND ci.section = $${params.length}`; }
-  if (texto && texto.trim()) {
-    const term = `%${texto.trim()}%`;
-    params.push(term, term);
-    where += ` AND (ci.name ILIKE $${params.length - 1} OR ci.description ILIKE $${params.length})`;
-  }
+  const t1 = termino(texto, 'ci.busca', params.length + 1);
+  if (t1) { where += ` AND ${t1.sql}`; params.push(...t1.params); }
 
   const total = Number((await qOne<{ n: string }>(`SELECT COUNT(*) AS n ${base} ${where}`, params))!.n);
   const limitParams = [...params, POR_PAGINA, (page - 1) * POR_PAGINA];
@@ -85,14 +83,14 @@ router.get('/search', asyncHandler(async (req, res) => {
   let where = `WHERE ${CON_CATALOGO} AND ci.available = true`;
   const params: unknown[] = [];
   let coincide = '0';
-  if (texto && texto.trim()) {
-    const term = `%${texto.trim()}%`;
-    params.push(term, term, term, term);
-    const n = params.length;
-    where += ` AND (ci.name ILIKE $${n - 3} OR ci.description ILIKE $${n - 2} OR ci.section ILIKE $${n - 1} OR pp.business_name ILIKE $${n})`;
-    // Mismo término que ci.name ILIKE de arriba: se reusa el mismo parámetro $n-3 en vez de
-    // repetirlo, algo que el `?` posicional de SQLite no permitía.
-    coincide = `(ci.name ILIKE $${n - 3})`;
+  const idxTermino = params.length + 1;
+  const t = termino(texto, 'ci.busca', idxTermino);
+  if (t) {
+    // El nombre del negocio también es un término válido (igual que en services.ts): se
+    // reusa el mismo parámetro $idxTermino contra las dos columnas, no se repite el valor.
+    where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
+    params.push(...t.params);
+    coincide = `ts_rank(ci.busca, websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
   }
   if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
   if (municipality_id) {
@@ -108,7 +106,7 @@ router.get('/search', asyncHandler(async (req, res) => {
 
   const total = Number((await qOne<{ n: string }>(`SELECT COUNT(*) AS n ${joins} ${where}`, params))!.n);
   const limitParams = [...params, POR_PAGINA, (page - 1) * POR_PAGINA];
-  const items = (await q<({ available: boolean; peso?: number; coincide?: boolean; turno?: number } & Record<string, unknown>)>(`
+  const items = (await q<({ available: boolean; peso?: number; coincide?: number; turno?: number } & Record<string, unknown>)>(`
     SELECT * FROM (
       SELECT ${COLUMNAS}, pp.id AS provider_id, COALESCE(pp.business_name, u.full_name) AS provider_name, u.avatar_url AS provider_avatar,
         pp.subscription_plan, pp.contact_mode, pp.whatsapp, p.name AS province_name, m.name AS municipality_name,

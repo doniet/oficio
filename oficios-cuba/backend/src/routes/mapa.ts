@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { q, qOne } from '../db/acceso.js';
 import { CATEGORIAS_SQL, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { queryTextos } from '../lib/entrada.js';
+import { categoriaColumna, queryTextos } from '../lib/entrada.js';
+import { termino } from '../lib/buscador.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
 import { segunPlan } from './providers.js';
 
@@ -89,7 +90,7 @@ async function resumenDe(providerId: string, tab: string): Promise<string> {
  * `params.length` — el mismo patrón que ya usan providers.ts/services.ts/catalog.ts.
  */
 function filtroDeVisibles(
-  tab: string, q: string | undefined, category: string | undefined,
+  tab: string, texto: string | undefined, category: string | undefined,
   pedido: { sur: number; norte: number; oeste: number; este: number },
 ) {
   // Se filtra SOLO por la coordenada publicada (pp.punto_pub), nunca por la guardada (pp.lat/
@@ -108,23 +109,20 @@ function filtroDeVisibles(
 
   if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
 
-  // `q` tiene que buscar lo mismo que busca la lista de esa pestaña (services.ts / catalog.ts):
-  // si no, cambiar de lista a mapa con un término escrito casi siempre vacía el mapa, porque el
-  // término coincide con un servicio o un artículo, no con el nombre del negocio. Negocios es la
-  // excepción a propósito: ahí no hay un "servicio que coincide" que mostrar, así que sí busca en
-  // los campos del propio perfil.
-  const termino = q && q.trim() ? `%${q.trim()}%` : null;
-
+  // `texto` tiene que buscar lo mismo que busca la lista de esa pestaña (services.ts /
+  // catalog.ts): si no, cambiar de lista a mapa con un término escrito casi siempre vacía el
+  // mapa, porque el término coincide con un servicio o un artículo, no con el nombre del
+  // negocio. Negocios es la excepción a propósito: ahí no hay un "servicio que coincide" que
+  // mostrar, así que sí busca en los campos del propio perfil (pp.busca).
   if (tab === 'servicios') {
-    where += ` AND EXISTS (SELECT 1 FROM services s
-      LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-      WHERE s.provider_id = pp.id AND s.is_active = true`;
+    where += ` AND EXISTS (SELECT 1 FROM services s WHERE s.provider_id = pp.id AND s.is_active = true`;
     // pp.business_name igual que services.ts — el nombre del negocio es un término válido en la
     // lista, y sin él aquí el mismo término vacía el mapa al cambiar de vista.
-    if (termino) {
-      params.push(termino, termino, termino, termino, termino);
-      const n = params.length;
-      where += ` AND (s.title ILIKE $${n - 4} OR s.description ILIKE $${n - 3} OR c.name ILIKE $${n - 2} OR parent.name ILIKE $${n - 1} OR pp.business_name ILIKE $${n})`;
+    const idx = params.length + 1;
+    const t = termino(texto, 's.busca', idx);
+    if (t) {
+      where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idx})))`;
+      params.push(...t.params);
     }
     where += ')';
   }
@@ -133,23 +131,25 @@ function filtroDeVisibles(
     where += ` AND EXISTS (SELECT 1 FROM catalog_items ci
       WHERE ci.provider_id = pp.id AND ci.available = true AND ${CON_CATALOGO_SQL}`;
     // pp.business_name igual que catalog.ts (/catalog/search, la que usa la pestaña Productos).
-    if (termino) {
-      params.push(termino, termino, termino, termino);
-      const n = params.length;
-      where += ` AND (ci.name ILIKE $${n - 3} OR ci.description ILIKE $${n - 2} OR ci.section ILIKE $${n - 1} OR pp.business_name ILIKE $${n})`;
+    const idx = params.length + 1;
+    const t = termino(texto, 'ci.busca', idx);
+    if (t) {
+      where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idx})))`;
+      params.push(...t.params);
     }
     where += ')';
   }
   if (category) {
-    params.push(category, category, category, category);
+    // category acepta un uuid o un slug: ver categoriaColumna (misma trampa que providers.ts/services.ts).
+    const campo = categoriaColumna(category);
+    params.push(category);
     const n = params.length;
     where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
-      WHERE s.is_active = true AND (c.id = $${n - 3} OR c.slug = $${n - 2} OR c.parent_id IN (SELECT id FROM categories WHERE id = $${n - 1} OR slug = $${n})))`;
+      WHERE s.is_active = true AND (c.${campo} = $${n} OR c.parent_id IN (SELECT id FROM categories WHERE ${campo} = $${n})))`;
   }
-  if (tab === 'negocios' && termino) {
-    params.push(termino, termino, termino);
-    const n = params.length;
-    where += ` AND (pp.business_name ILIKE $${n - 2} OR pp.description ILIKE $${n - 1} OR u.full_name ILIKE $${n})`;
+  if (tab === 'negocios') {
+    const t = termino(texto, 'pp.busca', params.length + 1);
+    if (t) { where += ` AND ${t.sql}`; params.push(...t.params); }
   }
   return { where, params };
 }

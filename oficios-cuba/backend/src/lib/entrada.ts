@@ -11,7 +11,21 @@ export function queryTextos<K extends string>(query: Record<string, unknown>, cl
   return Object.fromEntries(claves.map((k) => [k, textoQuery(query[k])])) as Record<K, string | undefined>;
 }
 
-const esUuid = (v: string) => z.string().uuid().safeParse(v).success;
+export const esUuid = (v: string) => z.string().uuid().safeParse(v).success;
+
+/**
+ * El filtro `category` de providers/services/mapa acepta un uuid o un slug (el menú de
+ * categorías manda slugs; algunos enlaces guardados, uuid). Comparar el mismo valor a la vez
+ * contra `id` (columna uuid) y `slug` (columna texto) revienta en Postgres si no tiene forma de
+ * uuid — 22P02 en el bind, antes de evaluar la fila — y errorHandler lo traduce a 404 sobre el
+ * listado entero (el mismo problema que uuidQuery resuelve para province_id/municipality_id, pero
+ * ahí no sirve: aquí el valor sin forma de uuid es un slug legítimo, no "sin filtro"). La
+ * respuesta correcta no es sustituir por un centinela: es elegir la columna según el formato
+ * ANTES de construir la consulta.
+ */
+export function categoriaColumna(valor: string): 'id' | 'slug' {
+  return esUuid(valor) ? 'id' : 'slug';
+}
 
 // uuid que ni uuidv4() ni ningún seed genera nunca (todo ceros): un filtro que compara contra él no
 // puede igualar ninguna fila real, así que sirve para forzar "sin resultados" sin tocar el resto del

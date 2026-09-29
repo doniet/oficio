@@ -3,7 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { parseImages, parsePriceList, PLAN_WEIGHT_SQL, providerProfileIdFor, refreshProviderRating } from '../db/index.js';
 import { q, qOne, tx } from '../db/acceso.js';
-import { imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
+import { categoriaColumna, imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
+import { termino } from '../lib/buscador.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { planDe, TASA_CUP_USD } from '../config.js';
@@ -90,11 +91,15 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const categoryKey = category || category_id;
   if (categoryKey) {
-    params.push(categoryKey, categoryKey, categoryKey, categoryKey);
+    // categoryKey acepta un uuid o un slug: comparar el mismo valor contra `id` (uuid) Y `slug`
+    // (texto) a la vez revienta en Postgres con 22P02 en cuanto no tiene forma de uuid — la
+    // columna se elige según el formato ANTES de construir la consulta (ver categoriaColumna).
+    const campo = categoriaColumna(categoryKey);
+    params.push(categoryKey);
     const n = params.length;
     where += ` AND s.category_id IN (
-      SELECT id FROM categories WHERE id = $${n - 3} OR slug = $${n - 2}
-      UNION SELECT id FROM categories WHERE parent_id IN (SELECT id FROM categories WHERE id = $${n - 1} OR slug = $${n}))`;
+      SELECT id FROM categories WHERE ${campo} = $${n}
+      UNION SELECT id FROM categories WHERE parent_id IN (SELECT id FROM categories WHERE ${campo} = $${n}))`;
   }
   // province_id/municipality_id se comparan contra columnas uuid: si no tienen forma de uuid, se
   // cambian por un filtro que nunca puede coincidir (ver uuidQuery), no se ignoran ni se deja que
@@ -113,11 +118,13 @@ router.get('/', asyncHandler(async (req, res) => {
     where += ` AND (s.price_min IS NULL OR ${PRECIO_CUP('s.price_min')} <= $${params.length})`;
   }
   if (price_type) { params.push(price_type); where += ` AND s.price_type = $${params.length}`; }
-  if (texto && texto.trim()) {
-    const term = `%${texto.trim()}%`;
-    params.push(term, term, term, term, term);
-    const n = params.length;
-    where += ` AND (s.title ILIKE $${n - 4} OR s.description ILIKE $${n - 3} OR c.name ILIKE $${n - 2} OR parent.name ILIKE $${n - 1} OR pp.business_name ILIKE $${n})`;
+  const idxTermino = params.length + 1;
+  const t = termino(texto, 's.busca', idxTermino);
+  if (t) {
+    // El nombre del negocio también es un término válido — el mismo parámetro contra las dos
+    // columnas, no dos búsquedas por separado.
+    where += ` AND (${t.sql} OR pp.busca @@ websearch_to_tsquery('spanish', unaccent($${idxTermino})))`;
+    params.push(...t.params);
   }
 
   // NULLS LAST explícito: pp.rating no admite NULL hoy (DEFAULT 0), pero Postgres pone los NULL

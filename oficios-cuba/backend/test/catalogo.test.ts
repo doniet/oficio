@@ -58,7 +58,10 @@ describe('catálogo', () => {
     const pub = (await api.get(`/api/catalog/provider/${p.providerId}`)).body;
     expect(pub.total).toBe(3);
     expect(pub.sections).toEqual([{ name: 'Piezas', count: 2 }]);
-    expect((await api.get(`/api/catalog/provider/${p.providerId}`).query({ q: 'toma' })).body.items.map((i: { name: string }) => i.name)).toEqual(['Tomacorriente']);
+    // Tarea 14 cambió esta búsqueda de LIKE '%x%' a tsvector: ya no es substring, es por palabra
+    // completa (con su raíz), así que "toma" (substring de "Tomacorriente") ya no encuentra nada;
+    // la palabra entera sigue encontrándose, sin distinguir mayúsculas.
+    expect((await api.get(`/api/catalog/provider/${p.providerId}`).query({ q: 'tomacorriente' })).body.items.map((i: { name: string }) => i.name)).toEqual(['Tomacorriente']);
 
     // Otro profesional no toca el artículo.
     expect((await api.delete(`/api/catalog/${creado.body.item.id}`).set(otro.auth)).status).toBe(404);

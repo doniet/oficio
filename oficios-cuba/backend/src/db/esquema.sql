@@ -1,6 +1,16 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS btree_gist;  -- lo exige EXCLUDE con provider_id WITH =
+CREATE EXTENSION IF NOT EXISTS unaccent;  -- para que "jabon" encuentre "jabón" en la búsqueda por tsvector
+
+-- unaccent() es STABLE, no IMMUTABLE (depende del search_path para resolver el diccionario), y
+-- Postgres rechaza una columna GENERATED ... STORED cuya expresión no sea inmutable ("generation
+-- expression is not immutable"). Este envoltorio fija el diccionario por su nombre calificado
+-- (nunca cambia en ejecución), así que sí es seguro declararlo IMMUTABLE. Solo hace falta para las
+-- columnas `busca` de abajo; las consultas (lib/buscador.ts) siguen usando unaccent() a secas.
+CREATE OR REPLACE FUNCTION inmutable_unaccent(text) RETURNS text
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS
+  $$ SELECT public.unaccent('public.unaccent', $1) $$;
 
 -- Users table (both clients and providers)
 CREATE TABLE users (
@@ -102,6 +112,14 @@ CREATE INDEX idx_pp_province ON provider_profiles (province_id);
 CREATE INDEX idx_pp_active ON provider_profiles (is_active);
 CREATE INDEX idx_pp_plan ON provider_profiles (subscription_plan);
 
+-- Búsqueda de negocios/oficios por nombre y descripción (routes/providers.ts, mapa.ts pestaña
+-- Negocios). GENERATED ... STORED: se mantiene sola, nadie tiene que acordarse de actualizarla.
+ALTER TABLE provider_profiles ADD COLUMN busca tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('spanish', inmutable_unaccent(coalesce(business_name, '') || ' ' || coalesce(description, '')))
+  ) STORED;
+CREATE INDEX idx_pp_busca ON provider_profiles USING GIN (busca);
+
 -- Provider services
 CREATE TABLE services (
   id uuid PRIMARY KEY,
@@ -124,6 +142,13 @@ CREATE TABLE services (
 CREATE INDEX idx_services_provider ON services (provider_id);
 CREATE INDEX idx_services_category ON services (category_id);
 CREATE INDEX idx_services_active ON services (is_active);
+
+-- Búsqueda de oficios por título y descripción (routes/services.ts, mapa.ts pestaña Servicios).
+ALTER TABLE services ADD COLUMN busca tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('spanish', inmutable_unaccent(coalesce(title, '') || ' ' || coalesce(description, '')))
+  ) STORED;
+CREATE INDEX idx_s_busca ON services USING GIN (busca);
 
 -- Service areas (which municipalities a provider serves)
 CREATE TABLE service_areas (
@@ -291,6 +316,16 @@ CREATE TABLE catalog_items (
 );
 
 CREATE INDEX idx_catalog_provider ON catalog_items (provider_id, section, name);
+
+-- Búsqueda de artículos por nombre, descripción y sección (routes/catalog.ts, mapa.ts pestaña
+-- Productos).
+ALTER TABLE catalog_items ADD COLUMN busca tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('spanish',
+      inmutable_unaccent(coalesce(name, '') || ' ' || coalesce(description, '') || ' ' || coalesce(section, ''))
+    )
+  ) STORED;
+CREATE INDEX idx_ci_busca ON catalog_items USING GIN (busca);
 
 -- Avisos por Telegram. La API solo los apunta aquí (no tiene salida a internet); los envía
 -- oficio_notifier, el único contenedor con el token del bot. dedupe_key evita repetir avisos
