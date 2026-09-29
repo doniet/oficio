@@ -103,4 +103,12 @@
 
 /* Leaflet se carga solo con el mapa; aquí únicamente ajustes visuales. */
 .leaflet-container { font-family: inherit; }
+
+/* Mapas estilo Positron (2026-09-29) sin cambiar de servidor de teselas. Las de OpenStreetMap llegan
+   ya dibujadas y no hay forma de pedirles otro estilo, así que se desaturan, se aclaran y se les baja
+   el contraste: tierra casi lisa, mar gris azulado y los negocios (naranja) como único color. Solo
+   toca el panel de teselas: marcadores, controles y atribución quedan como están. Valores elegidos
+   comparando cuatro variantes sobre la vista de Cuba; con grayscale(1) del todo el mar sale de un
+   gris muerto y la costa pierde lectura. */
+.leaflet-tile-pane { filter: saturate(0.22) brightness(1.1) contrast(0.8); }
 .map-pin { background: transparent !important; border: 0 !important; }
