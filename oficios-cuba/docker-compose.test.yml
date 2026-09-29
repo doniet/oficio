@@ -1,0 +1,37 @@
+# Base de datos de TEST, solo para desarrollo local.
+# oficio_db (docker-compose.yml, producción) no publica puertos por diseño (red interna oficio_net,
+# sin net_dmz, sin Traefik) — los tests corren en el host y no pueden alcanzarlo. Este servicio es
+# el mismo motor, mismas credenciales, pero publicado SOLO en loopback (127.0.0.1), nunca 0.0.0.0,
+# y con un volumen distinto para no mezclar datos de test con los de producción.
+# Uso: docker compose -f docker-compose.test.yml up -d
+services:
+  oficio_db_test:
+    image: postgis/postgis:18-3.6
+    container_name: oficio_db_test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oficio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: oficio
+      TZ: America/Havana
+      # Desde Postgres 18 el PGDATA por defecto de la imagen es /var/lib/postgresql/18/docker.
+      # Sin fijarlo aquí, el volumen queda montado en una ruta que el entrypoint no reconoce como
+      # su PGDATA: lo interpreta como una base vieja sin migrar y el contenedor no arranca.
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - oficio_pgdata_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oficio -d oficio"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  oficio_pgdata_test:
