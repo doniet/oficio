@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import pg from 'pg';
 import { clienteIp } from './lib/cliente.js';
 import appMovilRoutes from './routes/app-movil.js';
 import cors from 'cors';
@@ -23,6 +24,13 @@ import uploadRoutes, { UPLOAD_DIR } from './routes/uploads.js';
 import pushRoutes from './routes/push.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { DEMO_MODE, googleClientId, TASA_CUP_USD } from './config.js';
+
+// pg devuelve timestamptz como objeto Date; JSON.stringify lo serializaría con la zona local
+// del contenedor. El contrato de la API (y las dos apps) espera una cadena ISO en UTC, que es
+// lo que mandaba SQLite. Se parsea como texto y se normaliza, en vez de tocar los cientos de
+// sitios que devuelven fechas.
+pg.types.setTypeParser(pg.types.builtins.TIMESTAMPTZ, (v) => new Date(v).toISOString());
+pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (v) => new Date(`${v}Z`).toISOString());
 
 const app = express();
 
