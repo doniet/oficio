@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { v4 as uuidv4 } from 'uuid';
 import { q, qOne } from '../src/db/acceso.js';
-import { parseImages, parsePriceList, PLAN_WEIGHT_SQL, CON_NEGOCIO_SQL, CON_CATALOGO_SQL } from '../src/db/index.js';
-import { api, ponerPlan, registrar } from './helpers.js';
+import {
+  parseImages, parsePriceList, planDelPerfil, providerProfileIdFor,
+  PLAN_WEIGHT_SQL, CON_NEGOCIO_SQL, CON_CATALOGO_SQL,
+} from '../src/db/index.js';
 
 describe('jsonb ya viene parseado (Review Focus 2)', () => {
   it('parseImages acepta el array que devuelve pg, no solo una cadena', () => {
@@ -20,40 +23,32 @@ describe('jsonb ya viene parseado (Review Focus 2)', () => {
   });
 });
 
-describe('las fechas salen como ISO en el JSON (Review Focus 3)', () => {
-  it('created_at de un servicio es una cadena ISO, no un objeto', async () => {
-    const { auth } = await registrar('provider');
-    const { body } = await api.post('/api/services').set(auth).send({
-      category_id: (await qOne<{ id: string }>('SELECT id FROM categories WHERE parent_id IS NOT NULL LIMIT 1'))!.id,
-      title: 'Con fecha', price_type: 'negotiable',
-    });
-    expect(typeof body.service.created_at).toBe('string');
-    expect(body.service.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  });
-});
-
-describe('los booleanos del contrato público (Review Focus 4)', () => {
-  it('available de un artículo del catálogo es boolean en el JSON', async () => {
-    const { auth, providerId } = await registrar('provider');
-    await ponerPlan(providerId!, 'basic');
-    const { body } = await api.post('/api/catalog').set(auth)
-      .send({ name: 'Arroz', price: 100, price_type: 'fixed' });
-    expect(body.item.available).toBe(true);
-    expect(body.item.available).not.toBe(1);
-  });
-});
-
-describe('planDelPerfil y enforcePlanLimit', () => {
+// planDelPerfil y providerProfileIdFor son helpers de la capa de datos: se ejercitan insertando
+// directo con q/qOne, sin pasar por /api/auth/register (esa ruta la porta la Tarea 6).
+describe('planDelPerfil y providerProfileIdFor', () => {
   it('planDelPerfil devuelve el plan actual', async () => {
-    const { planDelPerfil } = await import('../src/db/index.js');
-    const { providerId } = await registrar('provider');
-    await ponerPlan(providerId!, 'pro');
-    expect((await planDelPerfil(providerId!)).name).toBe('Profesional');
+    // provider_profiles.province_id es NOT NULL y referencia provinces: el seed base ya trae
+    // las 16 provincias en la plantilla, así que basta con leer una existente.
+    const provincia = (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!;
+    const userId = uuidv4();
+    const profileId = uuidv4();
+    await q(
+      'INSERT INTO users (id, email, password_hash, full_name, user_type) VALUES ($1, $2, $3, $4, $5)',
+      [userId, `${userId}@test.cu`, 'x', 'Prueba', 'provider'],
+    );
+    await q(
+      'INSERT INTO provider_profiles (id, user_id, province_id, subscription_plan) VALUES ($1, $2, $3, $4)',
+      [profileId, userId, provincia.id, 'pro'],
+    );
+    expect((await planDelPerfil(profileId)).name).toBe('Profesional');
   });
 
   it('providerProfileIdFor devuelve undefined para un usuario sin perfil', async () => {
-    const { providerProfileIdFor } = await import('../src/db/index.js');
-    const { userId } = await registrar('client');
+    const userId = uuidv4();
+    await q(
+      'INSERT INTO users (id, email, password_hash, full_name, user_type) VALUES ($1, $2, $3, $4, $5)',
+      [userId, `${userId}@test.cu`, 'x', 'Prueba', 'client'],
+    );
     expect(await providerProfileIdFor(userId)).toBeUndefined();
   });
 });
