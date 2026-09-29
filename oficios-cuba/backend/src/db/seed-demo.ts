@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db, { refreshProviderRating } from './index.js';
+import { q, qOne, tx } from './acceso.js';
+import { refreshProviderRating } from './index.js';
 import { puntoPublico } from '../lib/ubicacion.js';
 import { fechaLocal, instanteLocal, sumarDias } from '../lib/hora.js';
 
@@ -237,101 +238,157 @@ const reviewComments: Record<number, string[]> = {
 const daysAgo = (d: number, h = 0) => new Date(Date.now() - (d * 24 + h) * 3600_000).toISOString();
 
 export async function seedDemo() {
-  const already = db.prepare('SELECT 1 FROM users WHERE email = ?').get('cliente@demo.com');
+  const already = await qOne('SELECT 1 FROM users WHERE email = $1', ['cliente@demo.com']);
   if (already) return false;
 
   const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
-  const categoryId = (slug: string) => {
-    const row = db.prepare('SELECT id FROM categories WHERE slug = ?').get(slug) as { id: string } | undefined;
-    if (!row) throw new Error(`Categoría demo inexistente: ${slug}`);
-    return row.id;
-  };
+  const clientIds: string[] = [];
+  const providerRows: { profileId: string; userId: string; services: string[] }[] = [];
 
-  const tx = db.transaction(() => {
-    const clientIds = clients.map((c, i) => {
+  // Bloque 1: cuentas, perfiles y servicios — todo o nada, como seedBase()/seedMapa().
+  await tx(async (c) => {
+    const categoryId = async (slug: string) => {
+      const row = await c.qOne<{ id: string }>('SELECT id FROM categories WHERE slug = $1', [slug]);
+      if (!row) throw new Error(`Categoría demo inexistente: ${slug}`);
+      return row.id;
+    };
+
+    for (let i = 0; i < clients.length; i++) {
+      const cl = clients[i];
       const id = uuidv4();
-      db.prepare(`INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
-        VALUES (?, ?, ?, ?, ?, 'client', ?, 1, ?)`)
-        .run(id, c.email, hash, c.full_name, `+535300000${i + 1}`, c.avatar ?? null, daysAgo(200 - i * 10));
-      return id;
-    });
+      await c.q(
+        `INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'client', $6, true, $7)`,
+        [id, cl.email, hash, cl.full_name, `+535300000${i + 1}`, cl.avatar ?? null, daysAgo(200 - i * 10)],
+      );
+      clientIds.push(id);
+    }
 
-    const providerRows: { profileId: string; userId: string; services: string[] }[] = [];
-    providers.forEach((p, i) => {
+    for (let i = 0; i < providers.length; i++) {
+      const p = providers[i];
       const userId = uuidv4();
       const profileId = uuidv4();
       const created = daysAgo(400 - i * 25);
-      db.prepare(`INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
-        VALUES (?, ?, ?, ?, ?, 'provider', ?, 1, ?)`)
-        .run(userId, p.email, hash, p.full_name, p.whatsapp, p.avatar ?? null, created);
+      await c.q(
+        `INSERT INTO users (id, email, password_hash, full_name, phone, user_type, avatar_url, is_verified, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'provider', $6, true, $7)`,
+        [userId, p.email, hash, p.full_name, p.whatsapp, p.avatar ?? null, created],
+      );
 
-      const province = db.prepare('SELECT id, lat, lng FROM provinces WHERE name = ?').get(p.province) as { id: string; lat: number; lng: number };
-      const muni = db.prepare('SELECT id, lat, lng FROM municipalities WHERE province_id = ? AND name = ?').get(province.id, p.municipality) as { id: string; lat: number; lng: number } | undefined;
+      const province = await c.qOne<{ id: string; lat: number; lng: number }>(
+        'SELECT id, lat, lng FROM provinces WHERE name = $1', [p.province],
+      );
+      if (!province) throw new Error(`Provincia demo inexistente: ${p.province}`);
+      const muni = await c.qOne<{ id: string; lat: number; lng: number }>(
+        'SELECT id, lat, lng FROM municipalities WHERE province_id = $1 AND name = $2', [province.id, p.municipality],
+      );
       const expires = p.plan === 'free' ? null : new Date(Date.now() + 365 * 86400_000).toISOString();
       // Galería del negocio (planes con fotos): las fotos de sus servicios.
       const gallery = p.plan === 'free' ? [] : [...new Set(p.services.flatMap((s) => s.images ?? []))].slice(0, 10);
       const paid = p.plan !== 'free';
+      const lat = p.lat ?? muni?.lat ?? province.lat;
+      const lng = p.lng ?? muni?.lng ?? province.lng;
       // La coordenada publicada se escribe SIEMPRE, aunque aquí coincida con la propia: un perfil
-      // con punto y sin pública no aparece en el mapa (LAT_SERVIDA es esa columna, sin respaldo).
-      const pub = puntoPublico(p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, 'exacta');
-      db.prepare(`INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, map_lat_pub, map_lng_pub,
-          whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan, subscription_expires_at, created_at,
-          contact_mode, kind, horario, gallery, show_on_map)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)`)
-        .run(profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
-          p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, pub.lat, pub.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
-          p.contact_mode ?? 'whatsapp', p.negocio ? 'negocio' : 'oficio', p.negocio?.horario ?? null, JSON.stringify(gallery));
+      // con punto y sin pública no aparece en el mapa (LAT_SERVIDA/LNG_SERVIDA leen punto_pub, sin
+      // respaldo a lat/lng). ST_MakePoint toma (x, y) = (lng, lat), igual que providers.ts/seed-mapa.ts.
+      const pub = puntoPublico(lat, lng, 'exacta');
+      await c.q(
+        `INSERT INTO provider_profiles
+            (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng,
+             punto_pub, whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan,
+             subscription_expires_at, created_at, contact_mode, kind, horario, gallery, show_on_map)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+             CASE WHEN $10::double precision IS NULL THEN NULL
+                  ELSE ST_SetSRID(ST_MakePoint($11::double precision, $10::double precision), 4326)::geography END,
+             $12, $13, $14, $15, true, $16, $17, $18, $19, $20, $21, $22, true)`,
+        [profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
+          lat, lng, pub.lat, pub.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years,
+          p.plan, expires, created, p.contact_mode ?? 'whatsapp', p.negocio ? 'negocio' : 'oficio',
+          p.negocio?.horario ?? null, JSON.stringify(gallery)],
+      );
 
       if (p.plan !== 'free') {
         const subId = uuidv4();
         const price = { basic: 1, pro: 10 }[p.plan];
-        db.prepare(`INSERT INTO subscriptions (id, provider_id, plan, amount, status, current_period_start, current_period_end)
-          VALUES (?, ?, ?, ?, 'active', ?, ?)`).run(subId, profileId, p.plan, price, daysAgo(20), expires);
-        db.prepare(`INSERT INTO payments (id, subscription_id, provider_id, amount, status, metadata, created_at)
-          VALUES (?, ?, ?, ?, 'succeeded', ?, ?)`).run(uuidv4(), subId, profileId, price, JSON.stringify({ demo: true }), daysAgo(20));
+        await c.q(
+          `INSERT INTO subscriptions (id, provider_id, plan, amount, status, current_period_start, current_period_end)
+           VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
+          [subId, profileId, p.plan, price, daysAgo(20), expires],
+        );
+        await c.q(
+          `INSERT INTO payments (id, subscription_id, provider_id, amount, status, metadata, created_at)
+           VALUES ($1, $2, $3, $4, 'succeeded', $5, $6)`,
+          [uuidv4(), subId, profileId, price, JSON.stringify({ demo: true }), daysAgo(20)],
+        );
       }
 
-      const serviceIds = p.services.map((s, j) => {
+      const serviceIds: string[] = [];
+      for (let j = 0; j < p.services.length; j++) {
+        const s = p.services[j];
         const sid = uuidv4();
-        db.prepare(`INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, price_list, is_active, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
-          .run(sid, profileId, categoryId(s.category), s.title, s.description, s.price_min ?? null, s.price_max ?? null,
+        await c.q(
+          `INSERT INTO services (id, provider_id, category_id, title, description, price_min, price_max, price_type, price_currency, images, price_list, is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, $12)`,
+          [sid, profileId, await categoryId(s.category), s.title, s.description, s.price_min ?? null, s.price_max ?? null,
             s.price_type, s.price_currency ?? 'CUP', JSON.stringify(s.images ?? []), JSON.stringify(s.price_list ?? []),
-            daysAgo(300 - i * 20 - j * 7));
-        return sid;
-      });
+            daysAgo(300 - i * 20 - j * 7)],
+        );
+        serviceIds.push(sid);
+      }
 
-      db.prepare('INSERT INTO service_areas (id, provider_id, municipality_id) SELECT ?, ?, id FROM municipalities WHERE province_id = ? ORDER BY name LIMIT 1')
-        .run(uuidv4(), profileId, province.id);
-      if (muni) db.prepare('INSERT OR IGNORE INTO service_areas (id, provider_id, municipality_id) VALUES (?, ?, ?)').run(uuidv4(), profileId, muni.id);
+      await c.q(
+        'INSERT INTO service_areas (id, provider_id, municipality_id) SELECT $1, $2, id FROM municipalities WHERE province_id = $3 ORDER BY name LIMIT 1',
+        [uuidv4(), profileId, province.id],
+      );
+      if (muni) {
+        await c.q(
+          'INSERT INTO service_areas (id, provider_id, municipality_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [uuidv4(), profileId, muni.id],
+        );
+      }
 
       providerRows.push({ profileId, userId, services: serviceIds });
-    });
+    }
+  });
 
-    // Reseñas deterministas: cada proveedor recibe entre 0 y 5, con conversación previa
-    // (la API solo deja reseñar a quien ya contactó al proveedor).
-    const ratingPattern = [5, 5, 4, 5, 3, 5, 4, 5];
-    providerRows.forEach((prov, i) => {
-      const count = [5, 4, 5, 3, 4, 1, 4, 2, 3, 2, 0, 1][i] ?? 0;
-      for (let k = 0; k < count; k++) {
-        const clientIndex = (i + k) % clients.length;
-        const clientId = clientIds[clientIndex];
-        const serviceId = prov.services[k % prov.services.length];
-        const rating = ratingPattern[(i * 3 + k) % ratingPattern.length];
-        const comments = reviewComments[rating];
-        const when = daysAgo(5 + i * 3 + k * 11);
-        const exists = db.prepare('SELECT 1 FROM conversations WHERE client_id = ? AND provider_id = ? AND service_id = ?').get(clientId, prov.profileId, serviceId);
-        if (!exists) {
-          db.prepare('INSERT INTO conversations (id, client_id, provider_id, service_id, last_message, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(uuidv4(), clientId, prov.profileId, serviceId, 'Gracias por todo.', when, when);
-        }
-        db.prepare('INSERT INTO reviews (id, service_id, client_id, provider_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(uuidv4(), serviceId, clientId, prov.profileId, rating, comments[(i + k) % comments.length], when);
+  // Bloque 2: reseñas y su conversación previa, más el recálculo de la valoración del proveedor.
+  // refreshProviderRating() usa el pool (db/index.ts), no el cliente `c`: no puede ir dentro de la
+  // transacción de arriba (violaría "nunca el pool dentro de tx()"), así que corre después de que
+  // el bloque 1 haya confirmado — el mismo patrón que routes/reviews.ts y routes/services.ts.
+  const ratingPattern = [5, 5, 4, 5, 3, 5, 4, 5];
+  const reviewCounts = [5, 4, 5, 3, 4, 1, 4, 2, 3, 2, 0, 1];
+  for (let i = 0; i < providerRows.length; i++) {
+    const prov = providerRows[i];
+    const count = reviewCounts[i] ?? 0;
+    for (let k = 0; k < count; k++) {
+      const clientIndex = (i + k) % clients.length;
+      const clientId = clientIds[clientIndex];
+      const serviceId = prov.services[k % prov.services.length];
+      const rating = ratingPattern[(i * 3 + k) % ratingPattern.length];
+      const comments = reviewComments[rating];
+      const when = daysAgo(5 + i * 3 + k * 11);
+      const exists = await qOne(
+        'SELECT 1 FROM conversations WHERE client_id = $1 AND provider_profile_id = $2 AND service_id = $3',
+        [clientId, prov.profileId, serviceId],
+      );
+      if (!exists) {
+        await q(
+          'INSERT INTO conversations (id, client_id, provider_profile_id, service_id, last_message, last_message_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [uuidv4(), clientId, prov.profileId, serviceId, 'Gracias por todo.', when, when],
+        );
       }
-      refreshProviderRating(prov.profileId);
-    });
+      await q(
+        'INSERT INTO reviews (id, service_id, client_id, provider_profile_id, rating, comment, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [uuidv4(), serviceId, clientId, prov.profileId, rating, comments[(i + k) % comments.length], when],
+      );
+    }
+    await refreshProviderRating(prov.profileId);
+  }
 
-    // Conversación viva entre las dos cuentas demo principales.
+  // Bloque 3: la conversación viva de ejemplo, la agenda, las citas, el catálogo y los favoritos —
+  // no dependen de nada que otra conexión aún no haya confirmado, así que vuelven a ir en su propia
+  // transacción.
+  await tx(async (c) => {
     const laura = clientIds[0];
     const electro = providerRows[0];
     const convId = uuidv4();
@@ -343,23 +400,30 @@ export async function seedDemo() {
       ['client', 'Dale, te espero el jueves. ¡Gracias!', 2],
     ];
     const last = thread[thread.length - 1];
-    db.prepare('INSERT INTO conversations (id, client_id, provider_id, service_id, last_message, last_message_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(convId, laura, electro.profileId, electro.services[1], last[1], daysAgo(0, last[2]), daysAgo(0, thread[0][2]));
+    await c.q(
+      'INSERT INTO conversations (id, client_id, provider_profile_id, service_id, last_message, last_message_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [convId, laura, electro.profileId, electro.services[1], last[1], daysAgo(0, last[2]), daysAgo(0, thread[0][2])],
+    );
     for (const [who, content, hoursAgo] of thread) {
       const sender = who === 'client' ? laura : electro.userId;
       const readAt = hoursAgo > 2 ? daysAgo(0, hoursAgo - 1) : null;
-      db.prepare('INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(uuidv4(), convId, sender, who, content, readAt, daysAgo(0, hoursAgo));
+      await c.q(
+        'INSERT INTO messages (id, conversation_id, sender_id, sender_type, content, read_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [uuidv4(), convId, sender, who, content, readAt, daysAgo(0, hoursAgo)],
+      );
     }
 
     // Agenda de ElectroHogar (plan Profesional): partido de 9 a 13 y de 14 a 18, sábado por la mañana.
     const partido = [{ desde: '09:00', hasta: '13:00' }, { desde: '14:00', hasta: '18:00' }];
-    db.prepare('UPDATE provider_profiles SET agenda = ? WHERE id = ?').run(JSON.stringify({
-      v: 2, semana: [[], partido, partido, partido, partido, partido, [{ desde: '09:00', hasta: '13:00' }]], excepciones: [],
-      duracion: 60, intervalo: 30, margen_antes: 0, margen_despues: 30, antelacion_min: 120, horizonte_dias: 30,
-      max_por_dia: null, confirmacion: 'manual', cancelacion_horas: 12,
-    }), electro.profileId);
-    db.prepare('UPDATE services SET duration_min = 90 WHERE id = ?').run(electro.services[1]);
+    await c.q('UPDATE provider_profiles SET agenda = $1 WHERE id = $2', [
+      JSON.stringify({
+        v: 2, semana: [[], partido, partido, partido, partido, partido, [{ desde: '09:00', hasta: '13:00' }]], excepciones: [],
+        duracion: 60, intervalo: 30, margen_antes: 0, margen_despues: 30, antelacion_min: 120, horizonte_dias: 30,
+        max_por_dia: null, confirmacion: 'manual', cancelacion_horas: 12,
+      }),
+      electro.profileId,
+    ]);
+    await c.q('UPDATE services SET duration_min = 90 WHERE id = $1', [electro.services[1]]);
 
     // Citas: mañana confirmada, pasado mañana pendiente, una hecha, un "no vino" y una apuntada a mano.
     const aLas = (dias: number, hora: number) => new Date(instanteLocal(sumarDias(fechaLocal(Date.now()), dias), hora * 60, 'despues')!).toISOString();
@@ -372,22 +436,34 @@ export async function seedDemo() {
     ];
     for (const [cliente, dias, hora, status, note, nombre] of citas) {
       const inicio = aLas(dias, hora);
-      db.prepare(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 60, ?, ?, ?, ?, ?, ?)`).run(uuidv4(), electro.profileId, cliente, electro.services[0], inicio,
-        new Date(Date.parse(inicio) + 3_600_000).toISOString(), note, nombre, nombre ? '+53 5 555 0101' : null, nombre ? 'manual' : 'online', status, daysAgo(4));
+      await c.q(
+        `INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 60, $7, $8, $9, $10, $11, $12)`,
+        [uuidv4(), electro.profileId, cliente, electro.services[0], inicio,
+          new Date(Date.parse(inicio) + 3_600_000).toISOString(), note, nombre, nombre ? '+53 5 555 0101' : null,
+          nombre ? 'manual' : 'online', status, daysAgo(4)],
+      );
     }
-    db.prepare('INSERT INTO agenda_blocks (id, provider_id, starts_at, ends_at, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(uuidv4(), electro.profileId, aLas(3, 9), aLas(3, 13), 'Compra de piezas', daysAgo(1));
+    await c.q(
+      'INSERT INTO agenda_blocks (id, provider_id, starts_at, ends_at, note, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [uuidv4(), electro.profileId, aLas(3, 9), aLas(3, 13), 'Compra de piezas', daysAgo(1)],
+    );
 
     // Catálogos: ElectroHogar (Profesional) vende piezas y Dulces La Abuela (Básico) sus dulces.
-    const catalogo = (providerIdx: number, items: [string, string, number | null, 'fixed' | 'from' | 'ask', 'CUP' | 'USD', string | null, string, boolean][]) => {
-      items.forEach(([name, description, price, price_type, currency, image, section, available], i) => {
-        db.prepare(`INSERT INTO catalog_items (id, provider_id, name, description, price, price_type, price_currency, image, section, available, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(uuidv4(), providerRows[providerIdx].profileId, name, description, price, price_type,
-          currency, image, section, available ? 1 : 0, daysAgo(20 - i));
-      });
+    const catalogo = async (
+      providerIdx: number,
+      items: [string, string, number | null, 'fixed' | 'from' | 'ask', 'CUP' | 'USD', string | null, string, boolean][],
+    ) => {
+      for (let i = 0; i < items.length; i++) {
+        const [name, description, price, price_type, currency, image, section, available] = items[i];
+        await c.q(
+          `INSERT INTO catalog_items (id, provider_id, name, description, price, price_type, price_currency, image, section, available, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [uuidv4(), providerRows[providerIdx].profileId, name, description, price, price_type, currency, image, section, available, daysAgo(20 - i)],
+        );
+      }
     };
-    catalogo(0, [
+    await catalogo(0, [
       ['Breaker 20 A', 'Interruptor termomagnético de riel DIN, nuevo en caja.', 3500, 'fixed', 'CUP', '/demo/electricidad-1.webp', 'Piezas', true],
       ['Tomacorriente doble', 'Con tierra, blanco. Incluye tapa.', 900, 'fixed', 'CUP', null, 'Piezas', true],
       ['Cable 2×12 (metro)', 'Cable dúplex de cobre, se vende por metros.', 450, 'fixed', 'CUP', null, 'Piezas', true],
@@ -397,7 +473,7 @@ export async function seedDemo() {
       ['Revisión de instalación', 'Visita, diagnóstico y presupuesto por escrito.', 2000, 'from', 'CUP', null, 'Servicios', true],
       ['Montaje de lámpara', 'Colgar y conectar lámpara o plafón.', 1500, 'from', 'CUP', null, 'Servicios', true],
     ]);
-    catalogo(6, [
+    await catalogo(6, [
       ['Cake de chocolate (1 lb)', 'Relleno de dulce de leche, decorado a tu gusto.', 3500, 'fixed', 'CUP', '/demo/reposteria-1.webp', 'Cakes', true],
       ['Cake de cumpleaños (3 lb)', 'Con nombre y figuras. Encárgalo con 2 días.', 9000, 'from', 'CUP', null, 'Cakes', true],
       ['Pastelitos de guayaba (docena)', 'Hojaldre casero.', 1200, 'fixed', 'CUP', null, 'Dulces', true],
@@ -406,9 +482,12 @@ export async function seedDemo() {
     ]);
 
     for (const idx of [0, 2, 3]) {
-      db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id) VALUES (?, ?, ?)').run(uuidv4(), laura, providerRows[idx].profileId);
+      await c.q(
+        'INSERT INTO favorites (id, client_id, provider_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [uuidv4(), laura, providerRows[idx].profileId],
+      );
     }
   });
-  tx();
+
   return true;
 }

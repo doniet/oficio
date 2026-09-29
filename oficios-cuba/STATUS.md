@@ -500,3 +500,77 @@
 - Security: N/A.
 - Next: confirmar 0.2.3/0.2.4 (pantalla negra del mapa) en el P8 Lite.
 - Blockers: ninguno.
+
+## 2026-09-29 22:55 UTC — claude-code (vps2) — Tarea 15: cierre del porte SQLite → Postgres/PostGIS
+- Changes: **última tarea del plan de porte a Postgres+PostGIS.** Portados los cinco últimos
+  consumidores de `better-sqlite3`: `src/db/seed-demo.ts` (el más largo — dos bloques `tx()` para
+  cuentas/perfiles/servicios y para agenda/citas/catálogo/favoritos, separados por un tercer tramo
+  sin transacción para reseñas+`refreshProviderRating()`, que usa el pool y por eso no puede ir
+  DENTRO de una `tx()` — ver el comentario en el archivo), `src/db/seed-mapa-cli.ts`,
+  `src/scripts/admin.ts`, `src/scripts/pagos.ts` (los tres CLI ahora usan `migrar()` + `q`/`qOne`/
+  `tx` y cierran el pool al salir) y `src/index.ts`, que pasa a un arranque asíncrono real:
+  `await migrar()` → `await seedBase()` → `await seedDemo()` si `DEMO_MODE` → `app.listen`; si
+  `migrar()` falla, `start().catch()` saca el proceso con código 1 en vez de servir con la base a
+  medias. De paso, arreglados dos helpers `async` invocados sin `await` dentro de `setInterval` en
+  el propio `index.ts` (`expireSubscriptions`/`programarAvisos`: el `try/catch` que ya tenían
+  alrededor era síncrono y no atrapaba un rechazo de la promesa — la misma familia de bug que
+  `trampas-porte.md` ya documentaba en otros archivos). Quitado `better-sqlite3`/
+  `@types/better-sqlite3` de `package.json` y borrado `src/global.d.ts` (solo tipaba ese paquete
+  como `any`; el resto de sus declaraciones —`__filename`/`__dirname`/`window`/`global`— resultó
+  no hacer falta ninguna, `@types/node` ya las cubre). Tres tests nuevos, los tres del registro de
+  pendientes: `coordenada-servida.test.ts` gana "dos perfiles en la misma coordenada publican
+  puntos distintos" (cierra el hueco de que nada probaba que el desplazamiento no fuera
+  predecible); `buscador.test.ts` gana la búsqueda por el nombre de la categoría PADRE (el código
+  ya la hacía — `parent.busca` en `services.ts`/`mapa.ts` — pero ningún test la ejercitaba;
+  confirmado quitando el `OR parent.busca` a mano: el test nuevo falla, así que no es un falso
+  positivo); y `mapa.test.ts` baja `BBOX_ZONA_SIN_REDONDA` de ±0,0005° a ±0,0003° para cerrar un
+  flake real de ~1 en 355 (medido por la Tarea 14: el margen del 50 % que aplica el servidor
+  inflaba el rectángulo hasta 113 m de esquina, por encima del desplazamiento mínimo de 100 m; con
+  ±0,0003° la esquina inflada queda en 68 m — geométricamente imposible que alcance el anillo, con
+  margen de sobra). **No es un agujero de seguridad**: el test afirmaba algo determinista sobre un
+  sistema probabilístico; la promesa de 100-300 m de incertidumbre se sigue cumpliendo siempre.
+  Documentación: `CLAUDE.md` reescrito donde hacía falta (tabla del stack, estructura de
+  `backend/src/db`, columna `punto_pub`/`provider_profile_id`, desarrollo local con
+  `docker compose up -d oficio_db`, sección de esquema y migraciones para `migrar.ts`/
+  `esquema.sql`, y los gotchas nuevos: `count(*)` como cadena, `jsonb` ya parseado al leer pero que
+  sigue pidiendo `JSON.stringify()` al escribir un array, `timestamptz` como `Date`, el orden de
+  coordenadas de `ST_MakeEnvelope` frente al `bbox` de la API, `unaccent()` no `IMMUTABLE` dentro
+  de una columna generada, y el patrón de helper `async` sin `await` que el typecheck con
+  `strict:false` no delata); y la advertencia de `COMPOSE_PROJECT_NAME` en el `.env` de un
+  worktree de desarrollo (sin él, `docker compose` deriva el nombre de proyecto del directorio,
+  que coincide con el de producción en vps2, y un `down` desde el worktree pararía los
+  contenedores reales — ya estaba puesto en el `.env` de este worktree, pero no documentado en
+  ningún sitio que sobreviva a un `git pull`).
+- Tests: **257/257 en verde** (255 heredadas + 2 nuevas contables — la del bbox no suma test, solo
+  cambia una constante), backend `npx tsc --noEmit` en **0 errores** (bajó de los 6 esperados:
+  `initDatabase`/`export default` inexistentes en los cinco archivos del brief). Frontend:
+  `npx tsc --noEmit` limpio y `npm run build` completo (hubo que `npm install` primero: el
+  `node_modules` del frontend no existía en este worktree). `seed-demo.ts` no tiene test propio en
+  la suite (nadie llama `seedDemo()` desde vitest), así que se verificó aparte contra una base
+  Postgres temporal (creada y borrada con el mismo patrón que `test/plantilla.ts`, nunca tocando
+  `oficio_db` de este worktree ni el de producción): siembra 17 usuarios/12 perfiles/22
+  servicios/34 reseñas sin errores, es idempotente (segunda llamada devuelve `false` sin duplicar
+  nada), las valoraciones (`rating`/`review_count`) quedan bien calculadas tras el recálculo fuera
+  de la transacción, y `punto_pub` coincide con `lat`/`lng` en los perfiles `exacta` (sin
+  intercambiar los ejes).
+- Security: **grep de verificación limpio** —
+  `grep -rn "better-sqlite3\|db.prepare\|PRAGMA" src/ test/` no devuelve código, solo un comentario
+  histórico en `test/mapa-esquema.test.ts` que explica qué probaba el archivo en la época SQLite.
+  Confirmado a mano que **todas** las llamadas a `seedBase`/`seedDemo`/`seedMapa` llevan `await`
+  (la trampa ya detectada de `index.ts`/`seed-mapa.ts`: `seed-mapa.ts` ya la tenía bien desde la
+  Tarea 10, solo faltaba `index.ts`). Ninguna consulta de `seed-demo.ts` usa el pool dentro de una
+  `tx()` (regla dura del plan): el recálculo de valoración va después de que el bloque de
+  cuentas/perfiles/servicios haya confirmado, igual que ya hacen `routes/reviews.ts` y
+  `routes/services.ts`. No se tocó red, puertos, auth, CORS, Traefik, el túnel ni el `.env`
+  (`docker-compose.yml` ya traía `oficio_db` bien configurado — sin puertos, solo en `oficio_net`,
+  sin labels — de una tarea anterior; no hizo falta tocarlo). No se ejecutó `docker compose` ni se
+  tocó ningún contenedor, solo se editó código y se corrió contra la base de desarrollo en
+  `127.0.0.1:55432` y contra una base temporal propia para el smoke test de `seedDemo()`.
+- Next: el Plan 2 (Meilisearch: los tres índices, `search_outbox`, `oficio_indexer`, el modo
+  degradado, el mapa por facetas) y el Plan 3 (concurrencia: `cluster`, dimensionado del pool,
+  `Cache-Control`) — ninguno de los dos entra en este plan, según el propio `task-15-brief.md`.
+  Pendiente de Dariel: revisar el reporte completo en
+  `.superpowers/sdd/2026-09-29-postgres/task-15-report.md` y decidir cuándo se prueba el arranque
+  real con `docker compose up -d --build` (paso 6 del brief, explícitamente fuera de mi alcance en
+  este worktree) y la verificación manual por Cloudflare antes de mezclar la rama.
+- Blockers: ninguno.

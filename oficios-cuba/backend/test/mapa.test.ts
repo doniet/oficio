@@ -82,11 +82,23 @@ const LAT_SIN_PLAN = 22.5, LNG_SIN_PLAN = -79.5;
 const LAT_EXACTA = 23.137856, LNG_EXACTA = -82.383754;
 const BBOX_DEL_PERFIL_ZONA = `${LAT_EXACTA - 0.05},${LNG_EXACTA - 0.05},${LAT_EXACTA + 0.05},${LNG_EXACTA + 0.05}`;
 // Un rectángulo minúsculo alrededor de la coordenada EXACTA que, a propósito, NO contiene la
-// coordenada redondeada (0,0005° de radio: incluso inflado un 50 % por conMargen se queda corto
-// para alcanzar los ~0,002-0,004° que separan LAT_EXACTA/LNG_EXACTA de su redondeo). Es la
-// prueba central del arreglo: si el filtro todavía mirara pp.lat/pp.lng en vez de lo servido,
-// el perfil aparecería aquí y se podría localizar por bisección.
-const BBOX_ZONA_SIN_REDONDA = `${LAT_EXACTA - 0.0005},${LNG_EXACTA - 0.0005},${LAT_EXACTA + 0.0005},${LNG_EXACTA + 0.0005}`;
+// coordenada redondeada (incluso inflado un 50 % por conMargen se queda corto para alcanzar los
+// ~0,002-0,004° que separan LAT_EXACTA/LNG_EXACTA de su redondeo). Es la prueba central del
+// arreglo: si el filtro todavía mirara pp.lat/pp.lng en vez de lo servido, el perfil aparecería
+// aquí y se podría localizar por bisección.
+//
+// El medio lado tiene que quedar, tras el margen del 50 % que aplica el servidor (conMargen,
+// lib/mapa.ts), por debajo de los 100 m que garantiza RADIO_APROX_MIN_M en la ESQUINA del
+// rectángulo (hypot de los dos semiejes, no el lado): con ±0,0005° medido, la esquina inflada
+// llega a 113 m y el desplazamiento mínimo es 100 m, así que ~0,28 % de las veces el punto
+// desplazado cae dentro por pura casualidad — un flake, medido en 200 000 simulaciones (medio
+// lado → rectángulo inflado → esquina): 0,0005° → 83×77 m → 113 m (cae dentro); 0,0004° →
+// 67×61 m → 91 m; 0,0003° → 50×46 m → 68 m. ±0,0003° dista de sobra: sigue siendo del todo
+// imposible que sea geométricamente igual a los ~0,002° que separan el punto real del redondeo,
+// pero ya no roza los 100 m del anillo. NO subir este número sin rehacer la cuenta: esto no es
+// un agujero de seguridad (la promesa de 100-300 m se sigue cumpliendo siempre), es un test que
+// afirmaba algo determinista sobre un sistema probabilístico.
+const BBOX_ZONA_SIN_REDONDA = `${LAT_EXACTA - 0.0003},${LNG_EXACTA - 0.0003},${LAT_EXACTA + 0.0003},${LNG_EXACTA + 0.0003}`;
 // Un perfil con punto propio pero sin coordenada publicada: no debe aparecer en el mapa.
 const LAT_TERCERO = 21.654321, LNG_TERCERO = -80.123456;
 const BBOX_TERCER_VALOR = `${LAT_TERCERO - 0.05},${LNG_TERCERO - 0.05},${LAT_TERCERO + 0.05},${LNG_TERCERO + 0.05}`;

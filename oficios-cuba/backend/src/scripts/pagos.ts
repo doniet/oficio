@@ -2,13 +2,14 @@
 //   Desarrollo:  npm run pagos -- listar | confirmar <subscription_id> | rechazar <subscription_id>
 //   Producción:  docker exec oficio_api node dist/scripts/pagos.js listar
 import 'dotenv/config';
-import { initDatabase } from '../db/index.js';
+import { migrar } from '../db/migrar.js';
+import { cerrarPool } from '../db/conexion.js';
 import { confirmarPago, pagosPendientes, rechazarPago } from '../db/pagos.js';
 
-initDatabase();
-const [accion, id] = process.argv.slice(2);
-
 async function main() {
+  await migrar();
+  const [accion, id] = process.argv.slice(2);
+
   if (accion === 'listar' || !accion) {
     const pendientes = await pagosPendientes();
     if (!pendientes.length) console.log('No hay pagos pendientes.');
@@ -28,7 +29,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error((err as Error).message);
-  process.exitCode = 1;
-});
+main()
+  .catch((err) => {
+    console.error((err as Error).message);
+    process.exitCode = 1;
+  })
+  .finally(cerrarPool);

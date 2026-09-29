@@ -19,6 +19,15 @@ async function categoriaConSlug() {
   ))!;
 }
 
+// Una subcategoría real junto al NOMBRE DE SU PADRE (no el suyo propio): así el test de más abajo
+// prueba de verdad `parent.busca`, no `c.busca` disfrazado.
+async function categoriaConPadre() {
+  return (await qOne<{ id: string; parent_name: string }>(
+    `SELECT c.id, parent.name AS parent_name FROM categories c
+       JOIN categories parent ON c.parent_id = parent.id ORDER BY c.id LIMIT 1`,
+  ))!;
+}
+
 describe('búsqueda por tsvector', () => {
   it('encuentra por una palabra del nombre', async () => {
     await conArticulo('Arroz importado');
@@ -187,6 +196,22 @@ describe('campos recuperados: lo que el LIKE encontraba y las columnas busca por
       category_id: cat.id, title: 'Oficio sin relación textual con su categoría', price_type: 'negotiable',
     });
     const termino = cat.name.split(' ')[0];
+    const res = await api.get(`/api/services?q=${encodeURIComponent(termino)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.services.length).toBeGreaterThan(0);
+  });
+
+  // El código ya busca por el nombre de la categoría PADRE (parent.busca en services.ts y
+  // mapa.ts), pero hasta ahora ningún test lo ejercitaba: los de arriba usan siempre el nombre de
+  // la SUBcategoría. Sin esta prueba, un `parent.busca` roto o borrado por error no lo detectaba
+  // nadie — el servicio sigue apareciendo al buscar por su propia subcategoría de todos modos.
+  it('buscar el nombre de la categoría PADRE encuentra los servicios de su subcategoría (services.ts)', async () => {
+    const cat = await categoriaConPadre();
+    const { auth } = await registrar('provider');
+    await api.post('/api/services').set(auth).send({
+      category_id: cat.id, title: 'Oficio sin relación textual con su categoría', price_type: 'negotiable',
+    });
+    const termino = cat.parent_name.split(' ')[0];
     const res = await api.get(`/api/services?q=${encodeURIComponent(termino)}`);
     expect(res.status).toBe(200);
     expect(res.body.services.length).toBeGreaterThan(0);

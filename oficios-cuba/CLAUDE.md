@@ -11,19 +11,20 @@ Directorio/marketplace de oficios y servicios en Cuba: los clientes buscan por o
 
 | Capa | Tecnología |
 |---|---|
-| Backend | Node 22 · Express 4 · TypeScript · better-sqlite3 12 (SQLite, WAL) · JWT · zod |
+| Backend | Node 22 · Express 4 · TypeScript · Postgres 18 + PostGIS 3.6 vía `pg` (driver, `Pool`) · JWT · zod |
 | Frontend | React 18 · Vite 5 · Tailwind 3 · React Router 6 · Leaflet · axios |
-| Producción | `oficio_web` (nginx: SPA + proxy `/api`) en `net_dmz` → `oficio_api` en red **interna sin salida** (`oficio_net`) |
+| Producción | `oficio_web` (nginx: SPA + proxy `/api`) en `net_dmz` → `oficio_api` en red **interna sin salida** (`oficio_net`) → `oficio_db` en `oficio_net`, sin puertos publicados ni labels de Traefik |
 
 ## Estructura
 
 ```
 oficios-cuba/
 ├── backend/src/
-│   ├── index.ts          # arranque: esquema → seedBase() → seedDemo() si DEMO_MODE
+│   ├── index.ts          # arranque ASÍNCRONO: await migrar() → await seedBase() → await seedDemo() si DEMO_MODE → app.listen
 │   ├── config.ts         # DEMO_MODE, JWT_SECRET (falla en prod si es débil), PLANS y límites
 │   ├── app.ts            # la app Express (sin listen): la importan index.ts y los tests
-│   ├── db/               # index.ts = esquema + MIGRACIONES + reglas (límite de plan, caducidad); pagos.ts; seeds
+│   ├── db/               # acceso.ts = q/qOne/tx sobre el pool de `pg`; migrar.ts = esquema.sql + tabla schema_migrations;
+│   │                     # index.ts = reglas (límite de plan, caducidad, PLAN_WEIGHT_SQL...), ya NO el esquema; pagos.ts; seeds
 │   ├── lib/entrada.ts    # parámetros de query y validación de imágenes (demo / subida propia)
 │   ├── middleware/       # auth (JWT revocable), errorHandler
 │   ├── scripts/pagos.ts  # CLI de admin: listar / confirmar / rechazar pagos manuales
@@ -62,7 +63,7 @@ oficios-cuba/
 
 ### Modelo de datos
 
-`users` (client|provider) 1–1 `provider_profiles` (plan, `expires_at`, `rating`/`review_count` desnormalizados) 1–N `services` (`images` y `price_list` = JSON) · `service_areas` N–M `municipalities` · `provinces` 1–N `municipalities` · `categories` en 2 niveles (`parent_id`) · `reviews(service, client, provider)` · `conversations(client, provider, service?)` 1–N `messages` · `favorites(client, provider)` único · `subscriptions` 1–N `payments` · `appointments(provider, client?, service?, starts_at/ends_at UTC, origin online|manual, rescheduled_from)` · `agenda_blocks(provider, rango)` · `catalog_items(provider, precio fixed|from|ask, image?, section?, available, hidden_by_plan)` · `contacts(client, provider, via)`. `provider_profiles` lleva además `contact_mode`, `kind` (oficio|negocio), `horario`, `gallery` (JSON), `agenda` (JSON), `show_on_map`; `users.google_sub`. IDs UUID. 🚨 `conversations.provider_id` y `reviews.provider_id` son el id del **perfil**, no del usuario. `foreign_keys=ON` y WAL.
+`users` (client|provider) 1–1 `provider_profiles` (plan, `expires_at`, `rating`/`review_count` desnormalizados) 1–N `services` (`images` y `price_list` = JSON) · `service_areas` N–M `municipalities` · `provinces` 1–N `municipalities` · `categories` en 2 niveles (`parent_id`) · `reviews(service, client, provider)` · `conversations(client, provider, service?)` 1–N `messages` · `favorites(client, provider)` único · `subscriptions` 1–N `payments` · `appointments(provider, client?, service?, starts_at/ends_at UTC, origin online|manual, rescheduled_from)` · `agenda_blocks(provider, rango)` · `catalog_items(provider, precio fixed|from|ask, image?, section?, available, hidden_by_plan)` · `contacts(client, provider, via)`. `provider_profiles` lleva además `contact_mode`, `kind` (oficio|negocio), `horario`, `gallery` (JSON), `agenda` (JSON), `show_on_map`; `users.google_sub`. IDs UUID. 🚨 `conversations.provider_profile_id` y `reviews.provider_profile_id` son el id del **perfil**, no del usuario (el nombre de la columna ya lo dice, a diferencia de la época SQLite). Postgres, con `ON DELETE`/`ON DELETE CASCADE` reales en las FK (no hace falta `PRAGMA foreign_keys`).
 
 ### Páginas
 
@@ -80,7 +81,7 @@ Públicas: `/`, `/explorar` (tres pestañas: servicios, productos, negocios; `/b
 - **Chat solo Profesional:** no se abren conversaciones con Gratis/Básico; las viejas se leen pero no se puede escribir.
 - **Precios:** cada servicio lleva `price_currency` (CUP por defecto, o USD); el frontend muestra la otra moneda con la tasa de `/api/tasas`.
 - **Google:** con `GOOGLE_CLIENT_ID` → verificación real del `id_token` (flujo de redirección, sin script de Google). Sin él y con `DEMO_MODE` → selector de cuentas ficticias. Una cuenta con contraseña no se toma con el Google simulado. Fuera de demo y con Google real, pedir cita exige cuenta de Google.
-- **Ubicación pública** (`lib/ubicacion.ts`, migración 13): `lat/lng` solo salen en `/providers/:id` si el profesional marcó `show_on_map`, y **nunca son las guardadas**: se publica `map_lat_pub`/`map_lng_pub`, una COLUMNA que se calcula al guardar. Con `map_precision='exacta'` es la suya; con `'zona'`, un punto desplazado entre **100 y 300 m** en dirección al azar, sorteado UNA sola vez con `node:crypto` y re-sorteado solo si el dueño mueve la ubicación o cambia de precisión. Sortearlo al servir permitiría pedir el perfil muchas veces y **promediar** hasta recuperar el real; `Math.random` permitiría reconstruir el generador e invertir el desplazamiento de todos. El mapa **filtra por esa columna**, no por `pp.lat`: filtrar por la exacta reabre un oráculo de bisección. No hay respaldo a `pp.lat` si la pública es NULL — el perfil desaparece del mapa, que es el fallo seguro. `show_on_map` sigue en `DEFAULT 0`.
+- **Ubicación pública** (`lib/ubicacion.ts`): `lat/lng` solo salen en `/providers/:id` si el profesional marcó `show_on_map`, y **nunca son las guardadas**: se publica `punto_pub`, una columna `geography(Point, 4326)` (PostGIS) que se calcula al guardar — `ST_Y`/`ST_X` la leen de vuelta como `LAT_SERVIDA`/`LNG_SERVIDA` (`db/index.ts`). Con `map_precision='exacta'` es la suya; con `'zona'`, un punto desplazado entre **100 y 300 m** en dirección al azar, sorteado UNA sola vez con `node:crypto` (`desplazar()`, sigue en JS: PostGIS solo indexa el resultado, no lo genera) y re-sorteado solo si el dueño mueve la ubicación o cambia de precisión. Sortearlo al servir permitiría pedir el perfil muchas veces y **promediar** hasta recuperar el real; `Math.random` permitiría reconstruir el generador e invertir el desplazamiento de todos — de ahí el test `dos perfiles en la misma coordenada publican puntos distintos` (`test/coordenada-servida.test.ts`), que existe justo para que nadie cambie `randomInt` por algo determinista sin que ningún test lo note. El mapa **filtra por `punto_pub`** (índice GiST), no por `pp.lat`/`pp.lng`: filtrar por la exacta reabre un oráculo de bisección. No hay respaldo a `pp.lat` si la pública es NULL — el perfil desaparece del mapa, que es el fallo seguro. `show_on_map` sigue en `DEFAULT false`.
 - **Aviso de la dirección:** `pp.address` se publica **sin condición** en `/providers/:id`, a diferencia de `lat/lng`. Por eso el formulario avisa siempre que el campo tenga texto, detrás de `AVISAR_SIEMPRE_DIRECCION` (`ProviderProfileEdit.tsx`): apagarlo es cambiar un booleano.
 - **Plan:** el máximo de servicios se aplica al crear, al reactivar (`toggle`) y al bajar de plan (caducidad, cancelación): se pausan los más nuevos.
 - **Reseñas:** una por cliente y proveedor; solo si hubo trato (respuesta en el chat, cita confirmada/hecha, o contacto por WhatsApp/llamada con sesión — tabla `contacts`); nunca sobre un servicio pausado. Borrar un servicio conserva sus reseñas (`service_id` → NULL).
@@ -95,18 +96,36 @@ Públicas: `/`, `/explorar` (tres pestañas: servicios, productos, negocios; `/b
 - **nginx: una `location` por regex gana a un prefijo sin `^~`.** Por eso `/api/`, `/assets/` y `/demo/` llevan `^~`; sin él las fotos subidas daban 404 en prod.
 - **`DEMO_MODE=true` = cuentas con contraseña pública + planes de pago gratis.** Solo para dev/staging.
 - `CF-Connecting-IP` es fiable solo porque Traefik en vps2 no publica puertos (todo entra por el túnel). Si eso cambia, el rate limit por IP se puede falsificar.
-- El backend compila con `strict:false` y `global.d.ts` tipa better-sqlite3 como `any`: el tipado protege poco; verificar en ejecución.
+- El backend compila con `strict:false`: el tipado protege poco (por ejemplo, no delata una función `async` llamada sin `await` — ver más abajo); verificar en ejecución.
+- **`count(*)` (y `AVG`, y cualquier `bigint`) llega de `pg` como cadena, no como `number`.** `=== 1` contra `'1'` falla y un `> 0` sobre texto da resultados raros. `Number(...)` en todo conteo que se lea (ver `db/index.ts:refreshProviderRating`).
+- **Las columnas `jsonb` (`images`, `price_list`, `gallery`, `agenda`, `metadata`, `notify_prefs`) llegan YA PARSEADAS al leer** — nada de `JSON.parse`; usar `parseImages`/`parsePriceList` (`db/index.ts`), que aceptan también la forma en cadena que escriben los seeds. **Al escribir un array en una columna `jsonb` hay que seguir haciendo `JSON.stringify()`**: si se pasa el array crudo, `pg` lo manda como literal de ARRAY de Postgres (`{a,b,c}`), no como JSON, y la columna lo rechaza.
+- **Las columnas `timestamptz` llegan de `pg` como objeto `Date`, no como cadena** (aunque un tipo TypeScript declarado `string` no proteste, con `strict:false`). El contrato de la API no cambia porque `app.ts` lleva un `pg.types.setTypeParser` global que las serializa como ISO al responder — pero las comparaciones ya no son lexicográficas sobre texto, son de fecha real.
+- **`ST_MakeEnvelope(oeste, sur, este, norte, srid)` toma las coordenadas en OTRO orden que el `bbox` de la API** (`bbox=sur,oeste,norte,este`, heredado del formato que ya usaba el frontend). Mezclar el orden da un rectángulo válido pero en el sitio equivocado, sin ningún error. Ver el comentario en `routes/mapa.ts` junto al `ST_MakeEnvelope`.
+- **`unaccent()` es `STABLE`, no `IMMUTABLE`: no vale dentro de una columna `GENERATED ... STORED`** (las cinco columnas `busca`). El esquema define `inmutable_unaccent()` (una función SQL que fija el diccionario por su nombre calificado) para poder declararla `IMMUTABLE`. Fuera de una columna generada (las consultas de `lib/buscador.ts`) `unaccent()` a secas sigue sirviendo.
+- **Un helper `async` llamado sin `await` no lo delata el typecheck con `strict:false`.** `!miHelperAsync(x)` da siempre `false` (una `Promise` es truthy) y una promesa devuelta a un `try/catch` síncrono no se captura: un rechazo se vuelve *unhandled rejection* en vez de un error controlado. Le pasó de verdad durante el porte (validación de imágenes saltada en tres rutas, agenda bloqueada por completo en otras) — ver `.superpowers/sdd/2026-09-29-postgres/trampas-porte.md` para la lista de sitios. Antes de tocar un archivo que llame a un helper de otro dominio: `grep -n "!nombreDeLaFuncion(\|nombreDeLaFuncion(" archivo.ts` y confirmar que lleva `await`.
+- **`INSERT OR IGNORE` no existe**: es `INSERT ... ON CONFLICT DO NOTHING` (con o sin columnas del conflicto, según haya o no un índice único que lo pida).
+- **Comparar un parámetro de query sin validar contra una columna `uuid` (p. ej. `?province_id=x`) lanza `22P02`, no "sin resultados".** `errorHandler.ts` lo traduce a 404, que es correcto para `/api/services/:id` pero un 404 sobre un listado entero para un filtro de query string. Validar con `z.string().uuid().optional()` los filtros que van contra una columna uuid antes de meterlos en el WHERE (pendiente en `province_id`/`municipality_id` de `providers.ts`/`services.ts`, documentado en `trampas-porte.md`).
 
 `DOCKER.md` y buena parte del `README.md` son del commit `init` y están **desactualizados** (mencionan `docker-compose.override.yml`, scripts `.ps1`, Stripe, perfil `db-init` — ya no existen). Fuente de verdad: el código y este archivo.
 
 ## Desarrollo local (j-u)
 
+Ahora hace falta una base Postgres+PostGIS levantada: ya no es un archivo que el backend crea solo.
+
 ```bash
+# Base de datos — igual que el compose de producción pero solo el servicio oficio_db,
+# publicando el puerto para llegar desde fuera del contenedor (producción NO lo hace).
+cd oficios-cuba
+docker compose up -d oficio_db
+
 # Backend — :3000
 cd oficios-cuba/backend
 npm install
-cp ../.env.example .env && chmod 600 .env   # JWT_SECRET: openssl rand -base64 48 ; DEMO_MODE=true
-npm run dev                                  # crea backend/data/oficios.db y siembra solo
+cp ../.env.example .env && chmod 600 .env
+# DATABASE_URL=postgresql://oficio:<POSTGRES_PASSWORD>@127.0.0.1:<puerto>/oficio
+# JWT_SECRET: openssl rand -base64 48 ; DEMO_MODE=true
+# COMPOSE_PROJECT_NAME=<algo distinto de "oficios-cuba"> — ver el aviso de abajo.
+npm run dev                                  # await migrar() aplica el esquema si la base está vacía, y siembra solo
 
 # Frontend — siguiente puerto libre 5173+ (en j-u: 5176)
 cd oficios-cuba/frontend
@@ -115,21 +134,23 @@ npx vite --port 5176 --strictPort            # /api se reenvía a BACKEND_URL (d
 ```
 
 - Cuentas demo (con `DEMO_MODE=true`): contraseña `Demo123!` — ver `backend/src/db/seed-demo.ts`.
-- Para empezar de cero: parar el backend y mover `backend/data/` a otro sitio.
-- Verificación: `npm test` y `npm run typecheck` (backend); `npx tsc --noEmit && npm run build` (frontend).
+- Para empezar de cero: `DROP DATABASE oficio` (o el volumen `oficio_pgdata` del compose de dev) y reiniciar el backend.
+- Verificación: `npm test` y `npm run typecheck` (backend, con la base levantada — `npx vitest run` clona el esquema+seed base en una base de plantilla, una vez, y cada archivo de test corre contra su propia copia); `npx tsc --noEmit && npm run build` (frontend).
 - Pagos manuales en local: `npm run pagos -- listar | confirmar <id> | rechazar <id>`.
+- **⚠️ `.env` de un worktree de desarrollo: fijar `COMPOSE_PROJECT_NAME` a algo que NO sea el nombre del directorio.** Sin él, `docker compose` deriva el nombre de proyecto del directorio (`oficios-cuba`), que es el MISMO que usa `~/docker/oficio/oficios-cuba` en producción (vps2): un `docker compose down` (o cualquier comando que actúe "sobre todo el proyecto") lanzado por error desde un worktree de desarrollo pararía los contenedores de PRODUCCIÓN, no los del worktree. `.env` no se versiona, así que esta nota es la única red que queda — no hay forma de que lo traiga un `git pull`.
 
 ## Esquema y migraciones
 
-- Base nueva: se crea con `schema` y se marca `PRAGMA user_version = ESQUEMA_VERSION`.
-- Base existente: `initDatabase()` aplica las migraciones pendientes de `MIGRACIONES` (en `db/index.ts`), una transacción cada una, con `foreign_key_check` antes de subir la versión.
-- **Cambio de esquema = tocar DOS sitios:** `schema` (bases nuevas) y una migración nueva al final de `MIGRACIONES` (bases existentes). Nunca editar una migración ya publicada.
-- Probar cada migración contra una copia de la base de producción antes de desplegar (`test/fixtures/esquema-v0.sql` = esquema con el que nació prod).
+- El esquema vive en un solo archivo, `backend/src/db/esquema.sql`, aplicado por `db/migrar.ts`.
+- `migrar()` (llamada por `index.ts` al arrancar, con `await`, y por cualquier CLI/script que necesite la base) crea `schema_migrations` si no existe, y si la fila `ESQUEMA_VERSION` (constante en `migrar.ts`) no está, aplica `esquema.sql` completo dentro de una transacción y la inserta. **No hay migraciones incrementales todavía**: el esquema de Postgres nació limpio en la v1, sin arrastrar las 13 migraciones de la época de SQLite (esa historia solo importa para leer commits viejos).
+- Cuando haya que cambiar el esquema con datos reales en producción, esta función crece con un array de migraciones — el mismo patrón que tenía `db/index.ts` en SQLite (una función por versión, cada una en su propia transacción), pero contra Postgres.
+- **Si `migrar()` falla al arrancar, el proceso tiene que morir** (código de salida distinto de cero) en vez de servir con el esquema a medio aplicar — lo hace el `.catch()` de `start()` en `index.ts`.
+- Probar cualquier migración nueva contra una copia de la base de producción antes de desplegar.
 
 ## Producción (vps2)
 
 - Deploy y pagos manuales: ver `DOCKER.md`. El compose y el `.env` (chmod 600) viven en vps2.
-- La base de datos real está en `~/docker/oficio/oficios-cuba/data/` (bind mount). **Copia de seguridad antes de cualquier deploy que cambie el esquema.**
+- La base de datos real está en el volumen Docker `oficio_pgdata` (ya no un bind mount de archivo: `oficio_db` es `postgis/postgis:18-3.6`, sin puertos publicados, red interna `oficio_net`). **Copia de seguridad (`pg_dump`) antes de cualquier deploy que cambie el esquema.**
 - Cambios en red/exposición (Traefik, túnel, puertos, CORS, auth, reglas de subida): **consultar con Dariel antes**.
 - `DEMO_MODE=true` en producción siembra datos falsos y **simula los pagos de planes**: no ponerlo a `false` sin datos de pago reales definidos.
 

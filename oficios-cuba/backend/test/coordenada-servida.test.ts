@@ -128,4 +128,14 @@ describe('lib/ubicacion — dirección segura', () => {
     expect(min).toBeGreaterThanOrEqual(RADIO_APROX_MIN_M - 1);
     expect(max).toBeLessThanOrEqual(RADIO_APROX_MAX_M + 1);
   });
+
+  it('dos perfiles en la misma coordenada publican puntos distintos', () => {
+    // Si el desplazamiento se derivara de la coordenada (un hash) en vez de sortearse, seguiría
+    // cayendo en el anillo y todos los demás tests pasarían — pero dos perfiles en la misma
+    // dirección publicarían el mismo punto, y de ahí se deduce el desplazamiento de ambos.
+    const puntos = new Set(
+      Array.from({ length: 20 }, () => JSON.stringify(puntoPublico(23.1, -82.3, 'zona'))),
+    );
+    expect(puntos.size).toBeGreaterThan(15);
+  });
 });
