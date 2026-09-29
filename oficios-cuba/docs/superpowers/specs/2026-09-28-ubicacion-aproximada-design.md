@@ -1,6 +1,8 @@
 # Ubicación aproximada · Diseño
 
-Estado: aprobado en conversación el 2026-09-28. Sucede a la Entrega 2
+Estado: aprobado el 2026-09-28. **Enmendado el 2026-09-29** por decisión de Dariel:
+el área aproximada pasa de la celda de ~1 km a un radio de 100-300 m, y el punto
+publicado se calcula una sola vez al establecerlo. Ver §3bis. Sucede a la Entrega 2
 (`2026-09-28-explorar-mapa-design.md`), cuyo modelo de privacidad no cambia:
 lo que cambia es de dónde sale la coordenada y cómo se dibuja.
 
@@ -66,7 +68,9 @@ mal no sirve de nada.
 a mano. Es peor reubicarlo nosotros: perdería su punto bueno sin enterarse.
 
 **D3 — El umbral sale de la geometría, no del gusto.** Se pasa a modo zona cuando
-el círculo de 1 km ya no cabe en su celda. La celda es `min(alto,ancho)/5` del
+el círculo del área ya no cabe en su celda. *(Recalculado en la enmienda de §3bis:
+con radio 300 m el diámetro es 600 m, no 2 km. Tabla nueva abajo; la de 1 km se
+conserva porque documenta de dónde salió el método.)* La celda es `min(alto,ancho)/5` del
 rectángulo visible, o sea **1/5 del lado corto de la pantalla** a cualquier zoom.
 Diámetro del círculo de 1 km, a latitud 23°:
 
@@ -78,9 +82,18 @@ Diámetro del círculo de 1 km, a latitud 23°:
 | 15 | 455 px | no |
 | 16 | 910 px | mayor que la pantalla |
 
-Umbral: `celda < 0.018°` (≈2 004 m), es decir lo visible abarca menos de ~10 km.
-Se autoajusta: en móvil salta a z13 y en pantalla ancha a z14, porque allí la
-celda mide más. Sin constante mágica por dispositivo.
+Umbral **vigente** (radio 300 m → diámetro 600 m): `celda < 0.0054°`, es decir lo
+visible abarca menos de **~3 km**. En un móvil de 390 px la celda mide 78 px:
+
+| Zoom | Diámetro de 600 m | ¿Cabe en la celda? |
+|---|---|---|
+| 13 | 34 px | sí |
+| 14 | 68 px | sí, justo |
+| **15** | **136 px** | **no — modo zona** |
+| 16 | 273 px | no |
+
+Se autoajusta igual que antes: en pantalla ancha la celda mide más y el salto
+ocurre un zoom después. Sin constante mágica por dispositivo.
 *Si me equivoco:* el modo zona entra antes o después de lo cómodo. Es **una
 constante** (`ZONA_DESDE_GRADOS`), afinarla es cambiar un número y redesplegar.
 Dariel pidió empezar en 10 km y bajar después si conviene.
@@ -111,6 +124,56 @@ privacidad de 1 000 m a ~250 m. Rompería la promesa que ya se le hace al usuari
 zona, un centro 700 m mar adentro ya no es absurdo: el círculo toca la costa y se
 lee «por aquí». Antes de gastar una migración miramos un caso costero real.
 *Si me equivoco:* queda un centro en el agua. Visible, no grave.
+
+## 3bis. Enmienda del 2026-09-29: el área pasa a 100-300 m
+
+Dariel decidió que la ubicación aproximada sea **un área de 100 a 300 m** alrededor
+del punto exacto, en vez de la celda de ~1 km. Lo que sigue reemplaza el redondeo a
+rejilla (`CELDA_ZONA`) para los perfiles `zona`.
+
+**D9 — Desplazamiento en anillo, calculado UNA vez y guardado.** Al establecer la
+ubicación se sortea una distancia `d` uniforme en [100, 300] m y un ángulo uniforme,
+y se guarda el punto resultante en columnas propias. No se re-sortea en cada
+petición: si se sorteara al servir, un atacante podría pedir el mismo perfil muchas
+veces y **promediar** los puntos hasta recuperar el verdadero, que es exactamente el
+ataque que esta entrega existe para impedir. Se recalcula solo si el dueño cambia su
+ubicación o su precisión.
+El mínimo de 100 m importa tanto como el máximo: sin él, el sorteo puede devolver un
+punto pegado al real y la protección desaparece justo en los casos desafortunados.
+Es *donut masking*, el método que la literatura de geoprivacidad recomienda.
+
+**D10 — El sorteo usa `node:crypto`, no `Math.random`.** El generador de V8 es
+xorshift128+: no es criptográfico y su estado se puede reconstruir observando
+suficientes salidas. Como los puntos publicados son, en la práctica, salidas
+observables del generador, alguien con bastantes perfiles podría reconstruir el
+estado e **invertir el desplazamiento de todos**, recuperando las ubicaciones
+exactas. Con `randomInt`/`randomBytes` eso no es posible.
+*Si me equivoco:* nada; el coste de usar el generador seguro aquí es cero.
+
+**D11 — La coordenada publicada se guarda para TODOS, exacta o aproximada.** Para un
+perfil `exacta` es igual a la suya. Así `LAT_SERVIDA` deja de ser un `CASE` y pasa a
+ser una columna, lo que elimina de raíz la clase de error que esta entrega ya
+persiguió tres veces: dos definiciones del mismo valor que se separan. El filtrado
+del `bbox` usa esa columna, que es lo que cierra el oráculo de bisección.
+*Si me equivoco:* un camino de escritura que toque `lat/lng` sin recalcular la
+pública dejaría el punto publicado obsoleto. Se evita con un único punto de
+escritura y una prueba que lo afirme.
+
+**El coste, dicho sin adornos.** La privacidad baja: el área donde puede estar el
+negocio pasa de **124 ha** (celda de ~1 km) a **28,3 ha** (círculo de 300 m), y la
+distancia mínima garantizada al punto real baja de ~500 m a 100 m. Es decisión
+explícita de Dariel, tomada sabiendo que el mapa gana utilidad y la protección
+afloja. Queda escrito aquí para que nadie lo reabra creyendo que fue un descuido.
+
+## 3ter. El aviso de la dirección (decisión del 2026-09-29)
+
+El aviso de `pp.address` se muestra **siempre que el campo tenga texto**, no solo
+cuando el mapa está encendido en modo zona. El motivo es el hecho que se verificó:
+`address` sale en `GET /providers/:id` **sin condición alguna**, mientras `lat`/`lng`
+van redondeadas y condicionadas a `show_on_map`. El aviso estaba colgado de una
+opción del mapa cuando el riesgo lo causa haber escrito algo.
+Dariel pidió ponerlo en todos los casos y retirarlo después si estorba, así que vive
+en una sola constante (`AVISAR_SIEMPRE_DIRECCION`) y apagarlo es cambiar un booleano.
 
 ## 4. Los datos: municipios reales
 
