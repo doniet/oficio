@@ -12,7 +12,7 @@ import type { Bbox, MapaRespuesta, PuntoMapa } from '../../types';
 // próxima que sí lo haga habría fallado con «apiError is not a function» en vez de probar el error.
 vi.mock('../../services/api', async () => {
   const real = await vi.importActual<typeof import('../../services/api')>('../../services/api');
-  return { ...real, mapaApi: { buscar: vi.fn() } };
+  return { ...real, mapaApi: { buscar: vi.fn(), celda: vi.fn() } };
 });
 
 const bbox: Bbox = { sur: 22, oeste: -83, norte: 23, este: -82 };
@@ -95,42 +95,53 @@ describe('usarMapa', () => {
     expect(result.current.puntos).toEqual([puntoTexto]);
   });
 
-  it('un zoom que recarga con éxito limpia la zona sucia', async () => {
-    // Divergencia con el gemelo móvil (mobile/src/lib/mapa.ts): allá cualquier recarga exitosa
-    // limpia la bandera, sin importar quién la disparó. Aquí solo lo hacía buscarZona: tras un
-    // paneo seguido de un zoom, el botón «Buscar en esta zona» se quedaba puesto sin sentido.
-    vi.mocked(mapaApi.buscar).mockResolvedValueOnce({ puntos: [], celda: 0.01, hay_mas: false });
+  it('arrastrar el mapa recarga solo, con su antirrebote, sin botón de por medio', async () => {
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
 
     const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
 
-    act(() => { result.current.alMover(bbox, false); }); // paneo: ensucia la zona, no llama a la API
-    expect(result.current.zonaSucia).toBe(true);
-
-    act(() => { result.current.alMover(bbox, true); }); // zoom: recarga sola con antirrebote de 250 ms
+    act(() => { result.current.alMover(bbox, false); });
     await act(async () => { await espera(280); });
+    // Aún dentro del antirrebote del paneo (500 ms): un arrastre no debe pedir a cada movimiento.
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(0);
 
+    await act(async () => { await espera(300); });
     expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
-    expect(result.current.zonaSucia).toBe(false);
   });
 
-  it('un reintento fallido desde el botón deja la zona sucia (y el botón) disponible', async () => {
-    // Divergencia con el gemelo móvil: allá la bandera se limpia solo al saber que la carga tuvo
-    // éxito. Aquí se limpiaba ANTES de lanzar la petición: en una conexión cubana lenta, un
-    // reintento que falla se queda sin botón para volver a intentarlo.
-    vi.mocked(mapaApi.buscar).mockRejectedValueOnce(new Error('fallo de red'));
+  it('varios arrastres seguidos hacen una sola petición, con la última zona', async () => {
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
 
     const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+    const ultima = { sur: 21, oeste: -80, norte: 21.4, este: -79.5 };
 
-    act(() => { result.current.alMover(bbox, false); }); // paneo: aparece «Buscar en esta zona»
-    expect(result.current.zonaSucia).toBe(true);
+    act(() => { result.current.alMover({ ...bbox, sur: 20 }, false); });
+    await act(async () => { await espera(200); });
+    act(() => { result.current.alMover(ultima, false); });
+    await act(async () => { await espera(600); });
 
-    await act(async () => {
-      result.current.buscarZona(); // pulsa el botón; la petición falla
-      await espera(10);
-    });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mapaApi.buscar).mock.calls[0][0]).toEqual(ultima);
+  });
 
-    expect(result.current.error).not.toBe('');
-    expect(result.current.zonaSucia).toBe(true);
+  it('cargarCelda pide con la zona que se PINTÓ, no con la que el mapa lleva ahora', async () => {
+    // Tras arrastrar, el mapa ya reportó otra zona pero los «+N» en pantalla siguen siendo los de
+    // la anterior: pedir la celda con el rectángulo nuevo cambiaría el tamaño de celda que el
+    // servidor deduce y la lista no cuadraría con el número que el usuario tocó.
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    vi.mocked(mapaApi.celda).mockResolvedValue({ puntos: [], hay_mas: false } as never);
+
+    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+    const pintada = { sur: 22.9, oeste: -82.6, norte: 23.3, este: -82.1 };
+
+    act(() => { result.current.alMover(pintada, true); });
+    await act(async () => { await espera(280); });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
+
+    act(() => { result.current.alMover({ sur: 21, oeste: -80, norte: 21.4, este: -79.5 }, false); }); // arrastre, aún sin recargar
+    await act(async () => { await result.current.cargarCelda(3, 4); });
+
+    expect(vi.mocked(mapaApi.celda).mock.calls[0][0]).toEqual(pintada);
   });
 });
 

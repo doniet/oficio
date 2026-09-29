@@ -10,6 +10,10 @@ import type { Bbox, PuntoMapa } from '../../types';
 // El zoom es la petición de más detalle: recarga sola, pero con un poco de aire para no lanzar
 // una petición por cada paso de la rueda del ratón.
 const ANTIRREBOTE_ZOOM_MS = 250;
+// Arrastrar recarga solo (decisión de Dariel, 2026-09-29; antes era un botón «Buscar en esta zona»),
+// pero espera más que el zoom: un arrastre es una ráfaga de movimientos y la zona buena es la
+// donde el dedo se suelta.
+const ANTIRREBOTE_PANEO_MS = 500;
 // Escribir o cambiar pestaña/categoría también es deliberado, igual que el zoom.
 const ANTIRREBOTE_TEXTO_MS = 300;
 
@@ -45,11 +49,13 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   const [hayMas, setHayMas] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
-  const [zonaSucia, setZonaSucia] = useState(false);
 
   // La última zona visible que reportó el mapa; no hay estado de React para esto porque cambiarla
-  // no debe, por sí sola, disparar un render (paneo no recarga: ver alMover).
+  // no debe, por sí sola, disparar un render.
   const bboxRef = useRef<Bbox | null>(null);
+  // La zona con la que se pidió lo que hay pintado. Es distinta de la anterior durante el antirrebote
+  // y mientras una petición vuela: los «+N» de pantalla pertenecen a ESTA, no a la que el mapa lleva ya.
+  const bboxPintadoRef = useRef<Bbox | null>(null);
   // El controlador de la petición en vuelo: la siguiente carga lo aborta antes de empezar, y una
   // respuesta que llega con su señal ya abortada se descarta en vez de pintarse encima de la nueva.
   const controladorRef = useRef<AbortController | null>(null);
@@ -78,10 +84,7 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
         setCelda(r.celda);
         setHayMas(r.hay_mas);
         setCargando(false);
-        // Se limpia aquí, no al pulsar el botón: solo se sabe que la zona visible ya no está
-        // sucia cuando la carga de esa zona termina bien. Limpiarla antes deja un reintento
-        // fallido sin botón para volver a intentarlo (ver mobile/src/lib/mapa.ts).
-        setZonaSucia(false);
+        bboxPintadoRef.current = bbox;
       })
       .catch((err) => {
         if (controlador.signal.aborted) return;
@@ -97,16 +100,10 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
 
   const alMover = useCallback((b: Bbox, porZoom: boolean) => {
     bboxRef.current = b;
-    if (porZoom) {
-      programar(ANTIRREBOTE_ZOOM_MS);
-    } else {
-      // Panear no recarga sola: solo avisa que la zona ya no coincide con lo pedido.
-      setZonaSucia(true);
-    }
+    programar(porZoom ? ANTIRREBOTE_ZOOM_MS : ANTIRREBOTE_PANEO_MS);
   }, [programar]);
 
-  // Carga inicial, botón «Buscar en esta zona» y «Reintentar» tras un error: las tres piden la
-  // misma zona (bboxRef.current), así que es literalmente cargar() otra vez.
+  // «Reintentar» tras un error pide la misma zona (bboxRef.current), así que es cargar() otra vez.
   const buscarZona = cargar;
 
   // Cambiar de pestaña, texto o categoría recarga sola, con su propio antirrebote — pero solo si
@@ -123,17 +120,17 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   }, []);
 
   /**
-   * Los negocios de una celda concreta. Usa el bbox guardado —el mismo con el que se pintó el
-   * mapa— porque el servidor deduce de él el tamaño de celda: pedirlo con otro rectángulo haría
+   * Los negocios de una celda concreta. Usa el bbox con el que se pintó el mapa (no el que lleva
+   * ahora tras un arrastre) porque el servidor deduce de él el tamaño de celda: pedirlo con otro rectángulo haría
    * que los índices significaran otra cosa y la lista no cuadrara con el «+N» que la anunció.
    */
   const cargarCelda = useCallback((cy: number, cx: number) => {
-    const bbox = bboxRef.current;
+    const bbox = bboxPintadoRef.current;
     if (!bbox) return Promise.resolve([] as PuntoMapa[]);
     const { tab, q, category } = paramsRef.current;
     return mapaApi.celda(bbox, cy, cx, { tab: tab || undefined, q: q || undefined, category: category || undefined })
       .then((r) => r.puntos);
   }, []);
 
-  return { puntos, celda, hayMas, cargando, error, zonaSucia, alMover, buscarZona, cargarCelda };
+  return { puntos, celda, hayMas, cargando, error, alMover, buscarZona, cargarCelda };
 }

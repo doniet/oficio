@@ -57,7 +57,7 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   const map = useMapEvents({
     zoomend: (e) => {
       // `moveend` dispara también después de un zoom; este flag se lo indica al handler de abajo
-      // para que no ensucie la zona ni saque el botón «Buscar en esta zona» sin motivo.
+      // para que no se trate como un arrastre y retrase la recarga del zoom (250 ms) a la del paneo (500).
       zoomRecien.current = true;
       alMover(aBbox(e.target.getBounds()), true);
       setTimeout(() => { zoomRecien.current = false; }, 0);
@@ -73,8 +73,7 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   // que `useMapEvents` (que los engancha en un `useEffect`, siempre posterior al primer commit)
   // nunca los ve: sin este efecto de montaje el mapa se abre sin haber pedido nunca su primera
   // área — cero marcadores, y si el usuario solo panea, ni siquiera aparece el botón para pedirla.
-  // Cuenta como zoom (no como paneo): la carga inicial no debe dejar puesto el botón «Buscar en
-  // esta zona» — el usuario no debería tener que pedir ver lo que el mapa acaba de abrir.
+  // Cuenta como zoom (no como paneo): la carga inicial no debe esperar los 500 ms del arrastre.
   useEffect(() => {
     alMover(aBbox(map.getBounds()), true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,17 +208,6 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }
           </span>
         )}
       </div>
-
-      {mapa.zonaSucia && (
-        // `bottom` lee la variable CSS que publica HojaPunto (Tarea 6) en <html>: "0px" con la
-        // hoja cerrada, y el alto que ocupa desde abajo del viewport mientras está asomada o
-        // abierta (incluso durante el arrastre). Sin esto la hoja tapa este botón.
-        <div className="absolute left-1/2 z-[400] -translate-x-1/2" style={{ bottom: 'calc(var(--hoja-punto-alto, 0px) + 1rem)' }}>
-          <button type="button" onClick={mapa.buscarZona} className="btn-primary btn-sm shadow-lift">
-            Buscar en esta zona
-          </button>
-        </div>
-      )}
 
       <button
         type="button"
