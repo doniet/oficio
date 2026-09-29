@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import db from './index.js';
+import { tx } from './acceso.js';
 import { COORDS_MUNICIPIOS } from './municipios-coords.js';
 
 const provinces = [
@@ -165,45 +165,53 @@ function municipalityCoords(province: string, name: string) {
   return c;
 }
 
-export function seedBase() {
-  const tx = db.transaction(() => {
+export async function seedBase() {
+  await tx(async (c) => {
     const provinceIds = new Map<string, string>();
     for (const province of provinces) {
-      const existing = db.prepare('SELECT id FROM provinces WHERE name = ?').get(province.name) as { id: string } | undefined;
+      const existing = await c.qOne<{ id: string }>('SELECT id FROM provinces WHERE name = $1', [province.name]);
       if (existing) {
         provinceIds.set(province.name, existing.id);
         continue;
       }
-      db.prepare('INSERT INTO provinces (id, name, capital, lat, lng, zoom) VALUES (@id, @name, @capital, @lat, @lng, @zoom)').run(province);
+      await c.q(
+        'INSERT INTO provinces (id, name, capital, lat, lng, zoom) VALUES ($1, $2, $3, $4, $5, $6)',
+        [province.id, province.name, province.capital, province.lat, province.lng, province.zoom],
+      );
       provinceIds.set(province.name, province.id);
     }
 
     for (const { province, municipalities: names } of municipalities) {
       const provinceId = provinceIds.get(province);
       if (!provinceId) continue;
-      names.forEach((name) => {
-        const exists = db.prepare('SELECT 1 FROM municipalities WHERE name = ? AND province_id = ?').get(name, provinceId);
-        if (exists) return;
+      for (const name of names) {
+        const exists = await c.qOne('SELECT 1 FROM municipalities WHERE name = $1 AND province_id = $2', [name, provinceId]);
+        if (exists) continue;
         const { lat, lng } = municipalityCoords(province, name);
-        db.prepare('INSERT INTO municipalities (id, name, province_id, lat, lng) VALUES (?, ?, ?, ?, ?)').run(uuidv4(), name, provinceId, lat, lng);
-      });
+        await c.q(
+          'INSERT INTO municipalities (id, name, province_id, lat, lng) VALUES ($1, $2, $3, $4, $5)',
+          [uuidv4(), name, provinceId, lat, lng],
+        );
+      }
     }
 
-    const insertCategory = db.prepare(`
-      INSERT INTO categories (id, name, slug, icon, description, parent_id, sort_order)
-      VALUES (@id, @name, @slug, @icon, @description, @parent_id, @sort_order)
-    `);
     for (const cat of categories) {
-      let parent = db.prepare('SELECT id FROM categories WHERE slug = ?').get(cat.slug) as { id: string } | undefined;
+      let parent = await c.qOne<{ id: string }>('SELECT id FROM categories WHERE slug = $1', [cat.slug]);
       if (!parent) {
-        insertCategory.run({ id: cat.id, name: cat.name, slug: cat.slug, icon: cat.icon, description: cat.name, parent_id: null, sort_order: cat.sort_order });
+        await c.q(
+          'INSERT INTO categories (id, name, slug, icon, description, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [cat.id, cat.name, cat.slug, cat.icon, cat.name, null, cat.sort_order],
+        );
         parent = { id: cat.id };
       }
-      cat.subcategories.forEach((sub, i) => {
-        if (db.prepare('SELECT 1 FROM categories WHERE slug = ?').get(sub.slug)) return;
-        insertCategory.run({ id: uuidv4(), name: sub.name, slug: sub.slug, icon: sub.icon, description: sub.name, parent_id: parent!.id, sort_order: i });
-      });
+      for (let i = 0; i < cat.subcategories.length; i++) {
+        const sub = cat.subcategories[i];
+        if (await c.qOne('SELECT 1 FROM categories WHERE slug = $1', [sub.slug])) continue;
+        await c.q(
+          'INSERT INTO categories (id, name, slug, icon, description, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [uuidv4(), sub.name, sub.slug, sub.icon, sub.name, parent!.id, i],
+        );
+      }
     }
   });
-  tx();
 }
