@@ -486,3 +486,10 @@
 - Security: N/A. El bloqueo de zoom quita el zoom a quien lo necesita para leer (WCAG 1.4.4): decisión de Dariel, reversible en tres líneas.
 - Next: probar las URLs de teselas desde Cuba (si se quiere Positron real: CARTO exige clave y tope comercial desde 23-sep; OpenFreeMap sin clave pero ~4× más datos). En la app el área aproximada sigue siendo un disco de tamaño fijo.
 - Blockers: ninguno.
+
+## 2026-09-29 16:40 UTC — cc-jarvis-ubuntu — APK 0.2.3: pantalla negra sobre el mapa en Huawei P8 Lite
+- Changes: `MapaExplorar.tsx`: `androidView="texture"` y `overflow: 'hidden'` en el contenedor. Foto de Dariel desde un P8 Lite en Cuba (Cubacel): el mapa se veía bien pero **todo lo que hay encima** (cabecera, buscador, filtros) salía negro, y los pines del borde asomaban sobre esa zona. Causa: el `GLSurfaceView` por defecto de MapLibre se compone en una capa aparte de la ventana y en esa GPU (Mali, EMUI) rompe el dibujado del resto; `TextureView` dibuja dentro de la jerarquía. Los pines se salían porque en React Native una vista no recorta a sus hijas por defecto. versionCode 6.
+- Tests: pass — app 47/47, typecheck. En emulador (variante x86_64): Explorar → Mapa dibuja cabecera, filtros y mapa; un pin llevado al borde superior queda recortado. 🚨 **No reproducible en emulador** (dibuja por software; con `-gpu host` sin ventana se cae): el arreglo del negro está confirmado solo por la causa conocida, falta verlo en el P8 Lite. Buena noticia de paso: **las teselas de OSM cargan desde Cuba**.
+- Security: N/A.
+- Next: confirmar en el P8 Lite. Si siguiera negro, siguiente sospechoso: el filtro `raster-*` (único cambio de dibujado de la 0.2.2).
+- Blockers: ninguno.

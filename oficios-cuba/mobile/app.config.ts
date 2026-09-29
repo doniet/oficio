@@ -16,7 +16,7 @@ const config: ExpoConfig = {
   name: 'Encuentrauno',
   slug: 'oficios-cuba',
   scheme: 'oficio',
-  version: '0.2.2',
+  version: '0.2.3',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   icon: './assets/images/icon.png',
@@ -29,7 +29,7 @@ const config: ExpoConfig = {
     },
     package: 'com.dardoit.oficios',
     // Android solo instala encima si sube: cada APK publicado lleva uno mayor que el anterior.
-    versionCode: 5,
+    versionCode: 6,
     ...(existsSync(googleServicesFile) ? { googleServicesFile } : {}),
     permissions: ['POST_NOTIFICATIONS'],
     // Permisos que Expo y sus módulos añaden por defecto y la app no usa. El antivirus de Huawei (Avast)

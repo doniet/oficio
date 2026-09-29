@@ -173,6 +173,11 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
       <MapaLibre
         ref={mapaRef}
         style={e.mapa}
+        // TextureView en vez del GLSurfaceView por defecto. La superficie GL se compone en una capa
+        // aparte de la ventana y en un Huawei P8 Lite (Mali, EMUI) dejaba NEGRO todo lo que hay por
+        // encima del mapa —cabecera, buscador, filtros— aunque el mapa se viera bien (foto de
+        // Dariel, 29-sep, en Cuba). TextureView dibuja dentro de la jerarquía de vistas como una más.
+        androidView="texture"
         mapStyle={ESTILO_OSM}
         attribution
         compass={false}
@@ -227,7 +232,9 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
 }
 
 const e = StyleSheet.create({
-  contenedor: { flex: 1 },
+  // Recorta lo que se sale del mapa: en React Native una vista no recorta a sus hijas por defecto,
+  // y un pin cerca del borde superior se pintaba encima del buscador y los filtros.
+  contenedor: { flex: 1, overflow: 'hidden' },
   mapa: { flex: 1 },
   pinEnvoltorio: { alignItems: 'center', justifyContent: 'center' },
   pin: {
