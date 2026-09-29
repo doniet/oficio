@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db, { refreshProviderRating } from './index.js';
+import { puntoPublico } from '../lib/ubicacion.js';
 import { fechaLocal, instanteLocal, sumarDias } from '../lib/hora.js';
 
 export const DEMO_PASSWORD = 'Demo123!';
@@ -270,12 +271,15 @@ export async function seedDemo() {
       // Galería del negocio (planes con fotos): las fotos de sus servicios.
       const gallery = p.plan === 'free' ? [] : [...new Set(p.services.flatMap((s) => s.images ?? []))].slice(0, 10);
       const paid = p.plan !== 'free';
-      db.prepare(`INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng,
+      // La coordenada publicada se escribe SIEMPRE, aunque aquí coincida con la propia: un perfil
+      // con punto y sin pública no aparece en el mapa (LAT_SERVIDA es esa columna, sin respaldo).
+      const pub = puntoPublico(p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, 'exacta');
+      db.prepare(`INSERT INTO provider_profiles (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, map_lat_pub, map_lng_pub,
           whatsapp, telegram, email_contact, years_experience, is_active, subscription_plan, subscription_expires_at, created_at,
           contact_mode, kind, horario, gallery, show_on_map)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)`)
         .run(profileId, userId, p.business_name, p.description, province.id, muni?.id ?? null, p.address,
-          p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
+          p.lat ?? muni?.lat ?? province.lat, p.lng ?? muni?.lng ?? province.lng, pub.lat, pub.lng, p.whatsapp, paid ? p.whatsapp : null, paid ? p.email : null, p.years, p.plan, expires, created,
           p.contact_mode ?? 'whatsapp', p.negocio ? 'negocio' : 'oficio', p.negocio?.horario ?? null, JSON.stringify(gallery));
 
       if (p.plan !== 'free') {

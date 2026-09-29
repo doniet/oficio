@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import db, { CATEGORIAS_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, parseImages, PLAN_WEIGHT_SQL } from '../db/index.js';
+import { hayQueRecalcular, puntoPublico } from '../lib/ubicacion.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { imagenPermitida, queryTextos } from '../lib/entrada.js';
@@ -148,7 +149,11 @@ router.get('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
 
 router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
   const data = providerProfileSchema.parse(req.body);
-  const provider = db.prepare('SELECT id, subscription_plan, gallery FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as { id: string; subscription_plan: string; gallery: string | null } | undefined;
+  // lat/lng/map_precision/map_lat_pub vienen para decidir si hay que volver a sortear el punto
+  // publicado: solo cuando el dueño mueve su ubicación o cambia de precisión, nunca al guardar
+  // el resto del perfil, o su pin saltaría de sitio cada vez que corrige un teléfono.
+  const provider = db.prepare('SELECT id, subscription_plan, gallery, lat, lng, map_precision, map_lat_pub, map_lng_pub FROM provider_profiles WHERE user_id = ?').get(req.user!.id) as
+    { id: string; subscription_plan: string; gallery: string | null; lat: number | null; lng: number | null; map_precision: string | null; map_lat_pub: number | null; map_lng_pub: number | null } | undefined;
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
   const plan = planDe(provider.subscription_plan);
 
@@ -175,15 +180,23 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     if (n !== ids.length) throw new AppError('Alguna zona de servicio no existe', 400);
   }
 
+  // La coordenada publicada: se sortea aquí, una vez, y solo si cambió lo que la define. Este es
+  // el ÚNICO sitio donde un proveedor puede mover su punto, así que es el único que tiene que
+  // recalcularla; un test afirma que no queda ningún perfil con punto y sin coordenada pública.
+  const nueva = { lat: data.lat ?? null, lng: data.lng ?? null, map_precision: data.map_precision };
+  const pub = hayQueRecalcular(provider, nueva)
+    ? puntoPublico(nueva.lat, nueva.lng, data.map_precision)
+    : { lat: provider.map_lat_pub, lng: provider.map_lng_pub };
+
   // Formulario completo: los campos vacíos se guardan como NULL para poder borrarlos.
   const tx = db.transaction(() => {
     db.prepare(`
       UPDATE provider_profiles SET business_name = ?, description = ?, province_id = ?, municipality_id = ?, address = ?,
-        lat = ?, lng = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
+        lat = ?, lng = ?, map_lat_pub = ?, map_lng_pub = ?, whatsapp = ?, telegram = ?, email_contact = ?, years_experience = ?,
         contact_mode = ?, kind = ?, horario = ?, gallery = ?, show_on_map = ?, map_precision = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(data.business_name ?? null, data.description ?? null, data.province_id, data.municipality_id ?? null, data.address ?? null,
-      data.lat ?? null, data.lng ?? null, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
+      data.lat ?? null, data.lng ?? null, pub.lat, pub.lng, data.whatsapp ?? null, data.telegram ?? null, data.email_contact ?? null,
       data.years_experience ?? 0, data.contact_mode, data.kind, data.kind === 'negocio' ? data.horario ?? null : null,
       JSON.stringify(gallery), data.show_on_map && data.lat != null && data.lng != null ? 1 : 0, data.map_precision, provider.id);
 

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
+import { metrosEntre, RADIO_APROX_MAX_M, RADIO_APROX_MIN_M } from '../src/lib/ubicacion.js';
 
 describe('migración 11 — mapa', () => {
   it('añade map_precision con DEFAULT exacta y el índice geo, desde una base vacía', async () => {
     process.env.DATABASE_PATH = ':memory:';
     const { default: db, initDatabase, ESQUEMA_VERSION } = await import('../src/db/index.js');
     initDatabase();
-    expect(ESQUEMA_VERSION).toBe(12);
+    expect(ESQUEMA_VERSION).toBe(13);
     const cols = (db.pragma('table_info(provider_profiles)') as { name: string; dflt_value: string | null }[]);
     const col = cols.find((c) => c.name === 'map_precision');
     expect(col).toBeDefined();
@@ -59,5 +60,48 @@ describe('migración 12 — coordenadas reales de los municipios', () => {
     seedBase();
     const fuera = db.prepare('SELECT name, lat, lng FROM municipalities WHERE lat NOT BETWEEN 19.7 AND 23.4 OR lng NOT BETWEEN -85.1 AND -73.9').all();
     expect(fuera).toEqual([]);
+  });
+});
+
+describe('migración 13 — la coordenada publicada es una columna', () => {
+  it('añade map_lat_pub/map_lng_pub y su índice', async () => {
+    process.env.DATABASE_PATH = ':memory:';
+    const { default: db, initDatabase } = await import('../src/db/index.js');
+    initDatabase();
+    const cols = (db.pragma('table_info(provider_profiles)') as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain('map_lat_pub');
+    expect(cols).toContain('map_lng_pub');
+    const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_pp_geo_pub'").get();
+    expect(idx).toBeDefined();
+  });
+
+  // El relleno de la migración se prueba de verdad contra una COPIA de la base de producción
+  // antes de desplegar (es el procedimiento del proyecto y es evidencia más fuerte que un
+  // simulacro en memoria). Aquí se afirma la invariante que ese relleno debe dejar en pie.
+  it('ningún perfil sembrado con punto se queda sin coordenada publicada', async () => {
+    process.env.DATABASE_PATH = ':memory:';
+    process.env.DEMO_MODE = 'true';
+    const { default: db, initDatabase } = await import('../src/db/index.js');
+    const { seedMapa } = await import('../src/db/seed-mapa.js');
+    initDatabase();
+    await seedMapa();
+
+    const huerfanos = db.prepare(`
+      SELECT COUNT(*) AS n FROM provider_profiles
+      WHERE lat IS NOT NULL AND (map_lat_pub IS NULL OR map_lng_pub IS NULL)
+    `).get() as { n: number };
+    expect(huerfanos.n).toBe(0);
+
+    // Y los 'zona' publican de verdad otro punto, dentro del anillo.
+    const zonas = db.prepare(`
+      SELECT lat, lng, map_lat_pub AS pl, map_lng_pub AS pg FROM provider_profiles
+      WHERE map_precision = 'zona' AND lat IS NOT NULL LIMIT 40
+    `).all() as { lat: number; lng: number; pl: number; pg: number }[];
+    expect(zonas.length).toBeGreaterThan(10);
+    for (const z of zonas) {
+      const d = metrosEntre({ lat: z.lat, lng: z.lng }, { lat: z.pl, lng: z.pg });
+      expect(d).toBeGreaterThanOrEqual(RADIO_APROX_MIN_M - 1);
+      expect(d).toBeLessThanOrEqual(RADIO_APROX_MAX_M + 1);
+    }
   });
 });

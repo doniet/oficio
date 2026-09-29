@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import db, { CATEGORIAS_SQL, CELDA_ZONA, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, PLAN_WEIGHT_SQL } from '../db/index.js';
+import db, { CATEGORIAS_SQL, CON_CATALOGO_SQL, CON_NEGOCIO_SQL, LAT_SERVIDA, LNG_SERVIDA, PLAN_WEIGHT_SQL } from '../db/index.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { queryTextos } from '../lib/entrada.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
@@ -98,19 +98,15 @@ router.get('/', asyncHandler(async (req, res) => {
   const celda = tamanoCelda(visible);
   const pedido = conMargen(visible);
 
-  // El BETWEEN crudo (sobre lo guardado) va primero y con holgura de una celda de zona: es
-  // indexable por idx_pp_geo y acota, pero NO decide. Quien decide es el filtro siguiente, sobre
-  // la coordenada SERVIDA — el redondeo mueve un punto como mucho media celda, así que una celda
-  // entera de holgura siempre alcanza para no perder a nadie que el filtro preciso sí deba incluir.
-  const HOLGURA = CELDA_ZONA;
+  // Se filtra SOLO por la coordenada publicada, nunca por la guardada. Ahí está el oráculo: con
+  // rectángulos cada vez más pequeños sobre la coordenada real se podría acorralar por bisección
+  // la casa de un perfil «zona», anulando la única promesa de esa opción. Desde que la publicada
+  // es una columna (migración 13) esto es además un simple BETWEEN indexable por idx_pp_geo_pub:
+  // el filtro de dos capas que hacía falta cuando se redondeaba al vuelo ya no tiene razón de ser.
   let where = `WHERE pp.is_active = 1 AND pp.show_on_map = 1
-    AND pp.lat IS NOT NULL AND pp.lng IS NOT NULL
-    AND pp.lat BETWEEN ? AND ? AND pp.lng BETWEEN ? AND ?
+    AND ${LAT_SERVIDA} IS NOT NULL AND ${LNG_SERVIDA} IS NOT NULL
     AND ${LAT_SERVIDA} BETWEEN ? AND ? AND ${LNG_SERVIDA} BETWEEN ? AND ?`;
-  const params: unknown[] = [
-    pedido.sur - HOLGURA, pedido.norte + HOLGURA, pedido.oeste - HOLGURA, pedido.este + HOLGURA,
-    pedido.sur, pedido.norte, pedido.oeste, pedido.este,
-  ];
+  const params: unknown[] = [pedido.sur, pedido.norte, pedido.oeste, pedido.este];
 
   if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
 

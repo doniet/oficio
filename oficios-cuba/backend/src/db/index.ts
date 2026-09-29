@@ -3,6 +3,7 @@ import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { planDe } from '../config.js';
 import { COORDS_MUNICIPIOS } from './municipios-coords.js';
+import { puntoPublico } from '../lib/ubicacion.js';
 
 export const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -100,6 +101,11 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   agenda TEXT, -- JSON: días y horas en que acepta citas
   show_on_map INTEGER DEFAULT 0, -- el profesional eligió publicar su punto en el mapa
   map_precision TEXT DEFAULT 'exacta' CHECK (map_precision IN ('exacta', 'zona')),
+  -- La coordenada que se publica. Para 'exacta' es la misma; para 'zona', un punto desplazado
+  -- 100-300 m que se sortea UNA vez al establecerla (lib/ubicacion.ts). Se guarda en vez de
+  -- calcularse al servir porque, sorteándola cada vez, promediando se recupera la verdadera.
+  map_lat_pub REAL,
+  map_lng_pub REAL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -402,6 +408,8 @@ CREATE INDEX IF NOT EXISTS idx_providers_province ON provider_profiles(province_
 CREATE INDEX IF NOT EXISTS idx_providers_active ON provider_profiles(is_active);
 CREATE INDEX IF NOT EXISTS idx_providers_subscription ON provider_profiles(subscription_plan);
 CREATE INDEX IF NOT EXISTS idx_pp_geo ON provider_profiles(lat, lng);
+-- El mapa filtra por la coordenada PUBLICADA, no por la guardada: este es el índice que usa.
+CREATE INDEX IF NOT EXISTS idx_pp_geo_pub ON provider_profiles(map_lat_pub, map_lng_pub);
 CREATE INDEX IF NOT EXISTS idx_reviews_provider ON reviews(provider_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_provider ON conversations(provider_id);
@@ -608,6 +616,27 @@ const MIGRACIONES: ((d: typeof db) => void)[] = [
     // tampoco puede quedarse con la coordenada inventada sin que nadie se entere.
     if (sinCoordenada.length) console.warn(`[migración 12] sin coordenada real: ${sinCoordenada.join(', ')}`);
   },
+
+  // 13 — la coordenada publicada pasa a ser una columna. Hasta aquí se calculaba al servir con un
+  // CASE que redondeaba a una celda de ~1 km; ahora un perfil 'zona' publica un punto desplazado
+  // 100-300 m, sorteado UNA sola vez (lib/ubicacion.ts). Sortearlo en cada petición permitiría
+  // promediar respuestas hasta recuperar el punto real, que es justo lo que hay que impedir.
+  (d) => {
+    d.exec(`
+      ALTER TABLE provider_profiles ADD COLUMN map_lat_pub REAL;
+      ALTER TABLE provider_profiles ADD COLUMN map_lng_pub REAL;
+      CREATE INDEX IF NOT EXISTS idx_pp_geo_pub ON provider_profiles(map_lat_pub, map_lng_pub);
+    `);
+    // El relleno sortea el punto de cada perfil 'zona' una vez, aquí. A partir de ahora solo se
+    // vuelve a sortear si su dueño mueve la ubicación o cambia de precisión.
+    const filas = d.prepare("SELECT id, lat, lng, COALESCE(map_precision, 'exacta') AS p FROM provider_profiles WHERE lat IS NOT NULL AND lng IS NOT NULL").all() as
+      { id: string; lat: number; lng: number; p: string }[];
+    const poner = d.prepare('UPDATE provider_profiles SET map_lat_pub = ?, map_lng_pub = ? WHERE id = ?');
+    for (const f of filas) {
+      const pub = puntoPublico(f.lat, f.lng, f.p === 'zona' ? 'zona' : 'exacta');
+      poner.run(pub.lat, pub.lng, f.id);
+    }
+  },
 ];
 
 export const ESQUEMA_VERSION = MIGRACIONES.length;
@@ -668,16 +697,20 @@ export const CATEGORIAS_SQL = `(SELECT json_group_array(name) FROM (
      WHERE s.provider_id = pp.id AND s.is_active = 1
      GROUP BY COALESCE(parent.name, c.name) ORDER BY n DESC, name LIMIT 3))`;
 
-// La coordenada que se publica hacia fuera: si el perfil no es exactamente 'exacta' (incluye
-// 'zona' y cualquier valor inesperado), se redondea a una celda de ~1 km. Dirección segura a
-// propósito — lo que no sea 'exacta' se degrada, nunca al revés — para que un valor inesperado en
-// map_precision no acabe publicando la casa de alguien. La usan routes/mapa.ts (el listado del
-// mapa, que además la usa para decidir qué perfil aparece, no solo qué coordenada mostrar) y
-// routes/providers.ts (GET /providers/:id): dos definiciones del mismo redondeo es el error que
-// esta entrega ya corrigió varias veces con PLAN_WEIGHT_SQL/CON_NEGOCIO_SQL/CATEGORIAS_SQL.
-export const CELDA_ZONA = 0.01;
-export const LAT_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lat ELSE ROUND(pp.lat / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
-export const LNG_SERVIDA = `CASE WHEN pp.map_precision = 'exacta' THEN pp.lng ELSE ROUND(pp.lng / ${CELDA_ZONA}) * ${CELDA_ZONA} END`;
+// La coordenada que se publica hacia fuera. Ya no es una expresión: es una COLUMNA, calculada al
+// guardar por lib/ubicacion.ts. Antes era un CASE que redondeaba a una celda de ~1 km; desde la
+// enmienda del 2026-09-29 el perfil 'zona' publica un punto desplazado 100-300 m, sorteado una
+// sola vez. Sortearlo al servir permitiría promediar peticiones hasta recuperar el punto real.
+//
+// Que sean columnas quita de en medio la clase de error que esta entrega ya persiguió tres veces:
+// el mismo valor definido en dos sitios que acaban separándose. Las usan routes/mapa.ts (que
+// además filtra por ellas — ahí está el oráculo de bisección) y routes/providers.ts.
+//
+// NO se pone respaldo a pp.lat si la pública es NULL: un respaldo así publicaría la coordenada
+// exacta de alguien justo cuando algo ha fallado. Un perfil sin coordenada pública no sale en el
+// mapa, que es el fallo seguro. La migración 13 las rellena todas y un test lo afirma.
+export const LAT_SERVIDA = 'pp.map_lat_pub';
+export const LNG_SERVIDA = 'pp.map_lng_pub';
 
 export function planDelPerfil(providerId: string) {
   const row = db.prepare('SELECT subscription_plan FROM provider_profiles WHERE id = ?').get(providerId) as { subscription_plan: string } | undefined;

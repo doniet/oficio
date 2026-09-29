@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db from './index.js';
+import { puntoPublico } from '../lib/ubicacion.js';
 import { seedBase } from './seed.js';
 
 export const SEED_MAPA_PASSWORD = 'Prueba123!';
@@ -134,11 +135,14 @@ export async function seedMapa(): Promise<number> {
         VALUES (?, ?, ?, ?, ?, 'provider', 1)`)
         .run(userId, `prueba.mapa.${i}@oficios.test`, hash, `Prueba ${i}`, `+53500${String(i).padStart(5, '0')}`);
 
+      // El punto publicado se sortea aquí, igual que lo haría el formulario: así el sembrado
+      // ejercita de verdad el camino aproximado y no una versión de juguete.
+      const pub = puntoPublico(lat, lng, mapPrecision);
       db.prepare(`INSERT INTO provider_profiles
-          (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
+          (id, user_id, business_name, description, province_id, municipality_id, address, lat, lng, map_lat_pub, map_lng_pub, whatsapp, is_active, subscription_plan, show_on_map, map_precision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?)`)
         .run(profileId, userId, nombre, 'Perfil sintético de prueba para la densidad del mapa.',
-          provinceId, municipalityId, direccion, lat, lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
+          provinceId, municipalityId, direccion, lat, lng, pub.lat, pub.lng, `+53500${String(i).padStart(5, '0')}`, plan, mapPrecision);
 
       // Un oficio activo por perfil: lo exige el tab por defecto (servicios) de /api/mapa.
       db.prepare(`INSERT INTO services (id, provider_id, category_id, title, price_type, is_active)
