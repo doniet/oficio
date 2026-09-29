@@ -187,8 +187,7 @@ CREATE TABLE conversations (
   service_id uuid REFERENCES services(id) ON DELETE SET NULL,
   last_message text,
   last_message_at timestamptz NOT NULL DEFAULT now(),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_conversations_client ON conversations (client_id);
@@ -234,7 +233,7 @@ CREATE INDEX idx_uploads_purpose ON uploads (user_id, purpose, created_at);
 CREATE TABLE appointments (
   id uuid PRIMARY KEY,
   provider_id uuid NOT NULL REFERENCES provider_profiles(id) ON DELETE CASCADE,
-  client_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  client_id uuid REFERENCES users(id) ON DELETE CASCADE,
   service_id uuid REFERENCES services(id) ON DELETE SET NULL,
   starts_at timestamptz NOT NULL,
   ends_at timestamptz NOT NULL,
