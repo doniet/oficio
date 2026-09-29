@@ -420,3 +420,43 @@
   pestañas; **decisión de Dariel** si se retira o se renombra.
 - Blockers: pendiente de decidir qué es una «dirección aproximada» (¿solo municipio? ¿calle sin
   número? ¿texto propio?), que es lo que define el modelo de datos de esa opción.
+
+## 2026-09-29 01:35 UTC — claude-code (vps2) — Ubicación aproximada de 100-300 m, /mapa/celda y tema claro
+- Changes: sesión sin interfaz en tmux, con Dariel desconectado. **Enmienda de la spec**
+  (`2026-09-28-ubicacion-aproximada-design.md`, §3bis): el área aproximada baja de la celda de
+  ~1 km a un **anillo de 100-300 m**, y el punto publicado se sortea **UNA vez al guardar** y se
+  guarda en `map_lat_pub`/`map_lng_pub` (migración 13). Sortearlo al servir permitiría promediar
+  peticiones hasta recuperar el real; se usa `node:crypto` y no `Math.random` porque el generador
+  de V8 se reconstruye observando salidas y los puntos publicados SON salidas observables.
+  `LAT_SERVIDA` deja de ser un `CASE` y pasa a ser la columna: desaparece el filtro de dos capas
+  y con él una clase entera de error. **Sin respaldo a `pp.lat`**: un perfil sin publicada
+  desaparece del mapa, que es el fallo seguro. Nuevo `GET /api/mapa/celda`: los N de un grupo
+  dejan de ser inalcanzables. `PuntoMapa` gana `aproximado`, `cy` y `cx`. El aviso de `pp.address`
+  pasa a mostrarse siempre que el campo tenga texto, detrás de `AVISAR_SIEMPRE_DIRECCION`.
+  **Tema claro estilo Apple** en web y app: `paper` a blanco, `sand` a grises neutros, tarjetas de
+  listado sin marco, portadas sin foto como panel liso (#F5F5F7) en vez de degradados de colores,
+  chip activo en naranja de marca. Se quitó la página `/profesionales` (redirige a `/explorar`).
+- Tests: pass — backend **178/178** (eran 165), web 19/19, app 44/44, typechecks y build.
+  Los seis tests que afirmaban el redondeo viejo se reescribieron para lo que ahora importa: que
+  el punto publicado NO cambie entre peticiones (si cambiara, se podría promediar), que guardar
+  otros campos no lo mueva, que moverse sí lo re-sortee, y que un perfil sin publicada desaparezca
+  en vez de caer en la exacta. Nuevo `mapa-celda.test.ts` (5) afirma que la lista trae exactamente
+  `detras+1` y repite el ataque de bisección contra la puerta nueva.
+- Security: **migración probada antes contra una copia de la base real** (312 perfiles con punto →
+  312 con publicada, 0 huérfanos, los 60 «zona» desplazados 113-297 m, `foreign_key_check` vacío);
+  copia borrada tras usarla y respaldo previo en `data/respaldo-antes-migracion13-*.db`. Verificado
+  **contra producción por Cloudflare**: cerrando el rectángulo sobre el punto publicado hasta
+  ±0,0002° el perfil sigue apareciendo (la presencia la decide lo publicado), y un rectángulo de
+  55 m sobre su coordenada REAL no lo encuentra, estando el publicado a 270 m. Sin cambios de red,
+  puertos, auth, túnel ni `.env`.
+  **Apunte propio:** al levantar servidores locales para verificar, el backend quedó escuchando en
+  `*:3010` unos minutos porque `src/index.ts` hace `app.listen(PORT)` sin dirección. Se cerró y se
+  rehízo con un arranque atado a `127.0.0.1`. Conviene decidir si el arranque normal debería
+  aceptar `HOST`; en producción no importa (el contenedor no publica el puerto), pero en este host
+  sí, y es el de producción.
+- Next: el APK 0.2.1 (ver entrada siguiente). La app quedó con una **divergencia deliberada**
+  anotada en el código: su área aproximada es un disco de tamaño fijo en píxeles y no los 300 m
+  reales que sí dibuja la web, porque hacerlo a escala en MapLibre pide `GeoJSONSource` + `Layer`
+  con un polígono y este host no tiene emulador para comprobarlo antes de meterlo en un APK.
+  Pendiente de igualar tras probarlo en emulador (`oficio-app-e2e-emulador`).
+- Blockers: ninguno.
