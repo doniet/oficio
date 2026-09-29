@@ -1,15 +1,17 @@
 import { createServer } from 'http';
 import { AddressInfo } from 'net';
+import { randomUUID } from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { api, db, ponerPlan, registrar } from './helpers.js';
+import { api, ponerPlan, registrar } from './helpers.js';
+import { q, qOne } from '../src/db/acceso.js';
 import { programarAvisos } from '../src/lib/avisos.js';
 import { atenderMensaje, clienteTelegram, enviarPendientes, TelegramError, type Llamar } from '../src/notifier/bot.js';
 
-const botVivo = () => {
-  const poner = db.prepare('INSERT INTO telegram_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-  poner.run('bot_username', 'OficiosCubaBot');
-  poner.run('heartbeat', new Date().toISOString());
-};
+async function botVivo() {
+  const poner = (k: string, v: string) => q('INSERT INTO telegram_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [k, v]);
+  await poner('bot_username', 'OficiosCubaBot');
+  await poner('heartbeat', new Date().toISOString());
+}
 
 let chat = 1000;
 async function conectar(auth: Record<string, string>) {
@@ -17,16 +19,17 @@ async function conectar(auth: Record<string, string>) {
   expect(link.status).toBe(200);
   const codigo = new URL(link.body.url).searchParams.get('start')!;
   const id = ++chat;
-  const respuesta = atenderMensaje({ chat: { id, type: 'private' }, text: `/start ${codigo}` });
+  const respuesta = await atenderMensaje({ chat: { id, type: 'private' }, text: `/start ${codigo}` });
   return { codigo, chat: String(id), respuesta };
 }
 
-const avisosDe = (userId: string) => db.prepare("SELECT kind, text, url, dedupe_key FROM notifications WHERE user_id = ? ORDER BY created_at, rowid").all(userId) as
-  { kind: string; text: string; url: string | null; dedupe_key: string | null }[];
+const avisosDe = (userId: string) => q<{ kind: string; text: string; url: string | null; dedupe_key: string | null }>(
+  'SELECT kind, text, url, dedupe_key FROM notifications WHERE user_id = $1 ORDER BY created_at, id', [userId],
+);
 
 async function profesionalConAgenda() {
   const p = await registrar('provider');
-  ponerPlan(p.providerId!, 'pro');
+  await ponerPlan(p.providerId!, 'pro');
   await api.put('/api/appointments/config').set(p.auth).send({
     semana: Array.from({ length: 7 }, () => [{ desde: '00:00', hasta: '24:00' }]), duracion: 60, intervalo: 60, antelacion_min: 0, horizonte_dias: 5, cancelacion_horas: 0,
   });
@@ -35,14 +38,14 @@ async function profesionalConAgenda() {
 
 describe('vinculación con Telegram', () => {
   it('sin el notificador en marcha no se puede conectar', async () => {
-    db.prepare('DELETE FROM telegram_state').run();
+    await q('DELETE FROM telegram_state');
     const c = await registrar('client');
     expect((await api.get('/api/telegram/status').set(c.auth)).body).toMatchObject({ available: false, linked: false });
     expect((await api.post('/api/telegram/link').set(c.auth)).status).toBe(503);
   });
 
   it('el código es de un solo uso, caduca y /stop desvincula', async () => {
-    botVivo();
+    await botVivo();
     const c = await registrar('client');
     const { codigo, chat: id, respuesta } = await conectar(c.auth);
     expect(respuesta).toContain('Listo');
@@ -50,22 +53,22 @@ describe('vinculación con Telegram', () => {
     expect(estado).toMatchObject({ available: true, bot_username: 'OficiosCubaBot', linked: true });
     expect(estado.groups.map((g: { id: string }) => g.id)).toEqual(['citas', 'recordatorios', 'chat']);
     // El código no se guarda en claro.
-    expect(db.prepare('SELECT COUNT(*) AS n FROM telegram_link_tokens WHERE token_hash = ?').get(codigo)).toEqual({ n: 0 });
+    expect(await qOne<{ n: number }>('SELECT COUNT(*)::int AS n FROM telegram_link_tokens WHERE token_hash = $1', [codigo])).toEqual({ n: 0 });
 
-    expect(atenderMensaje({ chat: { id: 9, type: 'private' }, text: `/start ${codigo}` })).toContain('caducó');
-    expect(atenderMensaje({ chat: { id: 9, type: 'group' }, text: '/start x' })).toBeNull();
+    expect(await atenderMensaje({ chat: { id: 9, type: 'private' }, text: `/start ${codigo}` })).toContain('caducó');
+    expect(await atenderMensaje({ chat: { id: 9, type: 'group' }, text: '/start x' })).toBeNull();
 
     const otro = await registrar('client');
     const link = await api.post('/api/telegram/link').set(otro.auth);
-    db.prepare("UPDATE telegram_link_tokens SET expires_at = '2000-01-01T00:00:00.000Z'").run();
-    expect(atenderMensaje({ chat: { id: 10, type: 'private' }, text: `/start ${new URL(link.body.url).searchParams.get('start')}` })).toContain('caducó');
+    await q("UPDATE telegram_link_tokens SET expires_at = '2000-01-01T00:00:00.000Z'");
+    expect(await atenderMensaje({ chat: { id: 10, type: 'private' }, text: `/start ${new URL(link.body.url).searchParams.get('start')}` })).toContain('caducó');
 
-    expect(atenderMensaje({ chat: { id: Number(id), type: 'private' }, text: '/stop' })).toContain('ya no te enviaré');
+    expect(await atenderMensaje({ chat: { id: Number(id), type: 'private' }, text: '/stop' })).toContain('ya no te enviaré');
     expect((await api.get('/api/telegram/status').set(c.auth)).body.linked).toBe(false);
   });
 
   it('un profesional ve también reseñas y plan, y puede apagar grupos', async () => {
-    botVivo();
+    await botVivo();
     const p = await registrar('provider');
     const estado = (await api.get('/api/telegram/status').set(p.auth)).body;
     expect(estado.groups.map((g: { id: string }) => g.id)).toEqual(['citas', 'recordatorios', 'chat', 'resenas', 'plan']);
@@ -73,11 +76,22 @@ describe('vinculación con Telegram', () => {
     expect(cambiado.body.prefs).toMatchObject({ citas: true, chat: false });
     expect((await api.put('/api/telegram/prefs').set(p.auth).send({ nada: true })).status).toBe(400);
   });
+
+  it('respeta notify_prefs aunque llegue como cadena (fila de antes del porte, no como objeto jsonb)', async () => {
+    const u = await registrar('client');
+    // Antes del porte notify_prefs era texto (SQLite) y guardaba JSON.stringify(apagados) tal
+    // cual. Una fila migrada sin volver a parsear queda en Postgres como un escalar jsonb que
+    // ENVUELVE esa cadena, no como el objeto que escribe hoy PUT /telegram/prefs (que sí es
+    // jsonb objeto y no ejercita esta rama). El doble JSON.stringify simula justo eso.
+    await q('UPDATE users SET notify_prefs = $1::jsonb WHERE id = $2', [JSON.stringify(JSON.stringify({ chat: false })), u.userId]);
+    const estado = (await api.get('/api/telegram/status').set(u.auth)).body;
+    expect(estado.prefs).toMatchObject({ citas: true, chat: false });
+  });
 });
 
 describe('avisos que apunta la API', () => {
   it('citas: nueva al profesional, confirmada y cancelada al cliente, y se respetan las preferencias', async () => {
-    botVivo();
+    await botVivo();
     const p = await profesionalConAgenda();
     const c = await registrar('client');
     await conectar(p.auth);
@@ -85,55 +99,55 @@ describe('avisos que apunta la API', () => {
     const hora = (await api.get(`/api/appointments/provider/${p.providerId}/slots`)).body.days[1].slots[0];
     const cita = (await api.post('/api/appointments').set(c.auth).send({ provider_id: p.providerId, starts_at: hora })).body.appointment;
 
-    expect(avisosDe(p.userId)[0]).toMatchObject({ kind: 'citas', url: 'https://oficio.dardoit.com/dashboard/agenda' });
-    expect(avisosDe(p.userId)[0].text).toMatch(/^📅 Cita nueva por confirmar: Usuario \d+/);
+    expect((await avisosDe(p.userId))[0]).toMatchObject({ kind: 'citas', url: 'https://oficio.dardoit.com/dashboard/agenda' });
+    expect((await avisosDe(p.userId))[0].text).toMatch(/^📅 Cita nueva por confirmar: Usuario \d+/);
 
     await api.patch(`/api/appointments/${cita.id}`).set(p.auth).send({ status: 'confirmed' });
-    expect(avisosDe(c.userId).map((a) => a.text)[0]).toMatch(/^✅ .* confirmó tu cita/);
+    expect((await avisosDe(c.userId)).map((a) => a.text)[0]).toMatch(/^✅ .* confirmó tu cita/);
 
     await api.put('/api/telegram/prefs').set(c.auth).send({ citas: false });
     await api.patch(`/api/appointments/${cita.id}`).set(p.auth).send({ status: 'cancelled' });
-    expect(avisosDe(c.userId)).toHaveLength(1);
+    expect(await avisosDe(c.userId)).toHaveLength(1);
   });
 
   it('chat: sin el texto del mensaje y un aviso por tramo de 10 minutos', async () => {
-    botVivo();
+    await botVivo();
     const p = await registrar('provider');
-    ponerPlan(p.providerId!, 'pro');
+    await ponerPlan(p.providerId!, 'pro');
     const c = await registrar('client');
     await conectar(p.auth);
     const conv = (await api.post('/api/conversations').set(c.auth).send({ provider_id: p.providerId, initial_message: 'Mi clave secreta es 1234' })).body.conversation;
     await api.post(`/api/conversations/${conv.id}/messages`).set(c.auth).send({ content: 'Otro mensaje' });
-    const avisos = avisosDe(p.userId);
+    const avisos = await avisosDe(p.userId);
     expect(avisos).toHaveLength(1);
     expect(avisos[0].text).not.toContain('1234');
     expect(avisos[0].url).toContain(`/dashboard/mensajes/${conv.id}`);
   });
 
   it('recordatorio 24 h antes y aviso de vencimiento, una sola vez', async () => {
-    botVivo();
+    await botVivo();
     const p = await registrar('provider');
     const c = await registrar('client');
     await conectar(c.auth);
     await conectar(p.auth);
     const en = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
-    db.prepare(`INSERT INTO appointments (id, provider_id, client_id, starts_at, ends_at, duration_min, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 60, 'confirmed', ?)`).run(`rec-${c.userId}`, p.providerId, c.userId, en(22), en(23), en(-48));
-    ponerPlan(p.providerId!, 'basic', en(48));
-    programarAvisos();
-    programarAvisos();
-    expect(avisosDe(c.userId).filter((a) => a.kind === 'recordatorios')).toHaveLength(1);
-    expect(avisosDe(c.userId)[0].text).toContain('Recordatorio');
-    expect(avisosDe(p.userId).filter((a) => a.kind === 'plan')).toHaveLength(1);
+    await q(`INSERT INTO appointments (id, provider_id, client_id, starts_at, ends_at, duration_min, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, 60, 'confirmed', $6)`, [randomUUID(), p.providerId, c.userId, en(22), en(23), en(-48)]);
+    await ponerPlan(p.providerId!, 'basic', en(48));
+    await programarAvisos();
+    await programarAvisos();
+    expect((await avisosDe(c.userId)).filter((a) => a.kind === 'recordatorios')).toHaveLength(1);
+    expect((await avisosDe(c.userId))[0].text).toContain('Recordatorio');
+    expect((await avisosDe(p.userId)).filter((a) => a.kind === 'plan')).toHaveLength(1);
   });
 });
 
 describe('oficio_notifier: envío', () => {
   async function conAviso() {
-    botVivo();
+    await botVivo();
     const c = await registrar('client');
     const { chat: id } = await conectar(c.auth);
-    db.prepare("UPDATE notifications SET status = 'sent' WHERE status = 'pending'").run();
+    await q("UPDATE notifications SET status = 'sent' WHERE status = 'pending'");
     await api.post('/api/telegram/test').set(c.auth);
     return { c, chat: id };
   }
@@ -144,7 +158,7 @@ describe('oficio_notifier: envío', () => {
     const llamar: Llamar = async (m, d) => { llamadas.push([m, d]); return {}; };
     expect(await enviarPendientes(llamar)).toBe(1);
     expect(llamadas[0][1]).toMatchObject({ chat_id: id, text: expect.stringContaining('prueba') });
-    expect(db.prepare('SELECT status FROM notifications WHERE user_id = ?').get(c.userId)).toEqual({ status: 'sent' });
+    expect(await qOne<{ status: string }>('SELECT status FROM notifications WHERE user_id = $1', [c.userId])).toEqual({ status: 'sent' });
     // Una segunda prueba en el mismo minuto no se apunta.
     expect((await api.post('/api/telegram/test').set(c.auth)).status).toBe(429);
   });
@@ -152,18 +166,18 @@ describe('oficio_notifier: envío', () => {
   it('si el usuario bloqueó el bot se desvincula; un 429 espera; lo viejo caduca', async () => {
     const { c } = await conAviso();
     await enviarPendientes(async () => { throw new TelegramError(429, 'Too Many Requests', 30); });
-    const n = db.prepare('SELECT status, send_after FROM notifications WHERE user_id = ?').get(c.userId) as { status: string; send_after: string };
-    expect(n.status).toBe('pending');
-    expect(Date.parse(n.send_after)).toBeGreaterThan(Date.now() + 20_000);
+    const n = await qOne<{ status: string; send_after: string }>('SELECT status, send_after FROM notifications WHERE user_id = $1', [c.userId]);
+    expect(n!.status).toBe('pending');
+    expect(Date.parse(n!.send_after)).toBeGreaterThan(Date.now() + 20_000);
 
-    db.prepare('UPDATE notifications SET send_after = ? WHERE user_id = ?').run(new Date().toISOString(), c.userId);
+    await q('UPDATE notifications SET send_after = $1 WHERE user_id = $2', [new Date().toISOString(), c.userId]);
     await enviarPendientes(async () => { throw new TelegramError(403, 'Forbidden: bot was blocked by the user'); });
-    expect(db.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').get(c.userId)).toEqual({ telegram_chat_id: null });
+    expect(await qOne<{ telegram_chat_id: string | null }>('SELECT telegram_chat_id FROM users WHERE id = $1', [c.userId])).toEqual({ telegram_chat_id: null });
 
     const d = await conAviso();
-    db.prepare("UPDATE notifications SET created_at = '2000-01-01T00:00:00.000Z' WHERE user_id = ?").run(d.c.userId);
+    await q("UPDATE notifications SET created_at = '2000-01-01T00:00:00.000Z' WHERE user_id = $1", [d.c.userId]);
     await enviarPendientes(async () => { throw new Error('no debería llamar'); });
-    expect(db.prepare('SELECT status, last_error FROM notifications WHERE user_id = ?').get(d.c.userId)).toEqual({ status: 'skipped', last_error: 'caducado' });
+    expect(await qOne<{ status: string; last_error: string }>('SELECT status, last_error FROM notifications WHERE user_id = $1', [d.c.userId])).toEqual({ status: 'skipped', last_error: 'caducado' });
   });
 
   it('el token del bot no aparece en los errores', async () => {

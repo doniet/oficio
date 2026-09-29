@@ -3,7 +3,7 @@
 // Va en oficio_notifier: es el único contenedor con salida a Google y con la cuenta de servicio.
 // Envía directo (sin pasar por push_outbox) para medir la latencia real de FCM en el teléfono.
 import 'dotenv/config';
-import db from '../notifier/db.js';
+import { q, qOne } from '../notifier/db.js';
 import { crearCanalFcm, cargarCuentaFcm } from '../push/fcm.js';
 
 const USO = 'Uso: push-prueba <email> [n=10] [segundos=30]  (n y segundos: enteros positivos; requiere FCM_SERVICE_ACCOUNT_FILE)';
@@ -25,9 +25,9 @@ async function main() {
 
   const cuenta = cargarCuentaFcm();
   if (!cuenta) { console.error(USO); process.exit(2); }
-  const usuario = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase()) as { id: string } | undefined;
+  const usuario = await qOne<{ id: string }>('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
   if (!usuario) { console.error(`No existe ${email}`); process.exit(1); }
-  const dispositivos = db.prepare('SELECT token FROM push_devices WHERE user_id = ? ORDER BY created_at').all(usuario.id) as { token: string }[];
+  const dispositivos = await q<{ token: string }>('SELECT token FROM push_devices WHERE user_id = $1 ORDER BY created_at', [usuario!.id]);
   if (!dispositivos.length) { console.error('Ese usuario no tiene dispositivos registrados (¿abrió la app con sesión?)'); process.exit(1); }
 
   const canal = crearCanalFcm(cuenta);

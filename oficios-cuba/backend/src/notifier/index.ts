@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createPublicKey, generateKeyPairSync } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
-import db from './db.js';
+import { q } from './db.js';
 import { clienteTelegram, enviarPendientes, estado, latido, presentarse, recibir, type Llamar } from './bot.js';
 import { descifrarToken } from '../lib/telegram-comun.js';
 import { cargarCuentaFcm, crearCanalFcm } from '../push/fcm.js';
@@ -29,8 +29,10 @@ function clavePrivada() {
 
 async function esperarEsquema() {
   for (;;) {
-    const tablas = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('notifications', 'push_outbox')").get() as { n: number };
-    if (tablas.n === 2) return;
+    const tablas = await q<{ n: string }>(
+      "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('notifications', 'push_outbox')",
+    );
+    if (Number(tablas[0].n) === 2) return;
     console.log('Esperando a que la API cree la base…');
     await pausa(5000);
   }
@@ -42,12 +44,12 @@ let version: string | null | undefined;
 /** Relee el token si cambió en el panel y se reconecta. Sin token, el notificador espera. */
 async function sincronizarToken(privada: string) {
   const deEntorno = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const actual = deEntorno ? 'entorno' : estado.leer('token_version') ?? null;
+  const actual = deEntorno ? 'entorno' : (await estado.leer('token_version')) ?? null;
   if (actual === version) return;
   version = actual;
   llamar = null;
-  estado.quitar('bot_username');
-  const cifrado = estado.leer('token_cipher');
+  await estado.quitar('bot_username');
+  const cifrado = await estado.leer('token_cipher');
   if (!deEntorno && !cifrado) {
     console.log('Sin token: esperando a que un admin lo pegue en el panel.');
     return;
@@ -55,16 +57,16 @@ async function sincronizarToken(privada: string) {
   try {
     const token = deEntorno || descifrarToken(privada, cifrado!);
     const cliente = clienteTelegram(token, process.env.TELEGRAM_API_BASE || undefined);
-    const anterior = estado.leer('bot_id');
+    const anterior = await estado.leer('bot_id');
     const usuario = await presentarse(cliente);
     // Otro bot = otra cola de mensajes: su offset empieza de cero.
-    if (anterior !== estado.leer('bot_id')) estado.quitar('update_offset');
-    estado.quitar('token_error');
+    if (anterior !== (await estado.leer('bot_id'))) await estado.quitar('update_offset');
+    await estado.quitar('token_error');
     llamar = cliente;
     console.log(`Notificador activo como @${usuario}`);
   } catch (err) {
     const msg = (err as Error).message;
-    estado.poner('token_error', msg.slice(0, 200));
+    await estado.poner('token_error', msg.slice(0, 200));
     console.error(`El token no funciona: ${msg}`);
   }
 }
@@ -103,14 +105,14 @@ function canalesPush(): CanalesPush {
 async function main() {
   await esperarEsquema();
   const privada = clavePrivada();
-  estado.poner('notifier_pubkey', createPublicKey(privada).export({ type: 'spki', format: 'pem' }) as string);
-  latido();
+  await estado.poner('notifier_pubkey', createPublicKey(privada).export({ type: 'spki', format: 'pem' }) as string);
+  await latido();
   await sincronizarToken(privada);
   const push = canalesPush();
   await Promise.all([
     ...(push.fcm ? [bucle('push', () => enviarPushPendientes(push), 3000)] : []),
     bucle('token', () => sincronizarToken(privada), 10_000),
-    bucle('recibir', async () => (llamar ? recibir(llamar) : (latido(), pausa(5000))), 0),
+    bucle('recibir', async () => (llamar ? recibir(llamar) : (await latido(), pausa(5000))), 0),
     bucle('enviar', async () => (llamar ? enviarPendientes(llamar) : latido()), 3000),
   ]);
 }

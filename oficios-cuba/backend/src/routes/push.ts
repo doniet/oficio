@@ -18,12 +18,12 @@ router.post('/devices', asyncHandler(async (req: AuthRequest, res) => {
   // salga con todos los campos opcionales; zod documenta que su inferencia exige modo strict.
   // Se reconstruye el objeto explícitamente para que el parámetro de registrarDispositivo
   // conserve sus campos requeridos y el compilador SÍ marque error si falta alguno.
-  registrarDispositivo(req.user!.id, { canal: d.canal, token: d.token, plataforma: d.plataforma, app_version: d.app_version ?? '' });
+  await registrarDispositivo(req.user!.id, { canal: d.canal, token: d.token, plataforma: d.plataforma, app_version: d.app_version ?? '' });
   res.status(201).json({ ok: true });
 }));
 
 router.delete('/devices/:token', asyncHandler(async (req: AuthRequest, res) => {
-  borrarDispositivo(req.params.token);
+  await borrarDispositivo(req.params.token);
   res.json({ ok: true });
 }));
 
