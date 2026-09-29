@@ -460,3 +460,22 @@
   con un polígono y este host no tiene emulador para comprobarlo antes de meterlo en un APK.
   Pendiente de igualar tras probarlo en emulador (`oficio-app-e2e-emulador`).
 - Blockers: ninguno.
+
+## 2026-09-29 01:40 UTC — claude-code (vps2) — APK 0.2.1 compilada en j-u y publicada
+- Changes: `app.config.ts` a **0.2.1 / versionCode 4** (la 0.2.0 ya estaba publicada, y la app
+  cambió: tema claro y el mapa dibujando áreas). Compilada en j-u desde un **clon propio**,
+  `~/Documentos/dev/oficio-build-vps2`, clonado de GitHub al commit exacto `b11de1c` para no tocar
+  `~/Documentos/dev/oficio` ni `oficio-apps`, que usan otras sesiones y tienen trabajo sin subir.
+  `google-services.json` copiado desde el repo de trabajo; la llave de firma no salió de j-u.
+- Tests: app 44/44 y `tsc` limpio en el propio clon antes de compilar.
+- Security: firma **111a8cec…9257** verificada por `apk-release.sh`. Comprobado además con `aapt2`:
+  `com.dardoit.oficios`, versionCode 4, versionName 0.2.1, etiqueta Encuentrauno, solo ARM, y los
+  cuatro permisos que disparaban el antivirus de Huawei (SYSTEM_ALERT_WINDOW, RECEIVE_BOOT_COMPLETED,
+  WRITE_EXTERNAL_STORAGE, USE_BIOMETRIC) **ausentes**.
+- Next: verificado desde vps2 sin fiarme del informe del build — 84 494 945 bytes, sha256
+  `5a339f36…b0b8` idéntico en el archivo y en `android.json`; Cloudflare lo sirve con HTTP 200,
+  ese tamaño y el tipo correcto; y el botón (`/api/app/descargar`) devuelve 302 al archivo bueno,
+  así que la cuenta de descargas sigue viva. `publicar-apk.sh` retiró la 0.2.0, como hace siempre.
+- Blockers: ninguno. Pendiente de Dariel: la sesión de j-u tiene un merge local sin subir (su
+  entrada de Camagüey en STATUS.md); `master` se ha movido mucho desde entonces, así que al
+  resolverlo tocará conservar las dos entradas en orden cronológico, como siempre.
