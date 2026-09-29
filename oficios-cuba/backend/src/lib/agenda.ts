@@ -65,10 +65,13 @@ export function agendaDesdeJson(json: unknown): AgendaConfig {
   });
 }
 
-export function leerAgenda(raw: string | null): AgendaConfig {
+// `agenda` es jsonb: pg la entrega ya parseada (objeto), pero algún dato viejo o de seed puede
+// seguir llegando como cadena. Aceptar las dos formas, como parseImages/parsePriceList en
+// db/index.ts, en vez de asumir que siempre es una de las dos.
+export function leerAgenda(raw: unknown): AgendaConfig {
   if (!raw) return AGENDA_POR_DEFECTO;
   try {
-    return agendaDesdeJson(JSON.parse(raw));
+    return agendaDesdeJson(typeof raw === 'string' ? JSON.parse(raw) : raw);
   } catch {
     return AGENDA_POR_DEFECTO;
   }

@@ -253,15 +253,20 @@ CREATE TABLE appointments (
   rescheduled_from uuid REFERENCES appointments(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
+  -- Una cita que el profesional creó a sabiendas de que se solapa (reintento con `forzar`).
+  -- La restricción EXCLUDE de abajo la ignora: si no, la base impediría una función del
+  -- producto, no solo la carrera que la restricción existe para cerrar.
+  forzada boolean NOT NULL DEFAULT false,
   CHECK (ends_at > starts_at),
   -- La base deja de admitir estructuralmente dos citas solapadas del mismo
-  -- profesional. Antes esto dependía de revalidar el solape dentro de la
-  -- transacción, que con READ COMMITTED no basta: dos clientes concurrentes
-  -- pueden leer los dos "libre" e insertar los dos.
+  -- profesional, salvo que el profesional la haya forzado a sabiendas
+  -- (forzada = true, fuera del índice). Antes esto dependía de revalidar el
+  -- solape dentro de la transacción, que con READ COMMITTED no basta: dos
+  -- clientes concurrentes pueden leer los dos "libre" e insertar los dos.
   EXCLUDE USING gist (
     provider_id WITH =,
     tstzrange(starts_at, ends_at) WITH &&
-  ) WHERE (status <> 'cancelled')
+  ) WHERE (status <> 'cancelled' AND NOT forzada)
 );
 
 CREATE INDEX idx_appointments_provider ON appointments (provider_id, starts_at);
