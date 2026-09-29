@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { parseImages, parsePriceList, PLAN_WEIGHT_SQL, providerProfileIdFor, refreshProviderRating } from '../db/index.js';
 import { q, qOne, tx } from '../db/acceso.js';
-import { imagenPermitida, queryTextos } from '../lib/entrada.js';
+import { imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { planDe, TASA_CUP_USD } from '../config.js';
@@ -96,9 +96,14 @@ router.get('/', asyncHandler(async (req, res) => {
       SELECT id FROM categories WHERE id = $${n - 3} OR slug = $${n - 2}
       UNION SELECT id FROM categories WHERE parent_id IN (SELECT id FROM categories WHERE id = $${n - 1} OR slug = $${n}))`;
   }
-  if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
-  if (municipality_id) {
-    params.push(municipality_id, municipality_id);
+  // province_id/municipality_id se comparan contra columnas uuid: si no tienen forma de uuid, se
+  // cambian por un filtro que nunca puede coincidir (ver uuidQuery), no se ignoran ni se deja que
+  // Postgres los rechace con un 22P02 (que errorHandler traduciría a 404 sobre el listado entero).
+  const provinceIdF = uuidQuery(province_id);
+  if (provinceIdF) { params.push(provinceIdF); where += ` AND pp.province_id = $${params.length}`; }
+  const municipalityIdF = uuidQuery(municipality_id);
+  if (municipalityIdF) {
+    params.push(municipalityIdF, municipalityIdF);
     const n = params.length;
     where += ` AND (pp.municipality_id = $${n - 1} OR EXISTS (SELECT 1 FROM service_areas sa WHERE sa.provider_id = pp.id AND sa.municipality_id = $${n}))`;
   }

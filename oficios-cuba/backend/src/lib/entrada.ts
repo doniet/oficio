@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { qOne } from '../db/acceso.js';
 
 // Express convierte `?q=a&q=b` en un array: se toma el primer valor de texto.
@@ -8,6 +9,27 @@ export function textoQuery(v: unknown): string | undefined {
 
 export function queryTextos<K extends string>(query: Record<string, unknown>, claves: readonly K[]) {
   return Object.fromEntries(claves.map((k) => [k, textoQuery(query[k])])) as Record<K, string | undefined>;
+}
+
+const esUuid = (v: string) => z.string().uuid().safeParse(v).success;
+
+// uuid que ni uuidv4() ni ningún seed genera nunca (todo ceros): un filtro que compara contra él no
+// puede igualar ninguna fila real, así que sirve para forzar "sin resultados" sin tocar el resto del
+// WHERE ni la forma de la respuesta de cada ruta.
+const SIN_COINCIDENCIA = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Filtro de query que se compara contra una columna `uuid` (province_id, municipality_id, ...).
+ * Con SQLite (columna TEXT) un valor sin forma de uuid simplemente no igualaba ninguna fila: la
+ * ruta seguía respondiendo 200 con lista vacía. En Postgres, comparar un literal que no es uuid
+ * contra una columna uuid lanza 22P02 en el bind, y errorHandler lo traduce a 404 — así que hay que
+ * validar antes de que Postgres decida. Si `valor` no vino, no hay filtro (undefined); si vino pero
+ * no es un uuid, se sustituye por uno que nunca puede coincidir, para conservar el 200 vacío en vez
+ * de un 404 o de ignorar el filtro que el usuario pidió.
+ */
+export function uuidQuery(valor: string | undefined): string | undefined {
+  if (valor === undefined) return undefined;
+  return esUuid(valor) ? valor : SIN_COINCIDENCIA;
 }
 
 const SUBIDA = /^\/api\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp))$/;

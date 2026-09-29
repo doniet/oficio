@@ -6,7 +6,7 @@ import { q, qOne, tx } from '../db/acceso.js';
 import { hayQueRecalcular, puntoPublico } from '../lib/ubicacion.js';
 import { authMiddleware, AuthRequest, optionalAuth, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { imagenPermitida, queryTextos } from '../lib/entrada.js';
+import { imagenPermitida, queryTextos, uuidQuery } from '../lib/entrada.js';
 import { planDe } from '../config.js';
 
 const router = Router();
@@ -88,7 +88,10 @@ router.get('/', asyncHandler(async (req, res) => {
   if (kind === 'negocio') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
   else if (kind === 'oficio') where += ` AND (pp.kind = 'oficio' OR NOT (${CON_NEGOCIO_SQL}))`;
   else if (kind) throw new AppError('Tipo de perfil no válido', 400);
-  if (province_id) { params.push(province_id); where += ` AND pp.province_id = $${params.length}`; }
+  // province_id se compara contra una columna uuid: si no tiene forma de uuid, se cambia por un
+  // filtro que nunca puede coincidir (ver uuidQuery), no se ignora ni se deja que Postgres lo rechace.
+  const provinceIdF = uuidQuery(province_id);
+  if (provinceIdF) { params.push(provinceIdF); where += ` AND pp.province_id = $${params.length}`; }
   if (category) {
     params.push(category, category, category, category);
     const n = params.length;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q, qOne } from '../db/acceso.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { textoQuery } from '../lib/entrada.js';
+import { textoQuery, uuidQuery } from '../lib/entrada.js';
 
 const router = Router();
 
@@ -30,7 +30,10 @@ router.get('/', asyncHandler(async (_req, res) => {
 
 // Conteo por categoría principal (incluye los servicios de sus subcategorías).
 router.get('/categories', asyncHandler(async (req, res) => {
-  const province_id = textoQuery(req.query.province_id);
+  // province_id se compara contra una columna uuid: si no tiene forma de uuid, se cambia por un
+  // filtro que nunca puede coincidir (ver uuidQuery en lib/entrada.ts), no se ignora ni se deja que
+  // Postgres lo rechace con un 22P02.
+  const province_id = uuidQuery(textoQuery(req.query.province_id));
   const params: unknown[] = [];
   let provinceFilter = '';
   if (province_id) {
