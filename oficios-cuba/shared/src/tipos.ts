@@ -241,12 +241,32 @@ export type PuntoMapa = {
   id: string;
   tipo: 'oficio' | 'negocio';
   nombre: string;
+  /** La coordenada PUBLICADA. Para un perfil aproximado no es la suya: está a 100-300 m. */
   lat: number;
   lng: number;
   plan: 'pro' | 'basic' | 'free';
+  /** El dueño pidió que su punto salga aproximado. Es una preferencia, no una ubicación. */
+  aproximado: boolean;
   detras: number;
+  /** Índices de la celda, tal como los calculó el SERVIDOR. Se reenvían a /mapa/celda sin tocar:
+   *  recalcularlos en el cliente sería definir el mismo número en dos sitios. */
+  cy: number;
+  cx: number;
   resumen: string;
 };
 
 export type MapaRespuesta = { puntos: PuntoMapa[]; celda: number; hay_mas: boolean };
+
+/** El área que se dibuja alrededor de un punto aproximado: el negocio está dentro. */
+export const RADIO_APROX_M = 300;
+
+/**
+ * Debajo de este tamaño de celda, un punto aproximado deja de dibujarse como pin y pasa a área.
+ * Sale de la geometría, no del gusto: la celda mide `min(alto,ancho)/5` del rectángulo visible,
+ * o sea 1/5 del lado corto de la pantalla a cualquier zoom, y por debajo de 0,0054° (≈600 m, el
+ * diámetro del área) los círculos de celdas vecinas se solapan por fuerza. Con el lado corto
+ * abarcando menos de ~3 km, el mapa cambia de modo. Se autoajusta al dispositivo: en un móvil
+ * salta un zoom antes que en una pantalla ancha, porque allí la celda mide más.
+ */
+export const ZONA_DESDE_GRADOS = 0.0054;
 export type Bbox = { sur: number; oeste: number; norte: number; este: number };

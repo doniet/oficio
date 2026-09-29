@@ -37,7 +37,7 @@ function respuestaFalsa(puntos: PuntoMapa[], hayMas = false): Response {
   return { ok: true, json: async () => ({ puntos, celda: 0.01, hay_mas: hayMas }) } as unknown as Response;
 }
 
-const puntoFalso = (id: string): PuntoMapa => ({ id, tipo: 'oficio', nombre: 'Ana', lat: 20, lng: -79, plan: 'free', detras: 0, resumen: 'x' });
+const puntoFalso = (id: string): PuntoMapa => ({ id, tipo: 'oficio', nombre: 'Ana', lat: 20, lng: -79, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0, resumen: 'x' });
 const BBOX_A = { sur: 20, oeste: -80, norte: 21, este: -79 };
 const BBOX_B = { sur: 22, oeste: -78, norte: 23, este: -77 };
 

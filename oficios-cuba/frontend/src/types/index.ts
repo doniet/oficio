@@ -491,16 +491,32 @@ export interface AdminTelegram {
 
 export interface AdminAuditEntry { action: string; detail: string | null; ip: string | null; created_at: string; email: string | null }
 
+// Gemelo de shared/src/tipos.ts. La web no importa de @oficio/shared (la app sí), así que esta
+// copia tiene que moverse a la vez: si se separan, el mapa de la web y el de la app dejan de
+// contar lo mismo y nada lo avisa hasta que alguien lo mira.
 export type PuntoMapa = {
   id: string;
   tipo: 'oficio' | 'negocio';
   nombre: string;
+  /** La coordenada PUBLICADA. Para un perfil aproximado no es la suya: está a 100-300 m. */
   lat: number;
   lng: number;
   plan: 'pro' | 'basic' | 'free';
+  /** El dueño pidió que su punto salga aproximado. Es una preferencia, no una ubicación. */
+  aproximado: boolean;
   detras: number;
+  /** Índices de celda tal como los calculó el servidor; se reenvían a /mapa/celda sin tocar. */
+  cy: number;
+  cx: number;
   resumen: string;
 };
 
 export type MapaRespuesta = { puntos: PuntoMapa[]; celda: number; hay_mas: boolean };
+
+/** El área que se dibuja alrededor de un punto aproximado: el negocio está dentro. */
+export const RADIO_APROX_M = 300;
+
+/** Debajo de este tamaño de celda, lo aproximado deja de ser pin y pasa a área (≈3 km a la
+ *  vista). Sale de la geometría: por debajo de 0,0054° el área de 600 m no cabe en su celda. */
+export const ZONA_DESDE_GRADOS = 0.0054;
 export type Bbox = { sur: number; oeste: number; norte: number; este: number };

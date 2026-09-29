@@ -84,6 +84,63 @@ function resumenDe(providerId: string, tab: string): string {
   return resumenServicio(providerId);
 }
 
+/**
+ * El filtro de perfiles visibles del mapa. Lo comparten GET /mapa y GET /mapa/celda: si cada uno
+ * escribiera el suyo, la lista de una celda podría no coincidir con el «+N» que la anuncia, y el
+ * usuario vería «5 más» y le saldrían cuatro. Es la misma razón por la que el tamaño de celda lo
+ * calcula el servidor en los dos sitios.
+ */
+function filtroDeVisibles(tab: string, q: string | undefined, category: string | undefined, pedido: { sur: number; norte: number; oeste: number; este: number }) {
+  // Se filtra SOLO por la coordenada publicada, nunca por la guardada. Ahí está el oráculo: con
+// rectángulos cada vez más pequeños sobre la coordenada real se podría acorralar por bisección
+// la casa de un perfil «zona», anulando la única promesa de esa opción. Desde que la publicada
+// es una columna (migración 13) esto es además un simple BETWEEN indexable por idx_pp_geo_pub:
+// el filtro de dos capas que hacía falta cuando se redondeaba al vuelo ya no tiene razón de ser.
+let where = `WHERE pp.is_active = 1 AND pp.show_on_map = 1
+  AND ${LAT_SERVIDA} IS NOT NULL AND ${LNG_SERVIDA} IS NOT NULL
+  AND ${LAT_SERVIDA} BETWEEN ? AND ? AND ${LNG_SERVIDA} BETWEEN ? AND ?`;
+const params: unknown[] = [pedido.sur, pedido.norte, pedido.oeste, pedido.este];
+
+if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
+
+// `q` tiene que buscar lo mismo que busca la lista de esa pestaña (services.ts / catalog.ts):
+// si no, cambiar de lista a mapa con un término escrito casi siempre vacía el mapa, porque el
+// término coincide con un servicio o un artículo, no con el nombre del negocio. Negocios es la
+// excepción a propósito: ahí no hay un "servicio que coincide" que mostrar, así que sí busca en
+// los campos del propio perfil.
+const termino = q && q.trim() ? `%${q.trim()}%` : null;
+
+if (tab === 'servicios') {
+  where += ` AND EXISTS (SELECT 1 FROM services s
+    LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
+    WHERE s.provider_id = pp.id AND s.is_active = 1`;
+  // pp.business_name igual que services.ts:109 — el nombre del negocio es un término válido
+  // en la lista, y sin él aquí el mismo término vacía el mapa al cambiar de vista.
+  if (termino) where += ' AND (s.title LIKE ? OR s.description LIKE ? OR c.name LIKE ? OR parent.name LIKE ? OR pp.business_name LIKE ?)';
+  where += ')';
+  if (termino) params.push(termino, termino, termino, termino, termino);
+}
+if (tab === 'productos') {
+  // `catalog_items` NO tiene `is_active`: la visibilidad es `available` más el tope del plan.
+  where += ` AND EXISTS (SELECT 1 FROM catalog_items ci
+    WHERE ci.provider_id = pp.id AND ci.available = 1 AND ${CON_CATALOGO_SQL}`;
+  // pp.business_name igual que catalog.ts:78 (/catalog/search, la que usa la pestaña Productos).
+  if (termino) where += ' AND (ci.name LIKE ? OR ci.description LIKE ? OR ci.section LIKE ? OR pp.business_name LIKE ?)';
+  where += ')';
+  if (termino) params.push(termino, termino, termino, termino);
+}
+if (category) {
+  where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
+    WHERE s.is_active = 1 AND (c.id = ? OR c.slug = ? OR c.parent_id IN (SELECT id FROM categories WHERE id = ? OR slug = ?)))`;
+  params.push(category, category, category, category);
+}
+if (tab === 'negocios' && termino) {
+  where += ' AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)';
+  params.push(termino, termino, termino);
+}
+  return { where, params };
+}
+
 router.get('/', asyncHandler(async (req, res) => {
   // Un tab que no sea una cadena (p. ej. ?tab[x]=1) no puede caer en el valor por defecto en
   // silencio: es justo el filtro que separa negocios de oficios, y la spec pide fallar, no adivinar.
@@ -98,60 +155,14 @@ router.get('/', asyncHandler(async (req, res) => {
   const celda = tamanoCelda(visible);
   const pedido = conMargen(visible);
 
-  // Se filtra SOLO por la coordenada publicada, nunca por la guardada. Ahí está el oráculo: con
-  // rectángulos cada vez más pequeños sobre la coordenada real se podría acorralar por bisección
-  // la casa de un perfil «zona», anulando la única promesa de esa opción. Desde que la publicada
-  // es una columna (migración 13) esto es además un simple BETWEEN indexable por idx_pp_geo_pub:
-  // el filtro de dos capas que hacía falta cuando se redondeaba al vuelo ya no tiene razón de ser.
-  let where = `WHERE pp.is_active = 1 AND pp.show_on_map = 1
-    AND ${LAT_SERVIDA} IS NOT NULL AND ${LNG_SERVIDA} IS NOT NULL
-    AND ${LAT_SERVIDA} BETWEEN ? AND ? AND ${LNG_SERVIDA} BETWEEN ? AND ?`;
-  const params: unknown[] = [pedido.sur, pedido.norte, pedido.oeste, pedido.este];
-
-  if (tab === 'negocios') where += ` AND pp.kind = 'negocio' AND ${CON_NEGOCIO_SQL}`;
-
-  // `q` tiene que buscar lo mismo que busca la lista de esa pestaña (services.ts / catalog.ts):
-  // si no, cambiar de lista a mapa con un término escrito casi siempre vacía el mapa, porque el
-  // término coincide con un servicio o un artículo, no con el nombre del negocio. Negocios es la
-  // excepción a propósito: ahí no hay un "servicio que coincide" que mostrar, así que sí busca en
-  // los campos del propio perfil.
-  const termino = q && q.trim() ? `%${q.trim()}%` : null;
-
-  if (tab === 'servicios') {
-    where += ` AND EXISTS (SELECT 1 FROM services s
-      LEFT JOIN categories c ON s.category_id = c.id LEFT JOIN categories parent ON c.parent_id = parent.id
-      WHERE s.provider_id = pp.id AND s.is_active = 1`;
-    // pp.business_name igual que services.ts:109 — el nombre del negocio es un término válido
-    // en la lista, y sin él aquí el mismo término vacía el mapa al cambiar de vista.
-    if (termino) where += ' AND (s.title LIKE ? OR s.description LIKE ? OR c.name LIKE ? OR parent.name LIKE ? OR pp.business_name LIKE ?)';
-    where += ')';
-    if (termino) params.push(termino, termino, termino, termino, termino);
-  }
-  if (tab === 'productos') {
-    // `catalog_items` NO tiene `is_active`: la visibilidad es `available` más el tope del plan.
-    where += ` AND EXISTS (SELECT 1 FROM catalog_items ci
-      WHERE ci.provider_id = pp.id AND ci.available = 1 AND ${CON_CATALOGO_SQL}`;
-    // pp.business_name igual que catalog.ts:78 (/catalog/search, la que usa la pestaña Productos).
-    if (termino) where += ' AND (ci.name LIKE ? OR ci.description LIKE ? OR ci.section LIKE ? OR pp.business_name LIKE ?)';
-    where += ')';
-    if (termino) params.push(termino, termino, termino, termino);
-  }
-  if (category) {
-    where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
-      WHERE s.is_active = 1 AND (c.id = ? OR c.slug = ? OR c.parent_id IN (SELECT id FROM categories WHERE id = ? OR slug = ?)))`;
-    params.push(category, category, category, category);
-  }
-  if (tab === 'negocios' && termino) {
-    where += ' AND (pp.business_name LIKE ? OR pp.description LIKE ? OR u.full_name LIKE ?)';
-    params.push(termino, termino, termino);
-  }
+  const { where, params } = filtroDeVisibles(tab, q, category, pedido);
 
   // Las dos CTE se aliasan `pp` a propósito: PLAN_WEIGHT_SQL lleva el prefijo `pp.` escrito
   // dentro, así que sin el alias el ORDER BY de fuera fallaría con «no such column».
   const orden = `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC, pp.id`;
   const filas = db.prepare(`
     WITH visibles AS (
-      SELECT pp.id, pp.kind, pp.subscription_plan, ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng,
+      SELECT pp.id, pp.kind, pp.subscription_plan, pp.map_precision, ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng,
              pp.business_name, pp.rating, pp.review_count, u.full_name AS owner_name,
              CAST(${LAT_SERVIDA} / ? AS INT) AS cy, CAST(${LNG_SERVIDA} / ? AS INT) AS cx
         FROM provider_profiles pp JOIN users u ON pp.user_id = u.id
@@ -178,7 +189,72 @@ router.get('/', asyncHandler(async (req, res) => {
     lat: f.lat,
     lng: f.lng,
     plan: f.subscription_plan === 'premium' ? 'pro' : f.subscription_plan,
+    // Sin esta bandera el cliente no puede dibujar distinto lo aproximado, y un negocio con local
+    // real se vería tan difuso como quien se esconde. Revela una preferencia, no una ubicación.
+    aproximado: f.map_precision === 'zona',
     detras: f.en_celda - 1,
+    // Los índices de celda VIENEN del servidor y el cliente los reenvía a /mapa/celda tal cual.
+    // Recalcularlos en el cliente sería definir el mismo número en dos sitios: CAST(x/celda AS INT)
+    // en SQLite y Math.trunc en JS coinciden hoy, pero es exactamente el error que esta entrega ya
+    // corrigió tres veces. No añaden información: salen de lat/lng y celda, que ya viajan.
+    cy: f.cy,
+    cx: f.cx,
+    resumen: resumenDe(f.id, tab),
+  }));
+
+  res.json({ puntos, celda, hay_mas });
+}));
+
+// Los negocios de UNA celda, con los mismos filtros. Hasta ahora `detras` era solo una insignia:
+// si una celda tenía cinco negocios veías uno y los otros cuatro eran inalcanzables desde el mapa.
+const TOPE_CELDA = 50;
+
+router.get('/celda', asyncHandler(async (req, res) => {
+  if (req.query.tab !== undefined && typeof req.query.tab !== 'string') {
+    throw new AppError('Pestaña no válida', 400);
+  }
+  const { tab = 'servicios', q, category } = queryTextos(req.query, ['tab', 'q', 'category'] as const);
+  if (!PESTANAS.includes(tab as (typeof PESTANAS)[number])) {
+    throw new AppError('Pestaña no válida', 400);
+  }
+  const cy = Number(req.query.cy);
+  const cx = Number(req.query.cx);
+  if (!Number.isInteger(cy) || !Number.isInteger(cx)) {
+    throw new AppError('Celda no válida', 400);
+  }
+
+  // El tamaño de celda lo recalcula el servidor del mismo bbox y con la misma función que /mapa:
+  // si viniera del cliente, dos definiciones del mismo número acabarían separándose y la lista
+  // dejaría de coincidir con el «+N» que la anunció.
+  const visible = leerBbox(typeof req.query.bbox === 'string' ? req.query.bbox : undefined);
+  const celda = tamanoCelda(visible);
+  const pedido = conMargen(visible);
+  const { where, params } = filtroDeVisibles(tab, q, category, pedido);
+
+  const orden = `${PLAN_WEIGHT_SQL} DESC, pp.rating DESC, pp.review_count DESC, pp.id`;
+  const filas = db.prepare(`
+    WITH visibles AS (
+      SELECT pp.id, pp.kind, pp.subscription_plan, pp.map_precision, ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng,
+             pp.business_name, pp.rating, pp.review_count, u.full_name AS owner_name,
+             CAST(${LAT_SERVIDA} / ? AS INT) AS cy, CAST(${LNG_SERVIDA} / ? AS INT) AS cx
+        FROM provider_profiles pp JOIN users u ON pp.user_id = u.id
+      ${where}
+    )
+    SELECT * FROM visibles pp WHERE pp.cy = ? AND pp.cx = ? ORDER BY ${orden} LIMIT ?
+  `).all(celda, celda, ...params, cy, cx, TOPE_CELDA + 1) as any[];
+
+  const hay_mas = filas.length > TOPE_CELDA;
+  const puntos = filas.slice(0, TOPE_CELDA).map((f) => ({
+    id: f.id,
+    tipo: segunPlan(f).kind as 'oficio' | 'negocio',
+    nombre: f.business_name || f.owner_name,
+    lat: f.lat,
+    lng: f.lng,
+    plan: f.subscription_plan === 'premium' ? 'pro' : f.subscription_plan,
+    aproximado: f.map_precision === 'zona',
+    detras: 0,
+    cy: f.cy,
+    cx: f.cx,
     resumen: resumenDe(f.id, tab),
   }));
 

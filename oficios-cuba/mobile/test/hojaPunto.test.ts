@@ -1,7 +1,7 @@
 import type { PuntoMapa } from '@oficio/shared';
 import { atrasCierraHoja } from '../src/lib/hojaPunto';
 
-const puntoFalso: PuntoMapa = { id: 'p1', tipo: 'oficio', nombre: 'Ana', lat: 20, lng: -79, plan: 'free', detras: 0, resumen: 'x' };
+const puntoFalso: PuntoMapa = { id: 'p1', tipo: 'oficio', nombre: 'Ana', lat: 20, lng: -79, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0, resumen: 'x' };
 
 describe('atrasCierraHoja', () => {
   it('sin punto abierto, deja pasar el Atrás — sale de la pantalla', () => {
