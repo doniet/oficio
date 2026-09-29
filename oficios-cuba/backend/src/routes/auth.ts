@@ -183,7 +183,9 @@ router.put('/profile', authMiddleware, asyncHandler(async (req: AuthRequest, res
   const data = updateSchema.parse(req.body);
   if (data.avatar_url) {
     const actual = await qOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id = $1', [req.user!.id]);
-    if (!imagenPermitida(data.avatar_url, req.user!.id, actual?.avatar_url ? [actual.avatar_url] : [])) {
+    // imagenPermitida consulta la base y es async: sin await la validación se salta en silencio
+    // (!Promise es siempre false) y el typecheck no avisa (strict:false).
+    if (!(await imagenPermitida(data.avatar_url, req.user!.id, actual?.avatar_url ? [actual.avatar_url] : []))) {
       throw new AppError('URL de imagen no válida', 400);
     }
   }

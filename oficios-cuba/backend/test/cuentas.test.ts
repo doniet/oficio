@@ -38,6 +38,17 @@ describe('sesiones', () => {
   });
 });
 
+describe('validación de imágenes', () => {
+  // imagenPermitida es async desde la Tarea 8; sin `await` en el llamador la validación se salta
+  // en silencio (!Promise es siempre false) y el typecheck no lo detecta (strict:false). Este test
+  // no depende de /api/uploads (Tarea 9, sin portar): basta con que la URL externa sea rechazada.
+  it('el avatar rechaza una URL externa arbitraria', async () => {
+    const u = await registrar('client');
+    const res = await api.put('/api/auth/profile').set(u.auth).send({ avatar_url: 'https://ejemplo.com/foto.jpg' });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('perfil público del proveedor', () => {
   it('no expone coordenadas si el profesional no eligió mostrarlas en el mapa', async () => {
     const pro = await registrar('provider');

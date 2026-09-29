@@ -183,8 +183,13 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
   if (gallery.length > plan.maxPhotos) {
     throw new AppError(plan.maxPhotos ? `Tu plan ${plan.name} permite ${plan.maxPhotos} fotos del negocio` : `El plan ${plan.name} no incluye fotos del negocio. Mejora tu plan para subirlas.`, 403);
   }
-  if (gallery.some((url) => !imagenPermitida(url, req.user!.id, galeriaActual))) {
-    throw new AppError('Alguna foto no es válida: súbela desde el formulario', 400);
+  // imagenPermitida consulta la base y es async: un .some() con callback async siempre da true
+  // (la Promise es truthy) y la validación se saltaría en silencio, sin que el typecheck avise
+  // (strict:false). Se recorre con un bucle en su lugar.
+  for (const url of gallery) {
+    if (!(await imagenPermitida(url, req.user!.id, galeriaActual))) {
+      throw new AppError('Alguna foto no es válida: súbela desde el formulario', 400);
+    }
   }
   // El plan Gratis solo lleva nombre, logo, descripción, dirección y teléfono.
   if (!plan.maxPhotos) { data.telegram = undefined; data.email_contact = undefined; }

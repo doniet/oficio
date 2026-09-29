@@ -38,8 +38,10 @@ function miPerfil(req: AuthRequest) {
   return { id, plan: planDelPerfil(id) };
 }
 
-function assertImagen(url: string | null | undefined, userId: string, anterior?: string | null) {
-  if (url && !imagenPermitida(url, userId, anterior ? [anterior] : [])) throw new AppError('Imagen no válida', 400);
+// imagenPermitida consulta la base y es async: sin await la validación se salta en silencio
+// (!Promise es siempre false) y el typecheck no avisa (strict:false).
+async function assertImagen(url: string | null | undefined, userId: string, anterior?: string | null) {
+  if (url && !(await imagenPermitida(url, userId, anterior ? [anterior] : []))) throw new AppError('Imagen no válida', 400);
 }
 
 // ── Público ─────────────────────────────────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
   const { id: providerId, plan } = miPerfil(req);
   const data = itemSchema.parse(req.body);
   if (!plan.maxCatalog) throw new AppError(`El plan ${plan.name} no incluye catálogo. Mejora tu plan para usarlo.`, 403);
-  assertImagen(data.image, req.user!.id);
+  await assertImagen(data.image, req.user!.id);
 
   const id = uuidv4();
   db.transaction(() => {
@@ -144,7 +146,7 @@ router.put('/:id', authMiddleware, requireProvider, asyncHandler(async (req: Aut
   const { item, plan } = itemPropio(req);
   if (!plan.maxCatalog) throw new AppError(`El plan ${plan.name} no incluye catálogo. Mejora tu plan para usarlo.`, 403);
   const data = itemSchema.parse(req.body);
-  assertImagen(data.image, req.user!.id, item.image);
+  await assertImagen(data.image, req.user!.id, item.image);
   db.prepare(`UPDATE catalog_items SET name = ?, description = ?, price = ?, price_type = ?, price_currency = ?, image = ?, section = ?, available = ?, updated_at = ?
     WHERE id = ?`)
     .run(data.name, limpiar(data.description), data.price_type === 'ask' ? null : data.price, data.price_type, data.price_currency,

@@ -69,6 +69,20 @@ describe('filtrar el listado de proveedores por tipo', () => {
   });
 });
 
+describe('validación de imágenes', () => {
+  // imagenPermitida es async desde la Tarea 8; sin `await` en el llamador la validación se salta
+  // en silencio (!Promise es siempre false, o un .some() con callback async siempre da true), y el
+  // typecheck no lo detecta (strict:false).
+  it('la galería del negocio rechaza una URL externa arbitraria', async () => {
+    const p = await registrar('provider');
+    await ponerPlan(p.providerId!, 'basic'); // Gratis no tiene fotos de galería (maxPhotos=0).
+    const res = await api.put('/api/providers/me/profile').set(p.auth).send({
+      province_id: await provinciaId(), gallery: ['https://ejemplo.com/foto.jpg'],
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('orden de ?sort=rating', () => {
   // SQLite pone los NULL primero en ASC; Postgres los pone últimos. pp.rating no admite NULL hoy
   // (DEFAULT 0), pero el ORDER BY lleva NULLS LAST explícito para que esto no dependa de que nadie
