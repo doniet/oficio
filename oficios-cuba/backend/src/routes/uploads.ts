@@ -5,7 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest, requireProvider } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import db, { planDelPerfil, providerProfileIdFor } from '../db/index.js';
+import { q, qOne } from '../db/acceso.js';
+import { planDelPerfil, providerProfileIdFor } from '../db/index.js';
 
 const dbPath = process.env.DATABASE_PATH || resolve(__dirname, '../../data/oficios.db');
 export const UPLOAD_DIR = join(dirname(dbPath), 'uploads');
@@ -31,11 +32,17 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
   // Las fotos del catálogo tienen su propia cuota: todas las que permite el plan en 24 h, para
   // poder cargar el catálogo de una vez. Contar por 24 h (y no por fotos en uso) impide saltarse
   // el tope borrando y volviendo a subir.
-  const tope = purpose === 'catalog' ? planDelPerfil(providerProfileIdFor(req.user!.id) ?? '').maxCatalog : MAX_POR_DIA;
+  const tope = purpose === 'catalog'
+    ? (await planDelPerfil((await providerProfileIdFor(req.user!.id)) ?? '')).maxCatalog
+    : MAX_POR_DIA;
   if (!tope) throw new AppError('Tu plan no incluye catálogo. Mejora tu plan para usarlo.', 403);
-  const { n } = db.prepare(`SELECT COUNT(*) AS n FROM uploads WHERE user_id = ? AND created_at > ? AND purpose IS ${purpose ? "'catalog'" : 'NULL'}`)
-    .get(req.user!.id, desde) as { n: number };
-  if (n >= tope) throw new AppError('Has subido demasiadas fotos hoy. Inténtalo mañana.', 429);
+  // purpose es NULL para el resto de subidas: IS NOT DISTINCT FROM compara igual a NULL sin
+  // que haga falta interpolar SQL a mano según venga o no purpose.
+  const { n } = (await qOne<{ n: string }>(
+    'SELECT COUNT(*) AS n FROM uploads WHERE user_id = $1 AND created_at > $2 AND purpose IS NOT DISTINCT FROM $3',
+    [req.user!.id, desde, purpose ?? null],
+  ))!;
+  if (Number(n) >= tope) throw new AppError('Has subido demasiadas fotos hoy. Inténtalo mañana.', 429);
 
   const base64 = data.replace(/^data:image\/[a-z]+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
@@ -45,7 +52,7 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
 
   const name = `${uuidv4()}.${ext}`;
   writeFileSync(join(UPLOAD_DIR, name), buf);
-  db.prepare('INSERT INTO uploads (name, user_id, purpose, created_at) VALUES (?, ?, ?, ?)').run(name, req.user!.id, purpose ?? null, new Date().toISOString());
+  await q('INSERT INTO uploads (name, user_id, purpose, created_at) VALUES ($1, $2, $3, $4)', [name, req.user!.id, purpose ?? null, new Date().toISOString()]);
   res.status(201).json({ url: `/api/uploads/${name}` });
 }));
 
@@ -53,17 +60,19 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
  * Borra del disco una foto subida que ya no usa nada (catálogo, servicios, galería, avatar).
  * La fila de `uploads` se queda: sigue contando para la cuota de 24 h.
  */
-export function borrarSiHuerfana(url: string | null | undefined) {
+export async function borrarSiHuerfana(url: string | null | undefined) {
   const m = url && /^\/api\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp))$/.exec(url);
   if (!m) return;
   const like = `%${m[1]}%`;
-  const enUso = db.prepare(`
-    SELECT 1 FROM catalog_items WHERE image = ?
-    UNION ALL SELECT 1 FROM services WHERE images LIKE ?
-    UNION ALL SELECT 1 FROM provider_profiles WHERE gallery LIKE ?
-    UNION ALL SELECT 1 FROM users WHERE avatar_url = ?
+  // services.images y provider_profiles.gallery son jsonb: LIKE no opera sobre jsonb directo,
+  // hay que compararlas como texto.
+  const enUso = await qOne(`
+    SELECT 1 FROM catalog_items WHERE image = $1
+    UNION ALL SELECT 1 FROM services WHERE images::text LIKE $2
+    UNION ALL SELECT 1 FROM provider_profiles WHERE gallery::text LIKE $2
+    UNION ALL SELECT 1 FROM users WHERE avatar_url = $1
     LIMIT 1
-  `).get(url, like, like, url);
+  `, [url, like]);
   if (enUso) return;
   try { unlinkSync(join(UPLOAD_DIR, m[1])); } catch { /* ya no estaba */ }
 }
