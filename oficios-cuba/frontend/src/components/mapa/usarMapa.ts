@@ -14,6 +14,20 @@ const ANTIRREBOTE_ZOOM_MS = 250;
 const ANTIRREBOTE_TEXTO_MS = 300;
 
 /**
+ * Recorta el rectángulo visible a los mismos límites. En un móvil en vertical el mapa a zoom 7 abarca
+ * más latitud que la propia isla (18,5–24,5) y /api/mapa lo rechazaba con 400: el mapa se abría vacío.
+ * Lo que queda fuera de Cuba es mar, así que recortarlo no esconde ningún negocio.
+ */
+export function acotarBbox(b: Bbox): Bbox {
+  return {
+    sur: Math.max(19, b.sur),
+    oeste: Math.max(-85.5, b.oeste),
+    norte: Math.min(24, b.norte),
+    este: Math.min(-73.5, b.este),
+  };
+}
+
+/**
  * Recorta a los límites geográficos que acepta /api/mapa (lat 19–24, lng −85,5 a −73,5).
  * Un cubano en Miami, o detrás de una VPN, se geolocaliza fuera de Cuba: centrar el mapa ahí
  * daría un bbox que el endpoint rechaza con 400 en vez de mostrar el mapa.

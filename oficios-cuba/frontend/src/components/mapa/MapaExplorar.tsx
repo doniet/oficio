@@ -4,14 +4,14 @@ import L, { type LatLngBounds, type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed } from 'lucide-react';
 import { Spinner } from '../ui';
-import { acotarACuba, usarMapa } from './usarMapa';
+import { acotarACuba, acotarBbox, usarMapa } from './usarMapa';
 import { RADIO_APROX_M, ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '../../types';
 
 const CUBA_CENTER: [number, number] = [21.6, -79.6];
 const CUBA_BOUNDS: L.LatLngBoundsExpression = [[19, -85.5], [24, -73.5]];
 
 function aBbox(b: LatLngBounds): Bbox {
-  return { sur: b.getSouth(), oeste: b.getWest(), norte: b.getNorth(), este: b.getEast() };
+  return acotarBbox({ sur: b.getSouth(), oeste: b.getWest(), norte: b.getNorth(), este: b.getEast() });
 }
 
 // divIcon en vez del icono por defecto de Leaflet, igual que PlaceMap/MapPointPicker: el default

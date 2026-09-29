@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { acotarACuba, usarMapa } from './usarMapa';
+import { acotarACuba, acotarBbox, usarMapa } from './usarMapa';
 import MapaExplorar from './MapaExplorar';
 import { mapaApi } from '../../services/api';
 import type { Bbox, MapaRespuesta, PuntoMapa } from '../../types';
@@ -18,6 +18,24 @@ vi.mock('../../services/api', async () => {
 const bbox: Bbox = { sur: 22, oeste: -83, norte: 23, este: -82 };
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe('acotarBbox', () => {
+  // Móvil en vertical a zoom 7: el rectángulo visible es alto y se sale de los 19–24° que acepta
+  // /api/mapa (18,48–24,50 medido en producción). El servidor responde 400 y el mapa se quedaba
+  // vacío con «Área del mapa no válida». Fuera de Cuba no hay nada que mostrar: se recorta.
+  it('recorta un rectángulo que se sale de Cuba', () => {
+    expect(acotarBbox({ sur: 18.48, oeste: -81.47, norte: 24.5, este: -77.73 }))
+      .toEqual({ sur: 19, oeste: -81.47, norte: 24, este: -77.73 });
+  });
+  it('deja intacto lo que ya cabe', () => {
+    const b = { sur: 22.9, oeste: -82.6, norte: 23.3, este: -82.1 };
+    expect(acotarBbox(b)).toEqual(b);
+  });
+  it('recorta también en longitud', () => {
+    expect(acotarBbox({ sur: 21, oeste: -86.2, norte: 22, este: -73.0 }))
+      .toEqual({ sur: 21, oeste: -85.5, norte: 22, este: -73.5 });
+  });
+});
 
 describe('acotarACuba', () => {
   it('deja una posición cubana como está', () => {
