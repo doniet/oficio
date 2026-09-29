@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { api, crearServicio, db, ponerPlan, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
+import { api, crearServicio, ponerPlan, registrar } from './helpers.js';
 
 const TODA_LA_SEMANA = Array.from({ length: 7 }, () => [{ desde: '00:00', hasta: '24:00' }]);
 
 async function profesional(agenda: Record<string, unknown> = {}) {
   const p = await registrar('provider');
-  ponerPlan(p.providerId!, 'pro');
+  await ponerPlan(p.providerId!, 'pro');
   const res = await api.put('/api/appointments/config').set(p.auth)
     .send({ semana: TODA_LA_SEMANA, duracion: 60, intervalo: 60, antelacion_min: 0, horizonte_dias: 10, ...agenda });
   if (res.status !== 200) throw new Error(JSON.stringify(res.body));
@@ -92,7 +93,7 @@ describe('agenda profesional', () => {
     expect(res.status).toBe(201);
     // Con confirmación manual, la nueva hora vuelve a esperar al profesional.
     expect(res.body.appointment).toMatchObject({ status: 'pending', rescheduled_from: vieja.id, starts_at: libres[8] });
-    expect(db.prepare('SELECT status, cancelled_by FROM appointments WHERE id = ?').get(vieja.id)).toEqual({ status: 'cancelled', cancelled_by: 'client' });
+    expect(await qOne('SELECT status, cancelled_by FROM appointments WHERE id = $1', [vieja.id])).toEqual({ status: 'cancelled', cancelled_by: 'client' });
     expect(todos(await slots(p.providerId!))).toContain(libres[4]);
 
     // El profesional puede moverla a cualquier hora, pero se le avisa si choca.
