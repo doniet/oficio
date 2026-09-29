@@ -1,33 +1,36 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { refreshProviderRating } from '../db/index.js';
+import { refreshProviderRating } from '../db/index.js';
+import { q, qOne } from '../db/acceso.js';
 import { authMiddleware, AuthRequest, requireClient } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { avisarResena } from '../lib/avisos.js';
 
 const router = Router();
 
-function eligibility(clientId: string, serviceId: string) {
-  const service = db.prepare(`
+// reviews.provider_profile_id es el id del PERFIL de proveedor, no el del usuario (Tarea 3). El
+// contrato JSON de la API no cambia: sigue llamándose provider_id.
+async function eligibility(clientId: string, serviceId: string) {
+  const service = await qOne<{ id: string; provider_id: string }>(`
     SELECT s.id, s.provider_id FROM services s JOIN provider_profiles pp ON s.provider_id = pp.id
-    WHERE s.id = ? AND s.is_active = 1 AND pp.is_active = 1
-  `).get(serviceId) as { id: string; provider_id: string } | undefined;
+    WHERE s.id = $1 AND s.is_active = true AND pp.is_active = true
+  `, [serviceId]);
   if (!service) return { service: null, can_review: false, reason: 'Servicio no encontrado' };
   // Una reseña por cliente y proveedor: si no, un mismo cliente multiplica su voto con cada servicio.
-  if (db.prepare('SELECT 1 FROM reviews WHERE client_id = ? AND provider_id = ?').get(clientId, service.provider_id)) {
+  if (await qOne('SELECT 1 FROM reviews WHERE client_id = $1 AND provider_profile_id = $2', [clientId, service.provider_id])) {
     return { service, can_review: false, reason: 'Ya reseñaste a este profesional' };
   }
   // Solo reseña quien de verdad trató con el proveedor: que le haya contestado en el chat, que
   // haya tenido una cita confirmada o que lo haya contactado por WhatsApp o llamada con su sesión.
   // Abrir una conversación con un "hola" desde una cuenta nueva no basta.
-  const trato = db.prepare(`
+  const trato = await qOne(`
     SELECT 1 FROM conversations c JOIN messages m ON m.conversation_id = c.id
-      WHERE c.client_id = ? AND c.provider_id = ? AND m.sender_type = 'provider'
-    UNION ALL SELECT 1 FROM appointments WHERE client_id = ? AND provider_id = ? AND status IN ('confirmed', 'done')
-    UNION ALL SELECT 1 FROM contacts WHERE client_id = ? AND provider_id = ?
+      WHERE c.client_id = $1 AND c.provider_profile_id = $2 AND m.sender_type = 'provider'
+    UNION ALL SELECT 1 FROM appointments WHERE client_id = $1 AND provider_id = $2 AND status IN ('confirmed', 'done')
+    UNION ALL SELECT 1 FROM contacts WHERE client_id = $1 AND provider_id = $2
     LIMIT 1
-  `).get(clientId, service.provider_id, clientId, service.provider_id, clientId, service.provider_id);
+  `, [clientId, service.provider_id]);
   if (!trato) {
     return { service, can_review: false, reason: 'Podrás reseñar cuando hayas contactado a este profesional por WhatsApp, llamada, chat o una cita' };
   }
@@ -35,7 +38,7 @@ function eligibility(clientId: string, serviceId: string) {
 }
 
 router.get('/eligibility/:serviceId', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const { can_review, reason } = eligibility(req.user!.id, req.params.serviceId);
+  const { can_review, reason } = await eligibility(req.user!.id, req.params.serviceId);
   res.json({ can_review, reason });
 }));
 
@@ -46,40 +49,48 @@ router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthReq
     comment: z.string().trim().max(1000).optional(),
   }).parse(req.body);
 
-  const { service, can_review, reason } = eligibility(req.user!.id, data.service_id);
+  const { service, can_review, reason } = await eligibility(req.user!.id, data.service_id);
   if (!service) throw new AppError('Servicio no encontrado', 404);
   if (!can_review) throw new AppError(reason!, 400);
 
   const id = uuidv4();
-  db.prepare('INSERT INTO reviews (id, service_id, client_id, provider_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, data.service_id, req.user!.id, service.provider_id, data.rating, data.comment || null, new Date().toISOString());
-  refreshProviderRating(service.provider_id);
+  await q(
+    'INSERT INTO reviews (id, service_id, client_id, provider_profile_id, rating, comment, created_at) VALUES ($1, $2, $3, $4, $5, $6, now())',
+    [id, data.service_id, req.user!.id, service.provider_id, data.rating, data.comment || null],
+  );
+  await refreshProviderRating(service.provider_id);
+  // avisarResena (lib/avisos.ts) ya envuelve su propio cuerpo en try/catch: un aviso que falle no
+  // debe tumbar la reseña.
   avisarResena(service.provider_id, req.user!.id, data.rating);
 
-  const review = db.prepare(`
+  const review = await qOne(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar
-    FROM reviews r JOIN users u ON r.client_id = u.id WHERE r.id = ?
-  `).get(id);
+    FROM reviews r JOIN users u ON r.client_id = u.id WHERE r.id = $1
+  `, [id]);
   res.status(201).json({ review });
 }));
 
 router.get('/provider/:providerId', asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
-  const reviews = db.prepare(`
+  const reviews = await q(`
     SELECT r.id, r.rating, r.comment, r.created_at, u.full_name AS client_name, u.avatar_url AS client_avatar, s.title AS service_title
     FROM reviews r JOIN users u ON r.client_id = u.id LEFT JOIN services s ON r.service_id = s.id
-    WHERE r.provider_id = ? ORDER BY r.created_at DESC LIMIT ? OFFSET ?
-  `).all(req.params.providerId, limit, (page - 1) * limit);
-  const { count } = db.prepare('SELECT COUNT(*) AS count FROM reviews WHERE provider_id = ?').get(req.params.providerId) as { count: number };
+    WHERE r.provider_profile_id = $1 ORDER BY r.created_at DESC LIMIT $2 OFFSET $3
+  `, [req.params.providerId, limit, (page - 1) * limit]);
+  const countRow = await qOne<{ count: string }>('SELECT COUNT(*) AS count FROM reviews WHERE provider_profile_id = $1', [req.params.providerId]);
+  const count = Number(countRow?.count ?? 0);
   res.json({ reviews, pagination: { page, limit, total: count, totalPages: Math.max(1, Math.ceil(count / limit)) } });
 }));
 
 router.delete('/:id', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const review = db.prepare('SELECT provider_id FROM reviews WHERE id = ? AND client_id = ?').get(req.params.id, req.user!.id) as { provider_id: string } | undefined;
+  const review = await qOne<{ provider_id: string }>(
+    'SELECT provider_profile_id AS provider_id FROM reviews WHERE id = $1 AND client_id = $2',
+    [req.params.id, req.user!.id],
+  );
   if (!review) throw new AppError('Reseña no encontrada', 404);
-  db.prepare('DELETE FROM reviews WHERE id = ?').run(req.params.id);
-  refreshProviderRating(review.provider_id);
+  await q('DELETE FROM reviews WHERE id = $1', [req.params.id]);
+  await refreshProviderRating(review.provider_id);
   res.json({ message: 'Reseña eliminada' });
 }));
 

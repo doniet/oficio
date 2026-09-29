@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { api, crearServicio, db, ponerPlan, registrar } from './helpers.js';
+import { api, crearServicio, ponerPlan, registrar } from './helpers.js';
+import { qOne } from '../src/db/acceso.js';
 
 async function escenario() {
   const pro = await registrar('provider');
   const cli = await registrar('client');
-  ponerPlan(pro.providerId!, 'pro');
+  await ponerPlan(pro.providerId!, 'pro');
   const s1 = (await crearServicio(pro.auth)).body.service.id as string;
   const s2 = (await crearServicio(pro.auth)).body.service.id as string;
   const conv = await api.post('/api/conversations').set(cli.auth).send({ provider_id: pro.providerId, service_id: s1, initial_message: 'hola' });
@@ -35,8 +36,8 @@ describe('reseñas', () => {
     await api.post(`/api/conversations/${conversationId}/messages`).set(pro.auth).send({ content: 'claro' });
     expect((await reseñar(cli.auth, s1)).status).toBe(201);
     expect((await reseñar(cli.auth, s2)).status).toBe(400);
-    const { n } = db.prepare('SELECT COUNT(*) AS n FROM reviews WHERE provider_id = ?').get(pro.providerId) as { n: number };
-    expect(n).toBe(1);
+    const fila = await qOne<{ n: string }>('SELECT COUNT(*) AS n FROM reviews WHERE provider_profile_id = $1', [pro.providerId]);
+    expect(Number(fila!.n)).toBe(1);
   });
 
   it('no se puede reseñar un servicio pausado', async () => {

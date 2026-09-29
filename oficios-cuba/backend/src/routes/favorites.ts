@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import db, { parseImages } from '../db/index.js';
+import { parseImages } from '../db/index.js';
+import { q, qOne } from '../db/acceso.js';
 import { authMiddleware, AuthRequest, requireClient } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = Router();
 
 router.get('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const favorites = db.prepare(`
+  const favorites = await q<any>(`
     SELECT
       f.*,
       pp.id as provider_id,
@@ -23,54 +24,54 @@ router.get('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequ
       m.name as municipality_name,
       u.full_name as owner_name,
       u.avatar_url,
-      (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1) as service_count,
-      (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = 1 AND s.images NOT IN ('[]', '') ORDER BY s.created_at LIMIT 1) as cover_images
+      (SELECT COUNT(*) FROM services s WHERE s.provider_id = pp.id AND s.is_active = true) as service_count,
+      (SELECT s.images FROM services s WHERE s.provider_id = pp.id AND s.is_active = true AND s.images IS NOT NULL AND s.images <> '[]'::jsonb ORDER BY s.created_at LIMIT 1) as cover_images
     FROM favorites f
     JOIN provider_profiles pp ON f.provider_id = pp.id
     JOIN users u ON pp.user_id = u.id
     LEFT JOIN provinces p ON pp.province_id = p.id
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
-    WHERE f.client_id = ? AND pp.is_active = 1
+    WHERE f.client_id = $1 AND pp.is_active = true
     ORDER BY f.created_at DESC
-  `).all(req.user!.id);
+  `, [req.user!.id]);
 
   res.json({
-    favorites: favorites.map((f: any) => {
-      const { cover_images, ...rest } = f;
-      return { ...rest, cover: parseImages(cover_images)[0] ?? null };
+    favorites: favorites.map((f) => {
+      const { cover_images, service_count, ...rest } = f;
+      return { ...rest, service_count: Number(service_count), cover: parseImages(cover_images)[0] ?? null };
     }),
   });
 }));
 
 router.get('/ids', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const rows = db.prepare('SELECT provider_id FROM favorites WHERE client_id = ?').all(req.user!.id) as { provider_id: string }[];
+  const rows = await q<{ provider_id: string }>('SELECT provider_id FROM favorites WHERE client_id = $1', [req.user!.id]);
   res.json({ ids: rows.map((r) => r.provider_id) });
 }));
 
 router.post('/', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
   const { provider_id } = z.object({ provider_id: z.string().uuid('ID de proveedor requerido') }).parse(req.body);
 
-  const provider = db.prepare('SELECT id FROM provider_profiles WHERE id = ? AND is_active = 1').get(provider_id);
+  const provider = await qOne('SELECT id FROM provider_profiles WHERE id = $1 AND is_active = true', [provider_id]);
   if (!provider) {
     throw new AppError('Proveedor no encontrado', 404);
   }
 
-  db.prepare('INSERT OR IGNORE INTO favorites (id, client_id, provider_id, created_at) VALUES (?, ?, ?, ?)')
-    .run(uuidv4(), req.user!.id, provider_id, new Date().toISOString());
+  await q(
+    'INSERT INTO favorites (id, client_id, provider_id, created_at) VALUES ($1, $2, $3, now()) ON CONFLICT (client_id, provider_id) DO NOTHING',
+    [uuidv4(), req.user!.id, provider_id],
+  );
 
   res.status(201).json({ message: 'Agregado a favoritos' });
 }));
 
 router.delete('/:providerId', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  db.prepare('DELETE FROM favorites WHERE client_id = ? AND provider_id = ?')
-    .run(req.user!.id, req.params.providerId);
+  await q('DELETE FROM favorites WHERE client_id = $1 AND provider_id = $2', [req.user!.id, req.params.providerId]);
 
   res.json({ message: 'Eliminado de favoritos' });
 }));
 
 router.get('/check/:providerId', authMiddleware, requireClient, asyncHandler(async (req: AuthRequest, res) => {
-  const favorite = db.prepare('SELECT id FROM favorites WHERE client_id = ? AND provider_id = ?')
-    .get(req.user!.id, req.params.providerId);
+  const favorite = await qOne('SELECT id FROM favorites WHERE client_id = $1 AND provider_id = $2', [req.user!.id, req.params.providerId]);
 
   res.json({ is_favorite: !!favorite });
 }));
