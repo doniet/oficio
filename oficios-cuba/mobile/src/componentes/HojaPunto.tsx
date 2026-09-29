@@ -11,7 +11,7 @@ import { configApi } from '../lib/api';
 import { atrasCierraHoja } from '../lib/hojaPunto';
 import { fuentes, ink, radios, sand } from '../lib/tema';
 
-// Dos anclajes (30 % / 85 %). Se exportan porque explorar.tsx los necesita para reservar el
+// espacio del mapa y que sus controles flotantes (Cerca de mí, Reintentar) no queden tapados — ver el comentario
 // espacio del mapa y que su botón «Buscar en esta zona» no quede tapado — ver el comentario
 // junto a `altoReservadoMapa` en explorar.tsx. En la web ese acoplamiento lo resolvía una
 // variable CSS que el mapa leía en vivo; en React Native no hay nada parecido a una variable

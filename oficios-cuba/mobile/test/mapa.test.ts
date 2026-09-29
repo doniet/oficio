@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { PuntoMapa } from '@oficio/shared';
-import { acotarACuba, usarMapa } from '../src/lib/mapa';
+import { acotarACuba, acotarBbox, usarMapa } from '../src/lib/mapa';
 
 // El archivo es .ts (no .tsx: `jest.config.js` solo mira `test/**/*.test.ts`), así que se monta
 // el hook con `createElement` en vez de JSX — el mismo truco que un `renderHook` casero.
@@ -52,6 +52,17 @@ async function avanzarYVaciar(ms: number) {
   });
 }
 
+describe('acotarBbox', () => {
+  // Un teléfono en vertical a zoom 6,3 ve más latitud que la isla: sin recortar, /api/mapa
+  // responde 400 y el mapa se abre vacío (pasó en la web, 29-sep).
+  it('recorta un rectángulo que se sale de Cuba', () => {
+    expect(acotarBbox({ sur: 17.2, oeste: -86.1, norte: 25.9, este: -72.9 })).toEqual({ sur: 19, oeste: -85.5, norte: 24, este: -73.5 });
+  });
+  it('deja intacto lo que ya cabe', () => {
+    expect(acotarBbox(BBOX_A)).toEqual(BBOX_A);
+  });
+});
+
 describe('acotarACuba', () => {
   it('deja pasar una coordenada ya dentro de Cuba', () => {
     expect(acotarACuba(21, -79)).toEqual({ lat: 21, lng: -79 });
@@ -87,31 +98,44 @@ describe('usarMapa', () => {
     h.desmontar();
   });
 
-  it('el paneo NO recarga — solo marca la zona sucia', async () => {
-    const { fetchMock } = fetchControlable();
-    global.fetch = fetchMock as unknown as typeof fetch;
-    const h = montarHook({ tab: 'servicios', q: '', category: '' });
-
-    expect(h.estado.zonaSucia).toBe(false);
-    act(() => { h.estado.alMoverMapa(BBOX_A, false); });
-    await avanzarYVaciar(1000);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(h.estado.zonaSucia).toBe(true);
-
-    h.desmontar();
-  });
-
-  it('«Buscar en esta zona» limpia lo sucio y carga de inmediato, sin esperar el antirrebote', async () => {
+  it('arrastrar recarga solo a los 500 ms de soltar, ni un ms antes (decisión de Dariel, 29-sep)', async () => {
     const { fetchMock, llamadas } = fetchControlable();
     global.fetch = fetchMock as unknown as typeof fetch;
     const h = montarHook({ tab: 'servicios', q: '', category: '' });
 
     act(() => { h.estado.alMoverMapa(BBOX_A, false); });
-    expect(h.estado.zonaSucia).toBe(true);
-    act(() => { h.estado.buscarZonaVisible(); });
+    await avanzarYVaciar(499);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await avanzarYVaciar(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(llamadas[0].url).searchParams.get('bbox')).toBe('20,-80,21,-79');
+
+    h.desmontar();
+  });
+
+  it('varios arrastres seguidos hacen UNA petición, con la última zona', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, false); });
+    await avanzarYVaciar(300);
+    act(() => { h.estado.alMoverMapa(BBOX_B, false); });
+    await avanzarYVaciar(500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(llamadas[0].url).searchParams.get('bbox')).toBe('22,-78,23,-77');
+
+    h.desmontar();
+  });
+
+  it('«Reintentar» (buscarZonaVisible) carga de inmediato, sin esperar el antirrebote', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.buscarZonaVisible(BBOX_A); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); await Promise.resolve(); await Promise.resolve(); });
-    expect(h.estado.zonaSucia).toBe(false);
     expect(h.estado.puntos.map((p) => p.id)).toEqual(['p1']);
 
     h.desmontar();

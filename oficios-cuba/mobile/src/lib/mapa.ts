@@ -17,7 +17,21 @@ export function acotarACuba(lat: number, lng: number): { lat: number; lng: numbe
   };
 }
 
+// Recorta el rectángulo visible a esos límites. Un teléfono en vertical a zoom 6,3 ve más latitud
+// que la isla y el endpoint lo rechazaba con 400. Lo que queda fuera es mar: no esconde a nadie.
+export function acotarBbox(b: Bbox): Bbox {
+  return {
+    sur: Math.max(CUBA.sur, b.sur),
+    oeste: Math.max(CUBA.oeste, b.oeste),
+    norte: Math.min(CUBA.norte, b.norte),
+    este: Math.min(CUBA.este, b.este),
+  };
+}
+
 const ANTIRREBOTE_ZOOM_MS = 250;
+// Arrastrar recarga solo (decisión de Dariel, 2026-09-29; antes sacaba «Buscar en esta zona»), pero
+// espera más que el zoom: un arrastre llega en ráfaga y la zona buena es donde se suelta el dedo.
+const ANTIRREBOTE_PANEO_MS = 500;
 const ANTIRREBOTE_TEXTO_MS = 300;
 // Mismo valor que el timeout interno de crearCliente (shared/src/api.ts) y el de axios en la web
 // (frontend/src/services/api.ts): `fetch` no tiene tiempo de espera propio, así que sin este
@@ -41,18 +55,16 @@ export type EstadoMapa = {
   puntos: PuntoMapa[];
   cargando: boolean;
   error: boolean;
-  /** Regla 2: el usuario paneó sin recargar — hay que ofrecerle «Buscar en esta zona». */
-  zonaSucia: boolean;
   hayMas: boolean;
   /** Tamaño de celda que devolvió el servidor. Decide si lo aproximado se dibuja como área. */
   celda: number;
 };
 
-const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, zonaSucia: false, hayMas: false, celda: 0 };
+const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, hayMas: false, celda: 0 };
 
 /**
  * El mismo hook de carga que usarMapa.ts de la web (frontend/src/components/mapa/), con las
- * mismas cinco reglas: el zoom recarga solo (250 ms), el paneo solo ensucia la zona, el texto
+ * mismas cinco reglas: el zoom recarga solo (250 ms), el paneo también (500 ms), el texto
  * recarga solo (300 ms), toda carga cancela la anterior en vuelo, y el centro se acota a Cuba.
  */
 export function usarMapa({ tab, q, category }: { tab: string; q: string; category: string }) {
@@ -82,7 +94,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
       .then((r) => {
         limpiarTiempoEspera();
         if (propio.signal.aborted) return;
-        setEstado({ puntos: r.puntos, cargando: false, error: false, zonaSucia: false, hayMas: r.hay_mas, celda: r.celda });
+        setEstado({ puntos: r.puntos, cargando: false, error: false, hayMas: r.hay_mas, celda: r.celda });
       })
       .catch(() => {
         limpiarTiempoEspera();
@@ -112,17 +124,12 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   /** El mapa llama a esto en cada cambio de región (onRegionDidChange). */
   const alMoverMapa = useCallback((bbox: Bbox, esZoom: boolean) => {
     bboxVisible.current = bbox;
-    if (esZoom) {
-      // Regla 1: el zoom recarga solo — hacer zoom EN SÍ es pedir más detalle.
-      limpiarTemporizador();
-      temporizador.current = setTimeout(() => cargar(bbox), ANTIRREBOTE_ZOOM_MS);
-    } else {
-      // Regla 2: el paneo no dispara nada; solo se marca la zona como sucia.
-      setEstado((e) => (e.zonaSucia ? e : { ...e, zonaSucia: true }));
-    }
+    // Reglas 1 y 2: zoom y paneo recargan solos; el zoom antes, porque es un gesto deliberado.
+    limpiarTemporizador();
+    temporizador.current = setTimeout(() => cargar(bbox), esZoom ? ANTIRREBOTE_ZOOM_MS : ANTIRREBOTE_PANEO_MS);
   }, [cargar]);
 
-  /** Carga inicial (al montar el mapa) o el botón «Buscar en esta zona». */
+  /** Carga inicial (al montar el mapa) o «Reintentar» tras un error. */
   const buscarZonaVisible = useCallback((bbox?: Bbox) => {
     const objetivo = bbox ?? bboxVisible.current;
     if (!objetivo) return;

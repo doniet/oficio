@@ -13,8 +13,7 @@ import {
   type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
 import { ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '@oficio/shared';
-import { Boton } from './Boton';
-import { acotarACuba, CUBA, usarMapa } from '../lib/mapa';
+import { acotarACuba, acotarBbox, CUBA, usarMapa } from '../lib/mapa';
 import { brand, fuentes, ink, radios, sand, sombra } from '../lib/tema';
 
 // Solo OpenStreetMap: mismas teselas que Leaflet en la web, sin clave de API. `attribution` en
@@ -30,7 +29,14 @@ const ESTILO_OSM: StyleSpecification = {
       attribution: '© OpenStreetMap contributors',
     },
   },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  // Estilo Positron sin cambiar de teselas (mismo ajuste que el filtro CSS de la web, en
+  // frontend/src/index.css): tierra casi lisa, mar gris azulado, y los pines como único color.
+  layers: [{
+    id: 'osm',
+    type: 'raster',
+    source: 'osm',
+    paint: { 'raster-saturation': -0.78, 'raster-contrast': -0.2, 'raster-brightness-min': 0.1 },
+  }],
 };
 
 const LIMITES_CUBA: LngLatBounds = [CUBA.oeste, CUBA.sur, CUBA.este, CUBA.norte];
@@ -46,7 +52,7 @@ const ZOOM_CERCA_DE_MI = 13;
 const UMBRAL_ZOOM = 0.05;
 
 function bboxDeLimites([oeste, sur, este, norte]: LngLatBounds): Bbox {
-  return { sur, oeste, norte, este };
+  return acotarBbox({ sur, oeste, norte, este });
 }
 
 const COLOR_PIN: Record<PuntoMapa['plan'], string> = {
@@ -106,7 +112,7 @@ const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; 
 });
 
 export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: string; q: string; category: string; onAbrir(p: PuntoMapa): void }) {
-  const { puntos, cargando, error, zonaSucia, celda, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
+  const { puntos, cargando, error, celda, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
 
   // Mismo umbral que la web (ZONA_DESDE_GRADOS, en @oficio/shared): por debajo de este tamaño de
   // celda el área ya no cabe en ella. Una constante y dos clientes, o el mismo negocio se vería
@@ -216,11 +222,6 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
         </View>
       ) : null}
 
-      {zonaSucia ? (
-        <View style={e.filaBoton}>
-          <Boton titulo="Buscar en esta zona" icono="refresh" onPress={() => buscarZonaVisible()} estilo={sombra.lift} />
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -272,5 +273,4 @@ const e = StyleSheet.create({
     position: 'absolute', right: 16, bottom: 80, maxWidth: 220, backgroundColor: ink[900], borderRadius: radios.campo, paddingHorizontal: 12, paddingVertical: 10,
   },
   avisoUbicacionTexto: { fontFamily: fuentes.texto, fontSize: 12, lineHeight: 17, color: '#ffffff' },
-  filaBoton: { position: 'absolute', bottom: 24, alignSelf: 'center' },
 });
