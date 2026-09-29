@@ -251,18 +251,21 @@ router.post('/manual', authMiddleware, requireProvider, asyncHandler(async (req:
   const cita = { inicio, fin: inicio + data.duration_min * 60_000 };
 
   const id = uuidv4();
+  const forzada = Boolean(data.forzar);
   try {
     await tx(async (c) => {
-      await assertSinChoque(c, providerId, cita, Boolean(data.forzar));
-      await c.q(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, created_at)
-        VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, 'manual', 'confirmed', $10)`,
+      await assertSinChoque(c, providerId, cita, forzada);
+      // forzada = true saca la fila del índice de la EXCLUDE (esquema.sql): "forzar" es una
+      // función del producto (apuntar una cita a sabiendas de que se solapa), no un descuido.
+      await c.q(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, forzada, created_at)
+        VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, 'manual', 'confirmed', $10, $11)`,
         [id, providerId, servicio.id, iso(cita.inicio), iso(cita.fin), data.duration_min, data.note || null,
-          data.client_name, data.client_phone || null, iso(Date.now())]);
+          data.client_name, data.client_phone || null, forzada, iso(Date.now())]);
     });
   } catch (e) {
-    // Igual que en la reserva online: la restricción EXCLUDE es quien de verdad impide el
-    // solape. Aquí puede saltar aunque no haya carrera: "forzar" solo se salta la revalidación
-    // de arriba, pero la base sigue sin admitir dos citas activas que se pisen.
+    // Con forzada = true la EXCLUDE ya no mira esta fila, así que un 23P01 aquí solo puede
+    // venir de una carrera real (otra cita, no forzada, que se coló entre la revalidación de
+    // arriba y este INSERT) — no de "forzar" siendo pisado por la restricción.
     if ((e as { code?: string }).code === '23P01') {
       throw new AppError('Esa hora choca con otra cita activa de tu agenda.', 409, 'choque');
     }
@@ -405,21 +408,27 @@ router.post('/:id/reschedule', authMiddleware, asyncHandler(async (req: AuthRequ
   }
 
   const id = uuidv4();
+  // Solo el profesional puede forzar (assertSinChoque es la única que acepta el flag); si el
+  // cliente lo manda igual, se ignora, igual que ya ignoraba `forzar` assertHuecoLibre.
+  const forzada = !esCliente && Boolean(data.forzar);
   try {
     await tx(async (c) => {
       if (esCliente) await assertHuecoLibre(c, cita.provider_id, await perfilSinPlan(c, cita.provider_id), cita.duration_min, iso(inicio), cita.id);
-      else await assertSinChoque(c, cita.provider_id, nueva, Boolean(data.forzar), cita.id);
+      else await assertSinChoque(c, cita.provider_id, nueva, forzada, cita.id);
       const ahora = iso(Date.now());
       await c.q("UPDATE appointments SET status = 'cancelled', cancelled_by = $1, updated_at = $2 WHERE id = $3",
         [esCliente ? 'client' : 'provider', ahora, cita.id]);
-      await c.q(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, rescheduled_from, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      // forzada = true saca la fila del índice de la EXCLUDE (esquema.sql): igual que en la
+      // cita manual, "forzar" es una función del producto, no un descuido a corregir.
+      await c.q(`INSERT INTO appointments (id, provider_id, client_id, service_id, starts_at, ends_at, duration_min, note, client_name, client_phone, origin, status, rescheduled_from, forzada, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [id, cita.provider_id, cita.client_id, cita.service_id, iso(nueva.inicio), iso(nueva.fin), cita.duration_min, cita.note,
-          cita.client_name, cita.client_phone, cita.origin, status, cita.id, ahora]);
+          cita.client_name, cita.client_phone, cita.origin, status, cita.id, forzada, ahora]);
     });
   } catch (e) {
-    // Misma traducción que en la reserva y en la cita manual: la EXCLUDE puede saltar por una
-    // carrera o porque "forzar" se saltó la revalidación pero la base la sigue rechazando.
+    // Con forzada = true la EXCLUDE ya no mira esta fila: un 23P01 aquí solo puede venir de una
+    // carrera real (otra cita, no forzada, colada entre la revalidación y este INSERT), no de
+    // que "forzar" quede pisado por la restricción.
     if ((e as { code?: string }).code === '23P01') {
       throw new AppError('Esa hora choca con otra cita activa de tu agenda.', 409, 'choque');
     }
