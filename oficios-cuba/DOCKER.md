@@ -19,14 +19,22 @@ Si `data/` no existe, Docker lo crea como root y la API no puede escribir la bas
 ## Actualizar
 
 ```bash
-# 1. Copia de la base ANTES (la API la migra sola al arrancar si el esquema cambió)
-docker exec oficio_api node -e "require('better-sqlite3')('/app/data/oficios.db').backup('/app/data/oficios-$(date +%F-%H%M).db').then(()=>console.log('ok'))"
+# 1. Copia de la base ANTES (la API la migra sola al arrancar si el esquema cambió). oficio_db
+#    no publica puertos (red interna oficio_net): pg_dump corre DENTRO del contenedor y su
+#    salida se redirige al host a través del propio `docker exec`, sin necesidad de exponer nada.
+docker exec oficio_db pg_dump -U oficio -d oficio -Fc > oficio-$(date +%F-%H%M).dump
 # 2. Código nuevo y reconstrucción
 git pull
 docker compose up -d --build
 # 3. Comprobar
 docker compose ps                     # ambos healthy
 docker logs oficio_api --tail 20      # "Base de datos migrada a la versión N" si hubo migración
+```
+
+Restaurar ese respaldo (contra una base vacía, p. ej. tras recrear el volumen):
+
+```bash
+docker exec -i oficio_db pg_restore -U oficio -d oficio --clean --if-exists < oficio-<fecha>.dump
 ```
 
 ## Pagos manuales (sin pasarela)
@@ -41,8 +49,10 @@ docker exec oficio_api node dist/scripts/pagos.js rechazar <subscription_id>
 
 ## Datos
 
-- `data/oficios.db` (+ `-wal`, `-shm`): la base SQLite. Copiar los tres juntos o usar `.backup()` como arriba.
-- `data/uploads/`: fotos subidas por los proveedores.
+- La base vive en el **volumen Docker nombrado `oficio_pgdata`** (Postgres+PostGIS, contenedor
+  `oficio_db`), no en un archivo bajo `data/`. Copiar `./data` **no respalda la base**: solo sirve
+  para las fotos. El respaldo real es el `pg_dump` de la sección "Actualizar", de arriba.
+- `data/uploads/`: fotos subidas por los proveedores (esto sí es un bind mount de archivos).
 - Todavía no hay copia de seguridad automática de ninguno de los dos.
 
 ## Panel técnico (/admin)

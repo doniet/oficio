@@ -30,7 +30,7 @@ Plataforma para publicar y buscar oficios/servicios en Cuba, con modelo de negoc
 
 ### Backend
 - **Node.js + Express + TypeScript**
-- **SQLite** (better-sqlite3) - Base de datos embebida
+- **PostgreSQL + PostGIS** (driver `pg`) - la base vive en el volumen Docker `oficio_pgdata`, no en un archivo
 - **JWT** para autenticación
 - **Zod** para validación
 - **OpenStreetMap/Nominatim** para geocodificación
@@ -97,7 +97,7 @@ npm run dev        # Servidor en http://localhost:5173
 ```env
 PORT=3000
 NODE_ENV=development
-DATABASE_PATH=./data/oficios.db
+DATABASE_URL=postgresql://oficio:<POSTGRES_PASSWORD>@127.0.0.1:<puerto>/oficio
 JWT_SECRET=tu-secret-super-seguro
 JWT_EXPIRES_IN=7d
 FRONTEND_URL=http://localhost:5173
@@ -186,7 +186,7 @@ Pinar del Río, Artemisa, La Habana, Mayabeque, Matanzas, Cienfuegos, Villa Clar
 
 ## Despliegue en Producción
 
-1. Configurar base de datos PostgreSQL/MySQL (cambiar better-sqlite3)
+1. La base ya es PostgreSQL+PostGIS (volumen Docker `oficio_pgdata`, ver DOCKER.md para el respaldo con `pg_dump`)
 2. Configurar variables de entorno seguras
 3. Configurar HTTPS y dominio
 4. Configurar Stripe/webhooks para pagos reales
