@@ -41,18 +41,26 @@ async function participantes(conversationId: string) {
 const primerNombre = (nombre: string) => nombre.trim().split(/\s+/)[0];
 
 export async function avisarNuevaSolicitud(conversationId: string) {
-  const p = await participantes(conversationId);
-  if (!p) return;
-  await avisarUsuario(p.provider_user_id, {
-    titulo: `Nueva solicitud de ${primerNombre(p.client_name)}`,
-    cuerpo: p.service_title ? `Sobre: ${p.service_title}` : 'Toca para responder',
-    datos: { tipo: 'mensaje', conversation_id: conversationId },
-  });
+  try {
+    const p = await participantes(conversationId);
+    if (!p) return;
+    await avisarUsuario(p.provider_user_id, {
+      titulo: `Nueva solicitud de ${primerNombre(p.client_name)}`,
+      cuerpo: p.service_title ? `Sobre: ${p.service_title}` : 'Toca para responder',
+      datos: { tipo: 'mensaje', conversation_id: conversationId },
+    });
+  } catch (err) {
+    console.error('No se pudo apuntar el aviso de nueva solicitud:', (err as Error).message);
+  }
 }
 
 export async function avisarNuevoMensaje(conversationId: string, remitente: 'client' | 'provider') {
-  const p = await participantes(conversationId);
-  if (!p) return;
-  const [destino, nombre] = remitente === 'client' ? [p.provider_user_id, primerNombre(p.client_name)] : [p.client_id, p.provider_name];
-  await avisarUsuario(destino, { titulo: `Nuevo mensaje de ${nombre}`, cuerpo: 'Toca para leerlo', datos: { tipo: 'mensaje', conversation_id: conversationId } });
+  try {
+    const p = await participantes(conversationId);
+    if (!p) return;
+    const [destino, nombre] = remitente === 'client' ? [p.provider_user_id, primerNombre(p.client_name)] : [p.client_id, p.provider_name];
+    await avisarUsuario(destino, { titulo: `Nuevo mensaje de ${nombre}`, cuerpo: 'Toca para leerlo', datos: { tipo: 'mensaje', conversation_id: conversationId } });
+  } catch (err) {
+    console.error('No se pudo apuntar el aviso de nuevo mensaje:', (err as Error).message);
+  }
 }

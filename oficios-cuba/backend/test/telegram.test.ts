@@ -76,6 +76,17 @@ describe('vinculación con Telegram', () => {
     expect(cambiado.body.prefs).toMatchObject({ citas: true, chat: false });
     expect((await api.put('/api/telegram/prefs').set(p.auth).send({ nada: true })).status).toBe(400);
   });
+
+  it('respeta notify_prefs aunque llegue como cadena (fila de antes del porte, no como objeto jsonb)', async () => {
+    const u = await registrar('client');
+    // Antes del porte notify_prefs era texto (SQLite) y guardaba JSON.stringify(apagados) tal
+    // cual. Una fila migrada sin volver a parsear queda en Postgres como un escalar jsonb que
+    // ENVUELVE esa cadena, no como el objeto que escribe hoy PUT /telegram/prefs (que sí es
+    // jsonb objeto y no ejercita esta rama). El doble JSON.stringify simula justo eso.
+    await q('UPDATE users SET notify_prefs = $1::jsonb WHERE id = $2', [JSON.stringify(JSON.stringify({ chat: false })), u.userId]);
+    const estado = (await api.get('/api/telegram/status').set(u.auth)).body;
+    expect(estado.prefs).toMatchObject({ citas: true, chat: false });
+  });
 });
 
 describe('avisos que apunta la API', () => {
