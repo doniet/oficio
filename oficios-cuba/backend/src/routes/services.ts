@@ -200,7 +200,9 @@ router.get('/:id', optionalAuth, asyncHandler(async (req: AuthRequest, res) => {
     ORDER BY ${PLAN_WEIGHT_SQL} DESC, pp.rating DESC NULLS LAST LIMIT 4
   `, [service.id, service.provider_id, service.category_id, service.category_parent_id ?? service.category_id]);
 
-  const { provider_user_id: _u, provider_active: _a, category_parent_id: _c, ...publicService } = service;
+  // busca es la columna tsvector generada (dato interno de búsqueda, no del contrato): s.* la
+  // trae porque SELECT * también devuelve las columnas generadas, no solo las "normales".
+  const { provider_user_id: _u, provider_active: _a, category_parent_id: _c, busca: _b, ...publicService } = service;
   const plan = planDe(service.subscription_plan);
   res.json({
     service: {

@@ -161,13 +161,16 @@ router.get('/me', authMiddleware, asyncHandler(async (req: AuthRequest, res) => 
 
   let providerProfile = null;
   if (user.user_type === 'provider') {
-    providerProfile = await qOne(`
+    const row = await qOne<Record<string, unknown>>(`
       SELECT pp.*, p.name as province_name, m.name as municipality_name
       FROM provider_profiles pp
       LEFT JOIN provinces p ON pp.province_id = p.id
       LEFT JOIN municipalities m ON pp.municipality_id = m.id
       WHERE pp.user_id = $1
     `, [req.user!.id]);
+    // pp.* trae también busca (tsvector generado, puro peso) y punto_pub (WKB hex de PostGIS,
+    // que ningún cliente consume): son dato interno, no contrato, fuera de la respuesta.
+    if (row) { const { busca: _b, punto_pub: _p, ...resto } = row; providerProfile = resto; }
   }
 
   res.json({ user, providerProfile });

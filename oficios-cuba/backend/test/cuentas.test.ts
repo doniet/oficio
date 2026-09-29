@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { api, crearServicio, registrar } from './helpers.js';
-import { q } from '../src/db/acceso.js';
+import { q, qOne } from '../src/db/acceso.js';
 
 describe('sesiones', () => {
   it('cambiar la contraseña invalida los tokens anteriores y devuelve uno nuevo', async () => {
@@ -68,6 +68,34 @@ describe('perfil público del proveedor', () => {
     await crearServicio(pro.auth);
     const res = await api.get('/api/providers').query({ limit: 48, sort: 'newest' });
     expect(res.body.providers.map((p: { id: string }) => p.id)).toContain(pro.providerId);
+  });
+});
+
+// pp.* (auth.ts /me y providers.ts /me/profile) también traía busca (tsvector generado) y
+// punto_pub (WKB hex de PostGIS): no son fuga de privacidad (es el propio perfil autenticado),
+// pero son peso y campos no declarados en el contrato — GET /auth/me lo llaman las dos apps en
+// cada arranque.
+describe('el propio perfil no manda columnas internas de búsqueda/ubicación', () => {
+  it('GET /api/auth/me', async () => {
+    const pro = await registrar('provider');
+    const res = await api.get('/api/auth/me').set(pro.auth);
+    expect(res.status).toBe(200);
+    expect(res.body.providerProfile).not.toHaveProperty('busca');
+    expect(res.body.providerProfile).not.toHaveProperty('punto_pub');
+  });
+
+  it('GET y PUT /api/providers/me/profile', async () => {
+    const pro = await registrar('provider');
+    const provincia = (await qOne<{ id: string }>('SELECT id FROM provinces LIMIT 1'))!.id;
+    const put = await api.put('/api/providers/me/profile').set(pro.auth).send({ business_name: 'Mi Taller', province_id: provincia });
+    expect(put.status).toBe(200);
+    expect(put.body.provider).not.toHaveProperty('busca');
+    expect(put.body.provider).not.toHaveProperty('punto_pub');
+
+    const get = await api.get('/api/providers/me/profile').set(pro.auth);
+    expect(get.status).toBe(200);
+    expect(get.body.provider).not.toHaveProperty('busca');
+    expect(get.body.provider).not.toHaveProperty('punto_pub');
   });
 });
 

@@ -53,6 +53,14 @@ const PUBLIC_JOINS = `
   LEFT JOIN municipalities m ON pp.municipality_id = m.id
 `;
 
+// pp.* (en /me/profile, GET y PUT) trae también busca (tsvector generado, puro peso) y punto_pub
+// (WKB hex de PostGIS que ningún cliente consume): dato interno de búsqueda/ubicación, no
+// contrato. Se descartan aquí antes de construir la respuesta del propio perfil.
+function sinColumnasInternas<T extends Record<string, unknown>>(row: T) {
+  const { busca: _b, punto_pub: _p, ...resto } = row;
+  return resto;
+}
+
 // Lo que el plan vigente permite mostrar: al bajar de plan las fotos y el negocio no se borran,
 // solo dejan de verse.
 export function segunPlan(row: any) {
@@ -163,7 +171,7 @@ router.get('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     WHERE pp.user_id = $1
   `, [req.user!.id]);
   if (!provider) throw new AppError('Perfil de proveedor no encontrado', 404);
-  res.json({ provider: { ...provider, gallery: parseImages(provider.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: planDe(provider.subscription_plan) });
+  res.json({ provider: { ...sinColumnasInternas(provider), gallery: parseImages(provider.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: planDe(provider.subscription_plan) });
 }));
 
 router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (req: AuthRequest, res) => {
@@ -258,7 +266,7 @@ router.put('/me/profile', authMiddleware, requireProvider, asyncHandler(async (r
     LEFT JOIN municipalities m ON pp.municipality_id = m.id
     WHERE pp.id = $1
   `, [provider.id]);
-  res.json({ provider: { ...updated, gallery: parseImages(updated.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: plan });
+  res.json({ provider: { ...sinColumnasInternas(updated), gallery: parseImages(updated.gallery), agenda: undefined }, serviceAreas: await serviceAreasOf(provider.id), limits: plan });
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {

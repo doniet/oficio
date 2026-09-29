@@ -114,3 +114,16 @@ describe('validación de entrada', () => {
     expect(demo.status).toBe(201);
   });
 });
+
+// services.ts:169 hacía SELECT s.*, y s.* también trae busca (tsvector generado, dato interno
+// de búsqueda, no del contrato) — GET /services/:id es la ruta pública más visitada.
+describe('GET /api/services/:id no filtra columnas internas', () => {
+  it('no incluye busca en la respuesta', async () => {
+    const pro = await registrar('provider');
+    await ponerPlan(pro.providerId!, 'basic');
+    const id = (await crearServicio(pro.auth, { description: 'Reparación de electrodomésticos a domicilio' })).body.service.id;
+    const res = await api.get(`/api/services/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.service).not.toHaveProperty('busca');
+  });
+});
