@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createHash, randomUUID } from 'crypto';
-import db from '../db/index.js';
+import { q, qOne } from '../db/acceso.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import { JWT_SECRET } from '../config.js';
 import { clienteIp } from '../lib/cliente.js';
 
@@ -11,7 +12,8 @@ const router = Router();
 const APK = /^oficios-cuba-(\d{1,3}\.\d{1,3}\.\d{1,3})\.apk$/;
 const DIA = 86_400_000;
 
-router.get('/descargar', (req, res) => {
+// asyncHandler: ahora consulta la base, y Express 4 no espera promesas de una ruta sin envolverla.
+router.get('/descargar', asyncHandler(async (req, res) => {
   const archivo = typeof req.query.archivo === 'string' ? req.query.archivo : '';
   const m = APK.exec(archivo);
   if (!m) return res.status(400).json({ error: 'Archivo no válido' });
@@ -20,11 +22,13 @@ router.get('/descargar', (req, res) => {
   const visitante = createHash('sha256').update(`${JWT_SECRET}:apk:${clienteIp(req)}`).digest('hex').slice(0, 32);
   const ahora = new Date();
   try {
-    const reciente = db.prepare('SELECT 1 FROM apk_descargas WHERE visitante = ? AND version = ? AND created_at > ?')
-      .get(visitante, version, new Date(ahora.getTime() - DIA).toISOString());
+    const reciente = await qOne(
+      'SELECT 1 FROM apk_descargas WHERE visitante = $1 AND version = $2 AND created_at > $3',
+      [visitante, version, new Date(ahora.getTime() - DIA).toISOString()],
+    );
     if (!reciente) {
-      db.prepare('INSERT INTO apk_descargas (id, version, visitante, created_at) VALUES (?, ?, ?, ?)')
-        .run(randomUUID(), version, visitante, ahora.toISOString());
+      await q('INSERT INTO apk_descargas (id, version, visitante, created_at) VALUES ($1, $2, $3, $4)',
+        [randomUUID(), version, visitante, ahora.toISOString()]);
     }
   } catch (err) {
     // El contador nunca debe impedir la descarga.
@@ -32,6 +36,6 @@ router.get('/descargar', (req, res) => {
   }
   res.set('Cache-Control', 'no-store');
   res.redirect(302, `/descargas/${archivo}`);
-});
+}));
 
 export default router;
