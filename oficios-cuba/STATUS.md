@@ -574,3 +574,30 @@
   real con `docker compose up -d --build` (paso 6 del brief, explícitamente fuera de mi alcance en
   este worktree) y la verificación manual por Cloudflare antes de mezclar la rama.
 - Blockers: ninguno.
+
+## 2026-09-29 23:15 UTC — claude-code (vps2) — Tarea 15, fix round 1: seedDemo() a medio camino no se daba por sembrado
+- Changes: la revisión de la entrada anterior encontró que partir `seedDemo()` en tres tramos (por
+  `refreshProviderRating()`, que no puede ir dentro de una `tx()`) dejó la guarda de idempotencia
+  (`email = 'cliente@demo.com'`) anclada al primer tramo: si el segundo o el tercero fallaban
+  después de que el primero confirmara, la base quedaba con perfiles/servicios a medias y el
+  siguiente intento se daba por "ya sembrado" sin reparar nada — con `DEMO_MODE=true` en
+  producción, no es hipotético. Arreglo: los tres tramos van envueltos en un `try/catch` que, si
+  cualquiera falla, borra TODO lo que ese intento llegó a crear (los `users` — clientes y
+  proveedores —, que arrastran en cascada perfiles, servicios, reseñas, conversaciones, citas,
+  catálogo y favoritos por los `ON DELETE CASCADE` del esquema) antes de relanzar el error. La
+  guarda original no hizo falta moverla a un marcador aparte: como ya no queda nunca una fila a
+  medias, vuelve a decir la verdad. También `src/index.ts`: el `await expireSubscriptions()` de
+  arranque ahora usa el mismo wrapper protegido que ya tenía su `setInterval` gemelo (antes moría
+  el proceso entero si fallaba una sola vez al arrancar; la caducidad de planes no es requisito
+  para servir, a diferencia de `migrar()`).
+- Tests: **258/258** (257 + 1 nuevo), `npx tsc --noEmit` en 0. `test/seed-demo.test.ts` (nuevo):
+  fuerza un fallo real a mitad del segundo tramo con un trigger de Postgres sobre `reviews`
+  (`RAISE EXCEPTION`, sin tocar código de producción ni usar mocks — esta suite es toda de
+  integración), comprueba que la limpieza deja `users`/`provider_profiles`/`services` en 0 y sin
+  `cliente@demo.com`, y que el reintento sin el trigger completa el sembrado entero (valoración
+  recalculada) y se mantiene idempotente. Verificado que el test detecta la regresión: con la
+  limpieza deshabilitada a propósito, el test falla (`expected 17 to be 0`); restaurado el fix,
+  vuelve a pasar.
+- Security: N/A — mismo alcance que la entrada anterior, sin tocar red/puertos/auth/contenedores.
+- Next: sin cambios respecto a la entrada anterior.
+- Blockers: ninguno.

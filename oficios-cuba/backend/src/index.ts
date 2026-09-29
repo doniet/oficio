@@ -18,14 +18,20 @@ async function start() {
   if (DEMO_MODE && (await seedDemo())) {
     console.log('Datos demo creados');
   }
-  await expireSubscriptions();
   // expireSubscriptions() y programarAvisos() son async (Tarea 5/13): un setInterval no espera a
   // su callback, así que un rechazo suyo sería una unhandled promise rejection cada hora/5 min. El
   // try/catch tiene que estar DENTRO de una función async que SÍ haga await, nunca alrededor de la
   // llamada sin await — ese patrón no atrapa nada (trampas-porte.md).
+  //
+  // La caducidad de planes NO es un requisito para servir (a diferencia de migrar(), del que
+  // depende todo lo demás): un perfil que debió caducar hace un minuto y caduca el próximo tick
+  // no es una base a medias, es un dato que se pone al día solo. Por eso la llamada de arranque
+  // usa el MISMO wrapper protegido que el setInterval, en vez de un await suelto que tumbaría el
+  // proceso entero por un fallo transitorio (p. ej. el pool todavía calentando la conexión).
   const expirar = async () => {
     try { await expireSubscriptions(); } catch (err) { console.error('Caducidad de planes:', (err as Error).message); }
   };
+  await expirar();
   setInterval(expirar, 60 * 60 * 1000).unref();
   // Recordatorios, resumen de mañana y vencimiento del plan (dedupe: cada uno se apunta una vez).
   const programar = async () => {

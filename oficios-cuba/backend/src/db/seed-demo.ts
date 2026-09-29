@@ -245,6 +245,20 @@ export async function seedDemo() {
   const clientIds: string[] = [];
   const providerRows: { profileId: string; userId: string; services: string[] }[] = [];
 
+  // Los tres bloques de abajo van envueltos en un try/catch: antes del porte, todo `seedDemo()`
+  // vivía en UNA transacción síncrona de better-sqlite3, así que un fallo a mitad de camino
+  // deshacía todo y un reintento partía de cero. Ahora el Bloque 2 escribe con el pool a propósito
+  // (refreshProviderRating() no puede ir dentro de una tx(), ver su comentario más abajo), así que
+  // ya no hay una única transacción que lo cubra todo — si el Bloque 1 confirma y el 2 o el 3
+  // fallan, sus filas (usuarios, perfiles, servicios...) quedarían a medias, Y el guardián de
+  // arriba (`email = 'cliente@demo.com'`) las daría por "ya sembrado" en el siguiente intento, sin
+  // reparar nada. El catch de abajo borra TODO lo que este intento haya llegado a crear —los
+  // usuarios (clientes y proveedores), que arrastran en cascada perfiles, servicios, reseñas,
+  // conversaciones, citas, catálogo y favoritos por los `ON DELETE CASCADE` del esquema— antes de
+  // relanzar el error. Así el reintento siguiente encuentra la base exactamente como la dejó un
+  // intento que nunca llegó a arrancar, y el guardián original (que ya existía) vuelve a decir la
+  // verdad sin tener que moverlo a un marcador aparte.
+  try {
   // Bloque 1: cuentas, perfiles y servicios — todo o nada, como seedBase()/seedMapa().
   await tx(async (c) => {
     const categoryId = async (slug: string) => {
@@ -488,6 +502,23 @@ export async function seedDemo() {
       );
     }
   });
+  } catch (err) {
+    const idsACrear = [...clientIds, ...providerRows.map((p) => p.userId)];
+    if (idsACrear.length) {
+      // DELETE con lo que se alcanzó a crear ANTES del fallo. Si el Bloque 1 nunca llegó a
+      // confirmar (su propia tx() ya revirtió todo), esto borra cero filas — inofensivo. Va con
+      // el pool (`q`), no con un cliente de tx(): no hay ninguna transacción abierta a la que
+      // pertenecer en este punto, y sea lo que sea que quede a medias, tiene que confirmar solo.
+      await q('DELETE FROM users WHERE id = ANY($1::uuid[])', [idsACrear]).catch((cleanupErr) => {
+        console.error(
+          'seedDemo: el sembrado falló Y no se pudo limpiar lo que dejó a medias '
+          + '(el próximo intento puede chocar con un email duplicado):',
+          (cleanupErr as Error).message,
+        );
+      });
+    }
+    throw err;
+  }
 
   return true;
 }
