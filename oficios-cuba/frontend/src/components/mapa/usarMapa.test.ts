@@ -45,8 +45,8 @@ describe('usarMapa', () => {
     // los puntos que quedan son los del texto, no los de la zona.
     let resolverZona!: (v: MapaRespuesta) => void;
     const zonaPromise = new Promise<MapaRespuesta>((res) => { resolverZona = res; });
-    const puntoZona: PuntoMapa = { id: 'zona', tipo: 'oficio', nombre: 'De la zona', lat: 22.5, lng: -82.5, plan: 'free', detras: 0, resumen: '' };
-    const puntoTexto: PuntoMapa = { id: 'texto', tipo: 'oficio', nombre: 'Del texto', lat: 22.5, lng: -82.5, plan: 'free', detras: 0, resumen: '' };
+    const puntoZona: PuntoMapa = { id: 'zona', tipo: 'oficio', nombre: 'De la zona', lat: 22.5, lng: -82.5, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0, resumen: '' };
+    const puntoTexto: PuntoMapa = { id: 'texto', tipo: 'oficio', nombre: 'Del texto', lat: 22.5, lng: -82.5, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0, resumen: '' };
 
     vi.mocked(mapaApi.buscar)
       .mockImplementationOnce(() => zonaPromise) // primera llamada: carga de zona, lenta

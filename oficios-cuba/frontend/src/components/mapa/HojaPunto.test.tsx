@@ -17,7 +17,7 @@ vi.mock('../../services/api', async () => {
 });
 
 const punto: PuntoMapa = {
-  id: 'p1', tipo: 'oficio', nombre: 'Juan Plomero', lat: 23, lng: -82, plan: 'free', detras: 0,
+  id: 'p1', tipo: 'oficio', nombre: 'Juan Plomero', lat: 23, lng: -82, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0,
   resumen: 'Plomería a domicilio',
 };
 

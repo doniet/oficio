@@ -23,16 +23,26 @@ export default {
           50: '#EEFAF8', 100: '#D3F1EC', 200: '#A8E2DA', 300: '#6FCBC0', 400: '#36AFA4',
           500: '#14918B', 600: '#0E7C7B', 700: '#0D6362', 800: '#0F4F4F', 900: '#103F40',
         },
-        paper: '#FAF6EF',
-        sand: { 100: '#F4EEE4', 200: '#EAE1D2', 300: '#DDD0BB' },
+        // Tema claro estilo Apple (2026-09-29): el fondo deja de ser protagonista. Antes `paper`
+        // era un crema (#FAF6EF) que competía con las tarjetas; ahora es blanco y lo que se ve son
+        // las fotos y los elementos. `sand` conserva el nombre —lo usan decenas de sitios— pero
+        // deja de ser arena: son grises neutros, que no tiñen lo que tienen al lado.
+        paper: '#FFFFFF',
+        sand: { 100: '#F6F6F8', 200: '#EDEDF1', 300: '#E2E2E8' },
+        // Superficie para lo que no tiene foto (portadas de categoría, estados vacíos): un panel
+        // liso, sin borde ni sombra. Es el recurso de Apple — separa sin dibujar nada.
+        panel: '#F5F5F7',
       },
       fontFamily: {
         display: ['"Bricolage Grotesque Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         sans: ['"Figtree Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        card: '0 1px 2px rgba(22,33,62,.05), 0 4px 16px -6px rgba(22,33,62,.10)',
-        lift: '0 2px 4px rgba(22,33,62,.06), 0 18px 40px -16px rgba(22,33,62,.28)',
+        // Sombras mucho más bajas que antes: sobre blanco, una sombra marcada devuelve justo el
+        // peso visual que este tema quita. Se quedan para dar relieve a lo que flota de verdad
+        // (hojas inferiores, menús), no para dibujar el contorno de cada tarjeta.
+        card: '0 1px 2px rgba(16,24,40,.04)',
+        lift: '0 2px 6px rgba(16,24,40,.06), 0 12px 32px -18px rgba(16,24,40,.20)',
       },
       borderRadius: {
         '4xl': '2rem',

@@ -11,8 +11,12 @@ export const sea = {
   50: '#EEFAF8', 100: '#D3F1EC', 200: '#A8E2DA', 300: '#6FCBC0', 400: '#36AFA4',
   500: '#14918B', 600: '#0E7C7B', 700: '#0D6362', 800: '#0F4F4F', 900: '#103F40',
 } as const;
-export const sand = { 100: '#F4EEE4', 200: '#EAE1D2', 300: '#DDD0BB' } as const;
-export const paper = '#FAF6EF';
+// Tema claro (2026-09-29), igual que la web: el fondo deja de ser protagonista. `sand` conserva
+// el nombre —lo usan muchas pantallas— pero ya no es arena, son grises neutros.
+export const sand = { 100: '#F6F6F8', 200: '#EDEDF1', 300: '#E2E2E8' } as const;
+export const paper = '#FFFFFF';
+/** Superficie de lo que no tiene foto (portadas de categoría, estados vacíos): panel liso. */
+export const panel = '#F5F5F7';
 // amber-400 / amber-300 de Tailwind: estrellas y texto de la insignia "Profesional".
 export const ambar = { 300: '#FCD34D', 400: '#FBBF24' } as const;
 export const whatsapp = '#1FA855';
@@ -37,9 +41,10 @@ export const radios = { chip: 999, boton: 12, campo: 12, tarjeta: 16, grande: 24
 
 // shadow-card y shadow-lift de la web. RN 0.86 (nueva arquitectura) pinta `boxShadow` igual que CSS
 // en Android e iOS, así que se usa la misma sombra y no `elevation` (que en Android sale gris y dura).
+// Mucho más bajas que antes: sobre blanco, una sombra marcada devuelve el peso que el tema quita.
 export const sombra = {
-  card: { boxShadow: '0px 1px 2px rgba(22,33,62,0.05), 0px 4px 16px -6px rgba(22,33,62,0.10)' },
-  lift: { boxShadow: '0px 2px 4px rgba(22,33,62,0.06), 0px 18px 40px -16px rgba(22,33,62,0.28)' },
+  card: { boxShadow: '0px 1px 2px rgba(16,24,40,0.04)' },
+  lift: { boxShadow: '0px 2px 6px rgba(16,24,40,0.06), 0px 12px 32px -18px rgba(16,24,40,0.20)' },
 } as const;
 
 export const espacio = (n: number) => n * 4;

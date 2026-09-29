@@ -69,8 +69,10 @@ export function formatPrice(s: Priced, tasa?: number): string {
 /** Precio corto para tarjetas: "desde 3 000 CUP" + "≈ $4 USD". */
 export function priceFrom(s: Priced, tasa?: number) {
   const p = priceParts(s, tasa);
-  if (p.negotiable) return { prefix: '', amount: 'Precio acordado', suffix: '', alt: null as string | null };
-  return { prefix: p.hasRange ? 'desde' : '', amount: p.from, suffix: p.suffix, alt: p.fromAlt };
+  // `negotiable` viaja en la respuesta para que la tarjeta pueda dibujarlo como ETIQUETA y no
+  // como cifra: «Precio acordado» en el tamaño de un número aplasta la ubicación de al lado.
+  if (p.negotiable) return { negotiable: true, prefix: '', amount: 'Precio acordado', suffix: '', alt: null as string | null };
+  return { negotiable: false, prefix: p.hasRange ? 'desde' : '', amount: p.from, suffix: p.suffix, alt: p.fromAlt };
 }
 
 /** Precio de un plan (en USD) con su equivalente en CUP. */

@@ -62,19 +62,30 @@
   .label { @apply mb-1.5 block text-sm font-semibold text-ink-700; }
   .hint { @apply mt-1 text-xs text-ink-400; }
 
-  .card { @apply rounded-2xl border border-sand-200 bg-white shadow-card; }
-  .card-hover { @apply transition duration-200 hover:-translate-y-0.5 hover:border-sand-300 hover:shadow-lift; }
+  /* Panel: para formularios y paneles, donde el contenido necesita un recinto. Sobre blanco un
+     filo de 1 px basta; la sombra sobraba y devolvía el peso que este tema quita. */
+  .card { @apply rounded-2xl border border-sand-200 bg-white; }
+  .card-hover { @apply transition duration-200 hover:border-sand-300 hover:shadow-card; }
+
+  /* Tarjeta de listado: SIN marco. Sobre blanco, la foto redondeada es la que da estructura, y
+     dibujarle además un borde o una sombra a cada una convierte la retícula en una tabla. Al
+     pasar el ratón se tiñe apenas, que es toda la respuesta que necesita. */
+  .tarjeta-lista { @apply rounded-2xl bg-transparent transition duration-200; }
+  .tarjeta-lista:hover { @apply bg-sand-100; }
 
   .chip {
     @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-sand-300 bg-white px-3.5 py-1.5 text-sm font-medium text-ink-700 transition hover:border-ink-300;
   }
-  .chip-active { @apply border-ink-900 bg-ink-900 text-white hover:border-ink-900; }
+  /* Naranja de marca, no casi negro: lo seleccionado es el único sitio donde el color dice algo.
+     brand-600 (#B85400) y no el naranja del logo (#F26A00): con texto blanco encima el del logo
+     da 3,07:1 y WCAG AA pide 4,5:1. El del logo se reserva para iconos y gráficos. */
+  .chip-active { @apply border-brand-600 bg-brand-600 text-white hover:border-brand-600; }
 
   .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold; }
 
   .eyebrow { @apply text-xs font-bold uppercase tracking-[0.14em] text-brand-600; }
 
-  .skeleton { @apply animate-pulse rounded-lg bg-sand-200/70; }
+  .skeleton { @apply animate-pulse rounded-lg bg-sand-200; }
 
   .link { @apply font-semibold text-brand-700 underline-offset-4 hover:underline; }
 }

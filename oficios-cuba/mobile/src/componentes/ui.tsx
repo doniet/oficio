@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { initials } from '@oficio/shared';
 import { urlImagen } from '../lib/api';
-import { ambar, brand, fuentes, ink, radios, sand, sea, sombra } from '../lib/tema';
+import { ambar, brand, fuentes, ink, panel, radios, sand, sea, sombra } from '../lib/tema';
 
 /** .card de la web: blanca, borde sand-200, radio 16 y shadow-card. */
 export function Tarjeta({ children, estilo }: { children: ReactNode; estilo?: StyleProp<ViewStyle> }) {
@@ -97,29 +97,18 @@ export function Avatar({ src, nombre, tamano = 44, cuadrado, estilo }: { src?: s
   );
 }
 
-// CategoryCover de la web: color estable por categoría + el emoji grande.
-const TONOS_PORTADA = [
-  ['#F6CBBD', '#EFA78F'], ['#D3F1EC', '#A8E2DA'], ['#FDE7B0', '#F6D27A'], ['#E6EAF2', '#CBD2E1'],
-  ['#F9D8E0', '#F2B4C3'], ['#E3F0D2', '#C6E0A6'], ['#EADFF7', '#D4C1F0'], ['#FBE6DF', '#F6CBBD'],
-];
-
-// Las rayas diagonales de la web. RN no tiene repeating-linear-gradient: se arma un linear-gradient
-// con paradas duras (línea de ~1 px cada ~4 % de la diagonal).
-const RAYAS = `linear-gradient(135deg, ${Array.from({ length: 28 }, (_, i) => {
-  const x = ((i + 1) * 100) / 29;
-  return `transparent ${(x - 0.35).toFixed(2)}%, #16213E ${(x - 0.35).toFixed(2)}%, #16213E ${x.toFixed(2)}%, transparent ${x.toFixed(2)}%`;
-}).join(', ')})`;
-
-export function PortadaCategoria({ semilla, icono, tamanoIcono = 48 }: { semilla: string; icono?: string | null; tamanoIcono?: number }) {
-  const [a, b] = TONOS_PORTADA[hash(semilla, 33) % TONOS_PORTADA.length];
+// CategoryCover de la web: un panel liso con el emoji. Antes eran degradados de ocho colores con
+// rayas diagonales encima, y en una retícula acababan siendo lo más llamativo de la pantalla,
+// compitiendo con las fotos reales de los negocios. El tema claro pide lo contrario: que el fondo
+// no resalte. Se mantiene el mismo dibujo que la web para que las dos se vean iguales.
+export function PortadaCategoria({ icono, tamanoIcono = 48 }: { semilla: string; icono?: string | null; tamanoIcono?: number }) {
   return (
     <View
-      style={[StyleSheet.absoluteFill, u.centro, { backgroundColor: b, experimental_backgroundImage: `radial-gradient(120% 90% at 20% 10%, ${a} 0%, ${b} 100%)` }]}
+      style={[StyleSheet.absoluteFill, u.centro, { backgroundColor: panel }]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <View style={[StyleSheet.absoluteFill, { opacity: 0.18, experimental_backgroundImage: RAYAS }]} />
-      <Text style={{ fontSize: tamanoIcono }}>{icono || '🛠️'}</Text>
+      <Text style={{ fontSize: tamanoIcono, opacity: 0.9 }}>{icono || '🛠️'}</Text>
     </View>
   );
 }

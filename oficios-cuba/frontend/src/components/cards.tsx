@@ -20,7 +20,7 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
   return (
     <Link
       to={`/servicio/${service.id}`}
-      className={cn('group card card-hover flex flex-col overflow-hidden', className)}
+      className={cn('group tarjeta-lista flex flex-col overflow-hidden', className)}
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-sand-100">
         <CoverImage
@@ -60,7 +60,11 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
           <span className="shrink-0 text-right leading-none">
             <span className="block whitespace-nowrap">
               {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
-              <span className="font-display text-lg font-bold text-ink-900">{price.amount}</span>
+              {/* Una cifra se lee como cifra; «Precio acordado» es una etiqueta y en el tamaño de
+                  un número se come la fila y aplasta la ubicación de al lado. */}
+              <span className={price.negotiable ? 'text-sm font-semibold text-ink-500' : 'font-display text-lg font-bold text-ink-900'}>
+                {price.amount}
+              </span>
               {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
             </span>
             {price.alt && <span className="mt-1 block text-xs text-ink-400">{price.alt}</span>}
@@ -73,7 +77,7 @@ export function ServiceCard({ service, className = '' }: { service: ServiceSumma
 
 export function ServiceCardSkeleton() {
   return (
-    <div className="card overflow-hidden">
+    <div className="tarjeta-lista overflow-hidden">
       <div className="skeleton aspect-[4/3] rounded-none" />
       <div className="space-y-3 p-4">
         <div className="skeleton h-4 w-24" />
@@ -91,7 +95,7 @@ export function ServiceCardSkeleton() {
 export function ProviderCard({ provider }: { provider: ProviderCardType }) {
   const name = provider.business_name || provider.owner_name;
   return (
-    <Link to={`/proveedor/${provider.id}`} className="group card card-hover flex flex-col overflow-hidden">
+    <Link to={`/proveedor/${provider.id}`} className="group tarjeta-lista flex flex-col overflow-hidden">
       <div className="relative h-28 overflow-hidden bg-sand-100">
         <CoverImage src={provider.cover} seed={provider.categories[0] ?? name} alt="" className="transition duration-500 group-hover:scale-[1.04]" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950/40 to-transparent" />
@@ -122,7 +126,7 @@ export function ProviderCard({ provider }: { provider: ProviderCardType }) {
 
 export function ProviderCardSkeleton() {
   return (
-    <div className="card overflow-hidden">
+    <div className="tarjeta-lista overflow-hidden">
       <div className="skeleton h-28 rounded-none" />
       <div className="space-y-3 px-4 pb-4">
         <div className="skeleton -mt-8 h-16 w-16 rounded-2xl border-4 border-white" />

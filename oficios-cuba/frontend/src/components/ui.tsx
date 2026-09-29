@@ -105,31 +105,20 @@ export function PlanPill({ plan }: { plan: Plan }) {
   return <span className={cn('badge', styles[plan])}>{planLabel[plan]}</span>;
 }
 
-// Portada para servicios sin foto: color estable por categoría + icono grande.
-const COVER_TONES = [
-  ['#F6CBBD', '#EFA78F'], ['#D3F1EC', '#A8E2DA'], ['#FDE7B0', '#F6D27A'], ['#E6EAF2', '#CBD2E1'],
-  ['#F9D8E0', '#F2B4C3'], ['#E3F0D2', '#C6E0A6'], ['#EADFF7', '#D4C1F0'], ['#FBE6DF', '#F6CBBD'],
-];
-
-export function CategoryCover({ seed, icon, className = '' }: { seed: string; icon?: string | null; className?: string }) {
-  let h = 0;
-  for (const ch of seed) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
-  const [a, b] = COVER_TONES[h % COVER_TONES.length];
+// Portada para servicios sin foto: un panel liso, sin borde ni sombra, con el icono de la
+// categoría. Antes eran degradados de ocho colores distintos y en la retícula acababan siendo lo
+// más llamativo de la página, compitiendo con las fotos reales de los negocios. El tema claro
+// pide justo lo contrario: que el fondo no resalte y manden las imágenes.
+// `seed` sigue en el tipo porque decenas de llamadas lo pasan, pero ya no se usa: elegía el
+// color del degradado, y el degradado se fue. Quitarlo de la firma sería tocar media web para
+// nada; dejarlo declarado y sin leer es el coste honesto de haber simplificado el dibujo.
+export function CategoryCover({ icon, className = '' }: { seed: string; icon?: string | null; className?: string }) {
   return (
     <div
-      className={cn('relative flex h-full w-full items-center justify-center overflow-hidden', className)}
-      style={{ background: `radial-gradient(120% 90% at 20% 10%, ${a} 0%, ${b} 100%)` }}
+      className={cn('relative flex h-full w-full items-center justify-center overflow-hidden bg-panel', className)}
       aria-hidden="true"
     >
-      <svg className="absolute inset-0 h-full w-full opacity-[.18]" aria-hidden="true">
-        <defs>
-          <pattern id={`p-${h}`} width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <line x1="0" y1="0" x2="0" y2="22" stroke="#16213E" strokeWidth="1" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill={`url(#p-${h})`} />
-      </svg>
-      <span className="relative text-5xl drop-shadow-sm sm:text-6xl">{icon || '🛠️'}</span>
+      <span className="relative text-5xl opacity-90 sm:text-6xl">{icon || '🛠️'}</span>
     </div>
   );
 }

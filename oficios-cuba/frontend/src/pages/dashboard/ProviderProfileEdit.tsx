@@ -18,6 +18,16 @@ type MapPrecision = 'exacta' | 'zona';
 /** `types/index.ts` no declara este campo todavía (fuera del alcance de esta tarea): se amplía aquí. */
 type ProviderConPrecision = MyProviderProfile & { map_precision?: MapPrecision | null };
 
+/**
+ * El aviso de la dirección se muestra siempre que el campo tenga texto, no solo con el mapa
+ * encendido en modo zona. El motivo es un hecho, no una opinión: `pp.address` sale en
+ * `GET /providers/:id` SIN condición, mientras `lat`/`lng` van desplazadas y condicionadas a
+ * `show_on_map`. El aviso estaba colgado de una opción del mapa cuando el riesgo lo causa haber
+ * escrito algo. Dariel pidió ponerlo en todos los casos y retirarlo después si estorba: por eso
+ * vive aquí, en un booleano, y apagarlo no exige buscar nada.
+ */
+const AVISAR_SIEMPRE_DIRECCION = true;
+
 interface FormState {
   business_name: string;
   description: string;
@@ -409,9 +419,12 @@ export default function ProviderProfileEdit() {
           <Field label="Dirección (opcional)" htmlFor="addr" hint="Solo si atiendes en un local. No pongas tu dirección particular si trabajas a domicilio.">
             <input id="addr" value={form.address} onChange={(e) => set('address', e.target.value)} maxLength={200} className="input" />
           </Field>
-          {Boolean(point) && form.show_on_map && form.map_precision !== 'exacta' && (
+          {AVISAR_SIEMPRE_DIRECCION && form.address.trim() !== '' && (
             <Alert tone="error">
-              <strong>Esta dirección se publica tal cual la escribas.</strong> Elegir «Solo mi zona» más abajo protege el punto del mapa, pero no este texto: si aquí pusiste tu casa, tu casa queda publicada igual. Para no publicar ninguna dirección, deja el campo vacío.
+              <strong>Esta dirección se publica tal cual la escribas</strong>, la vea o no el mapa: cualquiera puede leerla en tu página, tenga cuenta o no. Si aquí pusiste tu casa, tu casa queda publicada. Para no publicar ninguna dirección, deja el campo vacío.
+              {Boolean(point) && form.show_on_map && form.map_precision !== 'exacta' && (
+                <> Elegir «Solo mi zona» más abajo protege el punto del mapa, pero <strong>no</strong> este texto.</>
+              )}
             </Alert>
           )}
           <div>
