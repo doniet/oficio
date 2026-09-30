@@ -735,3 +735,29 @@
   y **sin fusionar**: fusionar a `master` y desplegar es decisión de Dariel. Sigue pendiente el
   `git push origin master` que bloqueó el harness (ver la entrada del 30-sep 00:26).
 - Blockers: ninguno técnico.
+
+## 2026-09-30 04:05 UTC — claude-code (vps2) — Desplegado el mapa a pantalla completa
+- Changes: `mapa-pantalla-completa` fusionada a `master` en avance directo (13 commits) y empujada a
+  `origin/master` — el push que el harness bloqueó el 30-sep a las 00:26 **ya pasó**. Desplegado con
+  `docker compose --profile telegram up -d --build`: solo se recreó `oficio_web` (el backend no
+  cambió; la rama es frontend puro, sin migraciones). Respaldo previo en
+  `data/oficio-2026-09-30-0338-pre-deploy-mapa.dump` (103 KB, 190 entradas, `pg_restore -l` lo lee).
+- Tests: 48 en verde, typecheck 0, build OK. Verificado desde fuera por Cloudflare: `/api/config`
+  (`demo:true`), `/api/stats`, SPA 200 en `/`, `/buscar` y `/explorar?vista=mapa`, `/nada.js` 404.
+  **Subida de foto de punta a punta**: login demo → `POST /api/uploads` 201 → `GET` 200 `image/png`
+  con los bytes idénticos; la foto de prueba se borró después (queda cacheada en Cloudflare bajo su
+  UUID, que no referencia nada). Conteos idénticos antes y después
+  (users=18, perfiles=12, servicios=22, reseñas=34, migración=1), PostGIS 3.6 con sus 8 índices GiST.
+  `verificar-oficio.mjs` a 390 px: exit 0, 0 errores de consola sin justificar.
+- Security: **aislamiento de red intacto** — `oficio_api` sigue SIN salida a internet (`EAI_AGAIN`) y
+  `oficio_notifier` CON salida. Sin cambios en Traefik, el túnel, CORS, auth ni puertos.
+- Next: **un defecto encontrado en la verificación y arreglado en el acto** (`8a50bbe`): con el panel
+  lateral abierto en escritorio **no se podía hacer zoom**. El control de Leaflet vive abajo a la
+  izquierda, justo bajo el panel, y `elementFromPoint` confirmó en producción que el clic caía en el
+  panel. Ahora se aparta a su derecha desde 1024 px (en móvil sigue a la izquierda y subiendo con la
+  hoja: medido, 690 → 437 px). Redesplegado y vuelto a medir: el clic llega al botón.
+  🚨 **La skill `oficio-deploy-vps2` sigue mandando respaldar con `better-sqlite3`**, que en esta
+  base ya no existe; lo correcto es el `pg_dump -Fc` de `docs/despliegue-postgres.md`. Conviene
+  corregir la skill antes del próximo despliegue.
+  Sigue sin restaurar el token de Telegram (el notificador arranca diciendo «Sin token»).
+- Blockers: ninguno.
