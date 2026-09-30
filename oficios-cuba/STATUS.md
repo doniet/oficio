@@ -686,3 +686,28 @@
   la lleva Dariel directamente (2026-09-30): no es un pendiente mío. El token de Telegram sigue sin restaurar (ver la entrada anterior y
   `docs/despliegue-postgres.md`).
 - Blockers: el push, que necesita permiso o que lo lance Dariel.
+
+## 2026-09-30 03:05 UTC — claude-code (vps2) — El mapa de /explorar pasa a ser la página
+- Changes: rediseño de `?vista=mapa` según `docs/superpowers/specs/2026-09-30-mapa-pantalla-completa-design.md`
+  y su plan. El mapa ocupa el viewport bajo la cabecera (sin scroll de página: el pie se oculta en
+  esta vista, la barra inferior de móvil se queda), los controles flotan encima, y la información
+  sale en **panel lateral desde `lg`** o en **hoja inferior colapsable** por debajo. Un punto
+  agrupado lista los negocios de su celda en ese mismo panel, y desde uno se vuelve a la lista sin
+  volver a pedirla. **Solo frontend: ni el backend ni `/api/mapa` se tocaron.** Nuevos:
+  `usarPanel.ts` (historial, Esc, foco y scroll, compartidos por los dos envoltorios),
+  `PanelLateral`, `FichaPunto`, `PanelMapa`, `ControlesMapa`, `ExplorarMapa`. `HojaPunto` pasa de
+  385 a 150 líneas: conserva su arrastre y sus dos alturas, y recibe el contenido por `children`.
+  `Search.tsx` baja de 644 a 623 y suelta el layout del mapa.
+- Tests: **42 en verde** (23 antes), typecheck en 0, `npm run build` OK. Comprobado además en un
+  navegador de verdad a 390 y 1280 px con `~/docker/playwright`: mapa a sangre, panel lateral en
+  escritorio y hoja en móvil, Esc cierra, un grupo lista sus negocios y «Volver a la lista»
+  devuelve la misma, **0 px de scroll de página** en ambos anchos y ningún error de página.
+- Security: N/A. Sin cambios en red, puertos, auth ni datos.
+- Next: **tres defectos preexistentes arreglados de paso**, todos con prueba: (1) `cargarCelda` no
+  tenía `.catch` ni en el hook ni en quien lo llamaba, así que un fallo de `/api/mapa/celda` era un
+  rechazo no capturado y tocar un grupo **no hacía nada**, sin mensaje; (2) el mapa pedía el área
+  con un rectángulo **sin área** (`sur === norte`) cuando el contenedor aún no tenía altura —
+  gastaba una petición imposible y dejaba `bboxPintadoRef` degenerado, del que `cargarCelda` habría
+  deducido un tamaño de celda absurdo; (3) el botón «Cerca de mí» quedaba **debajo de la hoja**:
+  `--hoja-punto-alto` la publicaba `HojaPunto` desde hacía entregas y no la leía nadie.
+- Blockers: ninguno.
