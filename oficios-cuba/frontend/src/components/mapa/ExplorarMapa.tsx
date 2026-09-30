@@ -29,6 +29,8 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const [lista, setLista] = useState<PuntoMapa[] | null>(null);
   const [listaPrevia, setListaPrevia] = useState<PuntoMapa[] | null>(null);
   const [errorLista, setErrorLista] = useState('');
+  // Cómo volver a pedir la celda que falló. Lo entrega el mapa, que es quien sabe pedirla.
+  const [reintentarLista, setReintentarLista] = useState<(() => void) | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const esEscritorio = usarEsEscritorio();
 
@@ -63,10 +65,13 @@ export default function ExplorarMapa({ get, update, categorias }: {
     apartarDelPanel(p);
   }, [apartarDelPanel]);
 
-  const abrirLista = useCallback((ps: PuntoMapa[], error?: string) => {
+  const abrirLista = useCallback((ps: PuntoMapa[], error?: string, reintentar?: () => void) => {
     setPunto(null);
     setListaPrevia(null);
     setErrorLista(error ?? '');
+    // El envoltorio de función es obligatorio: setState interpreta una función suelta como
+    // actualizador y llamaría al reintento en vez de guardarlo.
+    setReintentarLista(() => reintentar ?? null);
     setLista(ps);
   }, []);
 
@@ -120,7 +125,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
         punto={punto}
         lista={lista}
         errorLista={errorLista || undefined}
-        onReintentarLista={() => lista && setLista([...lista])}
+        onReintentarLista={reintentarLista ? () => { setErrorLista(''); reintentarLista(); } : undefined}
         onElegirDeLista={elegirDeLista}
         onVolverALista={listaPrevia ? volverALista : undefined}
         onCerrar={cerrarPanel}

@@ -133,6 +133,11 @@ describe('usarMapa', () => {
   // (CSS que no ha aplicado, pestaña oculta). Con el mapa a pantalla completa el alto lo da una
   // clase CSS, así que el caso es MÁS probable que antes, no menos.
   it('un rectángulo sin área no gasta una petición: no puede devolver nada', async () => {
+    // Sin implementación, el espía devuelve undefined y el `.then` de cargar() reventaría DENTRO
+    // del temporizador del antirrebote: una excepción no capturada que vitest cuenta como error
+    // del fichero aunque las 14 pruebas pasen.
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+
     const { result, unmount } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
 
     act(() => { result.current.alMover({ sur: 21.5, oeste: -79.5, norte: 21.5, este: -79.5 }, true); });
@@ -224,7 +229,8 @@ describe('MapaExplorar', () => {
     expect(pin).toBeTruthy();
     await act(async () => { (pin as HTMLElement).click(); await espera(10); });
 
-    expect(onAbrirLista).toHaveBeenCalledWith([], expect.stringContaining('No pudimos'));
+    // El tercer argumento es el cómo reintentar: sin él, «Reintentar» sería un botón muerto.
+    expect(onAbrirLista).toHaveBeenCalledWith([], expect.stringContaining('No pudimos'), expect.any(Function));
   });
 
   // El contrato que HojaPunto dejó escrito y que nunca llegó a cumplirse: con la hoja abierta,

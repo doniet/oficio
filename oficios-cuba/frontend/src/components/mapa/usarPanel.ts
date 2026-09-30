@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
- * La conducta que comparten los dos envoltorios del panel del mapa — la hoja inferior de móvil
- * (`HojaPunto`) y el panel lateral de escritorio (`PanelLateral`) —, extraída para no escribirla
- * dos veces: entrada propia en el historial, cierre por Esc y por el botón Atrás, trampa de foco
- * con devolución a quien abrió, y bloqueo del scroll de fondo.
+ * La conducta del panel del mapa que NO depende del envoltorio: entrada propia en el historial,
+ * cierre por Esc y por el botón Atrás, devolución del foco a quien lo abrió, y bloqueo del scroll
+ * de fondo.
+ *
+ * Lo llama `PanelMapa`, no los envoltorios, y esa es la parte importante: `PanelMapa` sobrevive al
+ * cambio de envoltorio al cruzar los 1024 px, y los envoltorios no. Cuando esto vivía dentro de
+ * ellos, girar una tableta con el panel abierto desmontaba la hoja —que soltaba su marca de
+ * historial pero dejaba la entrada— y montaba el panel lateral, que empujaba otra: una entrada
+ * huérfana por giro, y un Atrás que no hacía nada. El foco tenía el mismo problema: el envoltorio
+ * nuevo capturaba `document.activeElement` cuando el elemento enfocado ya se había ido con el viejo.
+ *
+ * La trampa de foco NO está aquí: es solo de la hoja móvil, que tapa la pantalla. Vive en
+ * `usarTrampaFoco`, al final de este archivo.
  *
  * Es la parte del panel que más fácil se rompe sin que nada se entere, así que vive en un solo
  * sitio y tiene las pruebas de `PanelMapa.test.tsx` encima.
@@ -14,11 +23,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * una por cada cambio, recorrer cinco negocios de una celda dejaría cinco entradas y haría falta
  * pulsar Atrás cinco veces para salir de Explorar.
  */
-export function usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef }: {
+export function usarPanel({ abierta, onCerrar, focoOrigen }: {
   abierta: string | null;
   onCerrar(): void;
   focoOrigen?: HTMLElement | null;
-  contenedorRef: React.RefObject<HTMLElement>;
 }) {
   const onCerrarRef = useRef(onCerrar);
   const elementoAlAbrirRef = useRef<HTMLElement | null>(null);
@@ -55,7 +63,13 @@ export function usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef }: {
   }, []);
 
   // Al abrir: recuerda quién tenía el foco para devolvérselo al cerrar.
-  useEffect(() => {
+  //
+  // useLayoutEffect y no useEffect: React corre los efectos de los HIJOS antes que los del padre,
+  // y la trampa de foco de la hoja (un efecto pasivo del hijo) mueve el foco dentro del panel. Con
+  // un efecto pasivo aquí, lo que se capturaba era el primer botón del propio panel, no el
+  // marcador que lo abrió, y al cerrar el foco acababa en `body`. Los efectos de layout del padre
+  // corren antes que los pasivos del hijo, así que este llega a tiempo.
+  useLayoutEffect(() => {
     if (!abierta) return;
     elementoAlAbrirRef.current = focoOrigen ?? (document.activeElement as HTMLElement | null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,31 +133,6 @@ export function usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef }: {
     return () => { document.body.style.overflow = previo; };
   }, [abierta]);
 
-  // Atrapa el foco de teclado dentro del panel y lo manda al primer control al abrir.
-  useEffect(() => {
-    if (!abierta) return;
-    const contenedor = contenedorRef.current;
-    if (!contenedor) return;
-    const enfocables = () => Array.from(
-      contenedor.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    ).filter((el) => el.offsetParent !== null);
-
-    (enfocables()[0] ?? contenedor).focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const els = enfocables();
-      if (els.length === 0) { e.preventDefault(); return; }
-      const primero = els[0];
-      const ultimo = els[els.length - 1];
-      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
-      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
-    };
-    contenedor.addEventListener('keydown', onKey);
-    return () => contenedor.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abierta]);
-
   return { cerrar, limpiarEntradaPropia };
 }
 
@@ -164,8 +153,10 @@ export function usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef }: {
 export type PropsEnvoltorio = {
   abierta: string | null;
   tituloId: string;
-  onCerrar(): void;
-  focoOrigen?: HTMLElement | null;
+  /** Cierra pasando por el historial. Lo produce `usarPanel` en `PanelMapa`, no el envoltorio. */
+  cerrar(): void;
+  /** Suelta la entrada de historial sin navegar, para irse a otra ruta. */
+  onAntesDeNavegar(): void;
   children: (estado: { expandida: boolean; onAntesDeNavegar(): void; cerrar(): void }) => React.ReactNode;
 };
 
@@ -190,4 +181,37 @@ export function usarEsEscritorio() {
     return () => mq.removeEventListener('change', alCambiar);
   }, []);
   return esEscritorio;
+}
+
+/**
+ * Atrapa el foco de teclado dentro del panel y lo manda al primer control al abrir.
+ *
+ * Solo lo usa la HOJA móvil, que tapa la pantalla entera. El panel lateral **no** lo usa a
+ * propósito: declara `aria-modal="false"` porque el mapa a su lado sigue siendo usable, y atrapar
+ * el foco ahí sería desmentirlo — quien navega con teclado no podría volver al buscador flotante.
+ */
+export function usarTrampaFoco(contenedorRef: React.RefObject<HTMLElement>, abierta: string | null) {
+  useEffect(() => {
+    if (!abierta) return;
+    const contenedor = contenedorRef.current;
+    if (!contenedor) return;
+    const enfocables = () => Array.from(
+      contenedor.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    ).filter((el) => el.offsetParent !== null);
+
+    (enfocables()[0] ?? contenedor).focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const els = enfocables();
+      if (els.length === 0) { e.preventDefault(); return; }
+      const primero = els[0];
+      const ultimo = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+    };
+    contenedor.addEventListener('keydown', onKey);
+    return () => contenedor.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierta]);
 }

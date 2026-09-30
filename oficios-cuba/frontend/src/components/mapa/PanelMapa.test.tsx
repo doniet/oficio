@@ -263,7 +263,27 @@ describe('PanelMapa — elección de envoltorio', () => {
     expect(screen.getByLabelText(/Ver la ficha completa|Recoger la ficha/)).toBeTruthy();
   });
 
-  // Rotar una tableta con el panel abierto cambia de envoltorio: el contenido no puede perderse.
+  // Rotar una tableta con el panel abierto cambia de envoltorio: la entrada de historial la
+  // posee PanelMapa, que sobrevive al cambio, y no el envoltorio que se desmonta. Si la poseyera
+  // el envoltorio, cada giro dejaría una entrada huérfana y haría falta un Atrás de más.
+  it('cruzar el corte no acumula entradas de historial ni pierde el foco', async () => {
+    fijarAncho(390);
+    const onCerrar = vi.fn();
+    const origen = document.createElement('button');
+    document.body.appendChild(origen);
+    origen.focus();
+
+    const largoInicial = window.history.length;
+    const { rerender } = render(createElement(MemoryRouter, null, panel({ onCerrar })));
+    fijarAncho(1280);
+    rerender(createElement(MemoryRouter, null, panel({ onCerrar })));
+    expect(window.history.length - largoInicial).toBe(1);
+
+    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
+    await waitFor(() => expect(document.activeElement).toBe(origen));
+    origen.remove();
+  });
+
   it('cruzar el corte con el panel abierto conserva el contenido', () => {
     fijarAncho(390);
     const { rerender } = montar();
@@ -326,5 +346,35 @@ describe('PanelMapa — lista de celda', () => {
     expect(screen.getByText(/No pudimos cargar los negocios de esta zona/)).toBeTruthy();
     fireEvent.click(screen.getByText('Reintentar'));
     expect(onReintentar).toHaveBeenCalled();
+  });
+});
+
+describe('PanelMapa — foco', () => {
+  beforeEach(() => {
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as never);
+    window.history.replaceState(null, '');
+  });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  // La hoja móvil tapa la pantalla: atrapar el foco es correcto. El panel lateral NO la tapa —
+  // declara aria-modal="false" y el mapa a su lado sigue siendo usable —, así que atrapar el foco
+  // ahí le miente a quien navega con teclado: no podría volver al buscador.
+  it('el panel lateral NO atrapa el foco; la hoja móvil sí', () => {
+    fijarAncho(1280);
+    const { unmount } = montar();
+    const lateral = screen.getByTestId('panel-lateral');
+    const enLateral = Array.from(lateral.querySelectorAll<HTMLElement>('a[href], button'));
+    enLateral[enLateral.length - 1].focus();
+    fireEvent.keyDown(lateral, { key: 'Tab' });
+    expect(document.activeElement).toBe(enLateral[enLateral.length - 1]);
+    unmount();
+
+    fijarAncho(390);
+    montar();
+    const hoja = screen.getByRole('dialog');
+    const enHoja = Array.from(hoja.querySelectorAll<HTMLElement>('a[href], button'));
+    enHoja[enHoja.length - 1].focus();
+    fireEvent.keyDown(hoja, { key: 'Tab' });
+    expect(document.activeElement).toBe(enHoja[0]);
   });
 });

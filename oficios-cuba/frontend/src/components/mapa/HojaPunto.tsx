@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { usarPanel, type PropsEnvoltorio } from './usarPanel';
+import { usarTrampaFoco, type PropsEnvoltorio } from './usarPanel';
 
 // Nombre de la variable CSS que expone cuánto de la parte de abajo del viewport ocupa la
 // hoja ahora mismo (en px; "0px" cuando está cerrada). El mapa la lee para recolocar el botón
@@ -31,7 +31,7 @@ type Posicion = 'asomada' | 'abierta';
  * Lo que comparte con el panel lateral —historial, Esc, foco, scroll— vive en `usarPanel`.
  * Lo que es solo suyo —el arrastre, las dos alturas y `--hoja-punto-alto`— vive aquí.
  */
-export default function HojaPunto({ abierta, tituloId, onCerrar, focoOrigen, children }: PropsEnvoltorio) {
+export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar, children }: PropsEnvoltorio) {
   const [posicion, setPosicion] = useState<Posicion>('asomada');
   const [offsetArrastre, setOffsetArrastre] = useState<number | null>(null);
   // Fuerza a recalcular las anclas (en px) si cambia el tamaño de la ventana.
@@ -41,7 +41,8 @@ export default function HojaPunto({ abierta, tituloId, onCerrar, focoOrigen, chi
   const arrastreRef = useRef<{ inicioY: number } | null>(null);
   const huboArrastreRef = useRef(false);
 
-  const { cerrar, limpiarEntradaPropia } = usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef: sheetRef });
+  // La hoja tapa la pantalla entera: aquí atrapar el foco es lo correcto.
+  usarTrampaFoco(sheetRef, abierta);
 
   // Al abrir algo nuevo, la hoja vuelve a asomarse: nadie espera que un punto distinto aparezca
   // ya desplegado a pantalla casi completa.
@@ -138,7 +139,7 @@ export default function HojaPunto({ abierta, tituloId, onCerrar, focoOrigen, chi
         </button>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          {children({ expandida: posicion === 'abierta', onAntesDeNavegar: limpiarEntradaPropia, cerrar })}
+          {children({ expandida: posicion === 'abierta', onAntesDeNavegar, cerrar })}
         </div>
       </div>
     </div>

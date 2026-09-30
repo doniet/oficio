@@ -79,6 +79,19 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Si el contenedor se monta sin altura, `usarMapa` ignora ese rectángulo sin área a propósito
+  // —no gasta una petición que no puede devolver nada—, pero entonces NO queda bbox y el mapa se
+  // quedaría mudo para siempre: ni recarga al escribir, ni error, ni spinner. Leaflet solo se
+  // entera de un cambio de tamaño por el `resize` de la ventana o por un `invalidateSize()`
+  // explícito, y en escritorio ese `resize` puede no llegar nunca. El observador cierra ese
+  // agujero, y de paso cubre volver desde una pestaña oculta.
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const observador = new ResizeObserver(() => map.invalidateSize());
+    observador.observe(map.getContainer());
+    return () => observador.disconnect();
+  }, [map]);
+
   return null;
 }
 
@@ -89,7 +102,7 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
    * Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). Si la
    * celda no se pudo cargar, llega con la lista vacía y el mensaje: el panel se abre igual.
    */
-  onAbrirLista: (puntos: PuntoMapa[], error?: string) => void;
+  onAbrirLista: (puntos: PuntoMapa[], error?: string, reintentar?: () => void) => void;
   /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
   alMapa?: (m: LeafletMap) => void;
 }) {
@@ -108,7 +121,10 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
         .then((lista) => onAbrirLista(lista.length ? lista : [p]))
         // Sin este catch, un fallo de red es un rechazo no capturado: el usuario toca un grupo y
         // no pasa NADA, ni panel ni mensaje. Se abre igual, con el error y su «Reintentar».
-        .catch(() => onAbrirLista([], 'No pudimos cargar los negocios de esta zona.'));
+        // Se entrega también CÓMO reintentar: quien abre el panel (ExplorarMapa) no sabe pedir
+        // celdas — eso vive en usarMapa —, así que sin esto el botón «Reintentar» existe y no
+        // hace nada, que es peor que no tenerlo.
+        .catch(() => onAbrirLista([], 'No pudimos cargar los negocios de esta zona.', () => abrir(p)));
     } else onAbrir(p);
   }, [mapa, onAbrir, onAbrirLista]);
   const zoomRecien = useRef(false);

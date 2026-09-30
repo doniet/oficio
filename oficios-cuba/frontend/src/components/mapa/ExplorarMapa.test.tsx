@@ -41,7 +41,11 @@ function montar(puntos: PuntoMapa[], get: (k: string) => string = () => '') {
 describe('ExplorarMapa', () => {
   beforeEach(() => {
     vi.mocked(mapaApi.buscar).mockReset();
-    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: null } } as never);
+    // Devuelve un perfil con el id pedido: con `provider: null` el efecto de carga no vuelve a
+    // dispararse y la duplicidad que esta suite busca quedaría escondida.
+    vi.mocked(providerApi.getById).mockImplementation((id: string) => Promise.resolve({
+      data: { provider: { id, business_name: `Negocio ${id}`, categories: [], rating: 0, review_count: 0, contact_mode: 'both', whatsapp: null } },
+    }) as never);
     fijarAncho(1280);
     window.history.replaceState(null, '');
   });
@@ -84,6 +88,41 @@ describe('ExplorarMapa', () => {
 
     await waitFor(() => expect(screen.getByTestId('panel-lateral')).toBeTruthy());
     expect(panBy).not.toHaveBeenCalled();
+  });
+
+  // El botón existía y no hacía nada: ExplorarMapa no sabe pedir celdas (eso vive en usarMapa),
+  // así que «Reintentar» copiaba un array y dejaba el error en pantalla. La prueba de PanelMapa
+  // no lo veía porque le inyecta su propio onReintentar: comprueba el cableado de ListaCelda.
+  it('«Reintentar» tras un fallo de celda vuelve a pedirla de verdad', async () => {
+    const agrupado = { ...punto('g', -76), detras: 2 };
+    vi.mocked(mapaApi.celda).mockRejectedValue(new Error('red caída'));
+    const { container } = montar([agrupado]);
+    await act(async () => { await espera(320); });
+
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(30); });
+    await waitFor(() => expect(screen.getByText(/No pudimos cargar los negocios/)).toBeTruthy());
+    expect(vi.mocked(mapaApi.celda)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(mapaApi.celda).mockResolvedValue({ puntos: [punto('a', -76)], hay_mas: false } as never);
+    await act(async () => { fireEvent.click(screen.getByText('Reintentar')); await espera(30); });
+
+    expect(vi.mocked(mapaApi.celda)).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByText(/No pudimos cargar los negocios/)).toBeNull());
+  });
+
+  // Al cambiar de punto con el panel abierto se pedía el perfil DOS veces: el efecto de carga
+  // corría con el punto nuevo y el perfil viejo, y el reset del perfil volvía a dispararlo.
+  it('cambiar de punto pide el perfil una sola vez', async () => {
+    const { container } = montar([punto('a', -76), punto('b', -77)]);
+    await act(async () => { await espera(320); });
+    const pines = container.querySelectorAll('.leaflet-marker-icon');
+
+    await act(async () => { (pines[0] as HTMLElement).click(); await espera(60); });
+    await act(async () => { (pines[1] as HTMLElement).click(); await espera(60); });
+
+    const ids = vi.mocked(providerApi.getById).mock.calls.map((c) => c[0]);
+    expect(ids).toEqual(['a', 'b']);
   });
 
   it('cambiar de pestaña con el panel abierto lo cierra', async () => {

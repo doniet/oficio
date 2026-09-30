@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
@@ -30,15 +30,16 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   const [errorPerfil, setErrorPerfil] = useState('');
   const [reintentos, setReintentos] = useState(0);
 
-  // Al cambiar de punto, olvida la ficha completa del anterior.
-  useEffect(() => {
-    setPerfil(null);
-    setErrorPerfil('');
-  }, [punto.id]);
+  // El id ya pedido. Antes esto se hacía con un efecto que ponía `setPerfil(null)` al cambiar de
+  // punto y con `perfil` entre las dependencias del efecto de carga: el resultado era que al pasar
+  // de A a B se pedía B DOS veces — una con el perfil de A todavía puesto, y otra en cuanto el
+  // reset cambiaba esa dependencia. Con un ref no hay dependencia que cambiar.
+  const pedidoRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!expandida) return;
-    if (perfil?.id === punto.id) return;
+    if (pedidoRef.current === punto.id) return;
+    pedidoRef.current = punto.id;
     let cancelado = false;
     setCargandoPerfil(true);
     setErrorPerfil('');
@@ -59,16 +60,20 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
         setCargandoPerfil(false);
       });
     return () => { cancelado = true; };
-    // `reintentos` no lo lee el cuerpo: solo está para que "Reintentar" fuerce otra pasada,
-    // porque un fallo deja `perfil` en null igual que antes de pedir nada (si no, el efecto no
-    // tendría por qué volver a correr).
+    // `reintentos` no lo lee el cuerpo: solo está para que "Reintentar" fuerce otra pasada (el
+    // manejador borra antes `pedidoRef`, que si no bloquearía el reintento del mismo id).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [punto, expandida, perfil, reintentos]);
+  }, [punto.id, expandida, reintentos]);
 
-  const telefonoContacto = perfil?.whatsapp ?? null;
-  const mostrarWhatsapp = Boolean(telefonoContacto) && perfil?.contact_mode !== 'call';
-  const mostrarLlamar = Boolean(telefonoContacto) && perfil?.contact_mode !== 'whatsapp';
-  const lugar = [perfil?.municipality_name, perfil?.province_name].filter(Boolean).join(', ');
+  // Lo que se pinta tiene que ser el perfil DE ESTE punto: entre que se toca otro y llega su
+  // respuesta, `perfil` todavía guarda el anterior, y pintarlo mostraría el teléfono de un
+  // negocio bajo el nombre de otro.
+  const perfilVigente = perfil?.id === punto.id ? perfil : null;
+
+  const telefonoContacto = perfilVigente?.whatsapp ?? null;
+  const mostrarWhatsapp = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'call';
+  const mostrarLlamar = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'whatsapp';
+  const lugar = [perfilVigente?.municipality_name, perfilVigente?.province_name].filter(Boolean).join(', ');
 
   return (
     <>
@@ -108,16 +113,16 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
               <Spinner />
             </div>
           )}
-          {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => setReintentos((n) => n + 1)} />}
-          {perfil && !cargandoPerfil && (
+          {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => { pedidoRef.current = null; setReintentos((n) => n + 1); }} />}
+          {perfilVigente && !cargandoPerfil && (
             <div className="space-y-4">
-              <RatingInline rating={perfil.rating} count={perfil.review_count} />
-              {perfil.description && <p className="text-sm text-ink-700">{perfil.description}</p>}
+              <RatingInline rating={perfilVigente.rating} count={perfilVigente.review_count} />
+              {perfilVigente.description && <p className="text-sm text-ink-700">{perfilVigente.description}</p>}
               {lugar && <p className="text-sm text-ink-500">{lugar}</p>}
-              {perfil.horario && <p className="text-sm text-ink-500">Horario: {perfil.horario}</p>}
-              {perfil.categories.length > 0 && (
+              {perfilVigente.horario && <p className="text-sm text-ink-500">Horario: {perfilVigente.horario}</p>}
+              {perfilVigente.categories.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5">
-                  {perfil.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
+                  {perfilVigente.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
                 </ul>
               )}
               {(mostrarWhatsapp || mostrarLlamar) && telefonoContacto && (

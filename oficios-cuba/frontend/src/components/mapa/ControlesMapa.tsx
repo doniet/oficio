@@ -41,7 +41,7 @@ export default function ControlesMapa({ q, tab, category, categorias, conPanel, 
 
   return (
     // pointer-events-none en el contenedor: el mapa sigue recibiendo arrastres a los lados de la
-    // tarjeta. z-[400] es la escala de los controles del mapa; el panel va por encima, en z-[500].
+    // tarjeta.
     /* El desplazamiento va con transición: el panel aparece al tocar un punto, y un salto seco de
        la barra de búsqueda en ese momento se lee como un fallo, no como una respuesta.
       La escala de Leaflet (leaflet.css) NO acaba en 400: los paneles van de 200 a 700, pero los

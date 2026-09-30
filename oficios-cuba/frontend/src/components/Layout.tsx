@@ -143,7 +143,7 @@ export default function Layout() {
 
   return (
     <div className={cn('flex flex-col', enMapa ? 'alto-app overflow-hidden' : 'min-h-screen')}>
-      <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lift">
+      <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[1030] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lift">
         Saltar al contenido
       </a>
       <header className="sticky top-0 z-40 border-b border-sand-200/80 bg-paper/90 backdrop-blur-md">

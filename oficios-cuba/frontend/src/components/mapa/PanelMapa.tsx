@@ -3,7 +3,7 @@ import HojaPunto from './HojaPunto';
 import PanelLateral from './PanelLateral';
 import FichaPunto from './FichaPunto';
 import ListaCelda from './ListaCelda';
-import { usarEsEscritorio } from './usarPanel';
+import { usarEsEscritorio, usarPanel } from './usarPanel';
 import type { PuntoMapa } from '../../types';
 
 /**
@@ -33,8 +33,12 @@ export default function PanelMapa({
   // entradas y haría falta pulsar Atrás cinco veces para salir de Explorar.
   const abierta = punto ? `punto:${punto.id}` : lista ? 'lista' : null;
 
+  // El historial y el foco viven AQUÍ y no en los envoltorios: este componente sobrevive al
+  // cambio de envoltorio al cruzar los 1024 px, y ellos no.
+  const { cerrar, limpiarEntradaPropia } = usarPanel({ abierta, onCerrar, focoOrigen });
+
   return (
-    <Envoltorio abierta={abierta} tituloId={tituloId} onCerrar={onCerrar} focoOrigen={focoOrigen}>
+    <Envoltorio abierta={abierta} tituloId={tituloId} cerrar={cerrar} onAntesDeNavegar={limpiarEntradaPropia}>
       {({ expandida, onAntesDeNavegar, cerrar }) => (punto ? (
         <FichaPunto
           punto={punto}
