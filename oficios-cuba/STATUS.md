@@ -649,3 +649,40 @@
   reescriben 293 consultas), y nada se ha subido a GitHub. `seedMapa()` no se ejecutó, así que el
   mapa tiene 9 puntos en vez de los ~300 de `npm run seed:mapa` — es lo esperado, no un fallo.
 - Blockers: ninguno.
+
+## 2026-09-30 01:20 UTC — claude-code (vps2) — Admin inicial, Playwright a demanda y comprobación visual
+- Changes: (1) **Admin del panel técnico creado**: `admin@dardoit.com`, cuenta `client` con
+  contraseña de 24 caracteres, registrada por `POST /api/auth/register` desde **dentro** del
+  contenedor (127.0.0.1:3000, la contraseña entró por STDIN: no pasó por argv, ni por el entorno de
+  ningún proceso, ni por internet) y promovida con `dist/scripts/admin.js dar`. Las credenciales
+  quedan en `oficios-cuba/.env` (600) como **bloque de comentario**, no como variable: `oficio_api`
+  monta ese archivo con `env_file: .env`, así que cualquier variable de ahí sería legible con
+  `docker exec oficio_api env`. Es una cuenta aparte de la de Google a propósito: con
+  `GOOGLE_CLIENT_ID` vacío el Google de producción es el SIMULADO, y con `DEMO_MODE=true` cualquiera
+  puede reclamar por ese selector un email **sin** contraseña (los que la tienen dan 409) — un admin
+  sin contraseña sería reclamable desde fuera. (2) `.env.example` estaba obsoleto para el stack
+  nuevo: le faltaban `POSTGRES_PASSWORD` y `MEILI_MASTER_KEY`, y `CLAUDE.md` manda copiarlo para
+  montar un entorno local. Añadidas, más el aviso de `COMPOSE_PROJECT_NAME`. (3) **Playwright a
+  demanda** en `~/docker/playwright/` (fuera de este repo): `Dockerfile` + `docker-compose.yml` con
+  dos perfiles que **no arrancan solos**, `scripts/abrir.mjs` (genérico), `scripts/verificar-oficio.mjs`
+  (el paso 4 del runbook, sale != 0 si hay errores de consola sin justificar) y `scripts/puente-cdp.mjs`.
+- Tests: comprobación visual de producción a 390 px, que era lo único del runbook que faltaba:
+  portada, las tres pestañas de `/explorar`, vista de mapa, ficha, planes y login. Los contadores de
+  la propia página cuadran con la API: **22 servicios, 11 productos, 2 negocios**; el mapa pinta
+  7 marcadores y responde al click. Sin desborde horizontal en ninguna. **0 errores de consola sin
+  justificar** (los 6 que hay son el beacon de Cloudflare Web Analytics que la CSP bloquea a
+  propósito). El login del admin verificado de punta a punta: `POST /api/auth/login` → 200 y
+  `GET /api/admin/me` → 200 con `totp_enabled:false` (activa el 2FA al entrar). Modo CDP probado
+  con `chromium.connectOverCDP()` desde la red del host: conecta y maneja el navegador. Nada quedó
+  corriendo.
+- Security: el puerto CDP (9222) se publica **solo en 127.0.0.1** y únicamente bajo `--profile cdp`;
+  CDP es control total del navegador sin autenticación. Nada más se expuso: sin cambios en Traefik,
+  el túnel, CORS, auth ni el aislamiento de red. Las copias en claro de la contraseña en el
+  scratchpad se borraron con `shred`.
+- Next: **el `git push origin master` lo bloqueó el harness** (`Out-of-Place Publication`), igual que
+  el despliegue: `master` sigue 53 commits por delante de `origin/master` y hay que lanzarlo a mano.
+  Revisado antes de intentarlo: ningún `.env`, clave ni volcado entre los archivos a subir, y los
+  `DATABASE_URL` del diff usan `${POSTGRES_PASSWORD}`, no una contraseña literal. Sigue pendiente
+  avisar a Doniet. El token de Telegram sigue sin restaurar (ver la entrada anterior y
+  `docs/despliegue-postgres.md`).
+- Blockers: el push, que necesita permiso o que lo lance Dariel.
