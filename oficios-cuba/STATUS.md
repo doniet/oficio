@@ -797,3 +797,32 @@
 - Next: cuando Dariel avise del paso a producción real, toca borrar lo sembrado
   (`email like '%@oficios.test'`) y decidir qué pasa con `DEMO_MODE`.
 - Blockers: ninguno.
+
+## 2026-09-30 04:20 UTC — claude-code (vps2) — Cuenta demo de administrador con entrada directa al panel Técnico
+- Changes (`9482e8c`): tercer botón "Administrador" en la sección "Prueba la demo" del login
+  (`cliente@demo.com` / `proveedor@demo.com` / **`admin@demo.com`**, misma contraseña `Demo123!`).
+  `seedDemo()` siembra esa cuenta con `is_admin=true` y 2FA ya activado (secreto que nadie ve).
+  Nueva ruta `POST /admin/2fa/demo-enter` (`routes/admin.ts`) abre la sesión de administración
+  sin pedir código, pero **solo** si `DEMO_MODE=true` y el email es exactamente `admin@demo.com`:
+  cualquier otro admin —incluido uno real en producción con `DEMO_MODE=true`, como la cuenta de
+  Dariel— sigue exigiendo su código TOTP real; la ruta no distingue por "es admin", distingue por
+  ese email exacto. Sin cambios de esquema.
+- Tests: pass — backend **267/267** (3 nuevos: el atajo entra sin código para `admin@demo.com`
+  con 2FA activo, 404 para cualquier otro admin aunque tenga 2FA y esté en DEMO_MODE, 404 fuera de
+  DEMO_MODE) corridos contra una base Postgres temporal y aislada (contenedor aparte, sin tocar
+  `oficio_db`); `tsc` backend y frontend, `vite build`. Verificado además en producción tras el
+  despliegue: registro de `admin@demo.com` vía `/api/auth/register`, rol de admin por el CLI
+  (`scripts/admin.js dar`), activación del 2FA con el flujo real (`/2fa/setup` → código TOTP
+  calculado con la misma función del proyecto → `/2fa/enable`), y `POST /2fa/demo-enter` → 200 con
+  `admin_token` que abre `/admin/system` de verdad. El bundle público (`Login-CRceSNKx.js`) ya sirve
+  el botón nuevo.
+- Security: nueva ruta que toca el flujo de 2FA del panel técnico — gateada por `DEMO_MODE` Y el
+  email exacto `admin@demo.com`, no por "cualquier admin", para no debilitar el 2FA de un admin
+  real mientras el sitio siga en modo demo. Sin cambios de red, Traefik, túnel ni `.env`. Backup
+  (`data/oficios-2026-09-30-0419-pre-admin-demo.dump`) antes del deploy, por costumbre — no hubo
+  migración de esquema.
+- Next: cuando se apague `DEMO_MODE`, la ruta y el botón dejan de tener efecto solos (no hace
+  falta borrarlos a mano), pero sí conviene borrar entonces la cuenta `admin@demo.com` como
+  cualquier otra cuenta demo.
+- Blockers: ninguno. Cambios commiteados en `master` local; **sin pushear** a
+  `github.com/doniet/oficio` todavía.
