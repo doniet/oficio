@@ -133,3 +133,38 @@ servicios, 35 conversaciones, 34 reseñas, 3 citas, 8 pagos simulados, 9 descarg
 pero quedan huérfanos: ninguna fila los referencia.
 
 Dariel autorizó expresamente no mantener compatibilidad con los datos existentes.
+
+### Y dos cosas que esta lista se dejaba fuera, y hacen falta para operar
+
+Comprobado el 2026-09-30, después del despliegue. Los conteos de arriba son datos de prueba que no
+importan; estas dos no son datos, son **acceso**:
+
+**1. El admin.** El SQLite tenía uno — `awaydsystems@gmail.com`, con 2FA montado — y la base nueva
+tiene **cero**. Peor: esa cuenta no existe siquiera, porque era un login real de Google y el seed
+demo no la crea. Sin admin no se entra a `/admin`, y a quien no es admin el panel le responde 404.
+Para recuperarlo:
+
+```bash
+# 1. Entrar en oficio.dardoit.com con Google — eso crea la cuenta
+# 2. Darle el admin (el CLI: listar | dar <email> | quitar <email> | reset-2fa <email>)
+docker exec oficio_api node dist/scripts/admin.js dar awaydsystems@gmail.com
+# 3. Montar el 2FA de nuevo desde el panel (el secreto TOTP tampoco se migró)
+```
+
+**2. El token del bot de Telegram.** Vivía cifrado en `telegram_state` (`token_cipher`) y tampoco se
+migró: el notificador arranca diciendo `Sin token: esperando a que un admin lo pegue en el panel`, así
+que **los avisos por Telegram están caídos**. El push de las apps **no** lo está: su credencial es un
+archivo (`secrets/fcm/cuenta.json`), y el notificador dice `Push FCM activo`.
+
+Y pegarlo a mano no es el único camino. La pareja de claves del notificador **sobrevivió** — la privada
+es un archivo (`secrets/notifier/notifier.key`), no una fila — y la pública que el notificador publicó
+en la base nueva tiene el **mismo md5** que la de la base vieja. Es decir: el `token_cipher` del
+respaldo de SQLite sigue siendo descifrable por el notificador tal cual está. Se puede restaurar esa
+fila (con `token_version`, `token_updated_at`, `bot_id` y `bot_username`) en vez de volver a pedirle el
+token a BotFather, y nadie llega a ver el token en claro en ningún momento.
+
+**Ojo con `update_offset`:** el respaldo lo tiene en `406699557`. Restaurarlo evita que el bot
+reprocese mensajes viejos de Telegram al volver; no restaurarlo puede hacer que reenvíe avisos ya
+atendidos. Si se restaura el token, restaurar también ese valor.
+
+Esto último no está hecho: mueve una credencial cifrada de una base a otra, y esa decisión es de Dariel.
