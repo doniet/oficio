@@ -52,10 +52,10 @@ oficios-cuba/
 │   ├── src/
 │   │   ├── routes/          # Rutas API (auth, provinces, categories, providers, services, etc.)
 │   │   ├── middleware/      # Auth, error handling
-│   │   ├── db/             # Esquema SQLite + seed data
+│   │   ├── db/             # esquema.sql + migrar.ts + seeds (Postgres)
 │   │   ├── services/       # Lógica de negocio
 │   │   └── index.ts        # Entry point
-│   ├── data/               # Base de datos SQLite
+│   ├── data/               # solo fotos subidas; la base vive en el volumen oficio_pgdata
 │   └── package.json
 ├── frontend/
 │   ├── src/

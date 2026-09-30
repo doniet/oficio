@@ -34,7 +34,13 @@ docker logs oficio_api --tail 20      # "Base de datos migrada a la versión N" 
 Restaurar ese respaldo (contra una base vacía, p. ej. tras recrear el volumen):
 
 ```bash
+# Si la base NO esta vacia (restaurar sobre una instalacion en uso), para la API primero:
+#   docker compose stop oficio_api oficio_notifier
+# Con el pool de la API conectado, el --clean compite con sus conexiones: puede fallar a medias y
+# dejar a la API viendo un esquema a medio recrear. Si el volumen es nuevo, no hace falta.
 docker exec -i oficio_db pg_restore -U oficio -d oficio --clean --if-exists < oficio-<fecha>.dump
+# Y despues:
+#   docker compose start oficio_api oficio_notifier
 ```
 
 ## Pagos manuales (sin pasarela)
@@ -54,6 +60,7 @@ docker exec oficio_api node dist/scripts/pagos.js rechazar <subscription_id>
   para las fotos. El respaldo real es el `pg_dump` de la sección "Actualizar", de arriba.
 - `data/uploads/`: fotos subidas por los proveedores (esto sí es un bind mount de archivos).
 - Todavía no hay copia de seguridad automática de ninguno de los dos.
+- **El `pg_dump`/`pg_restore` de arriba está verificado** (2026-09-30, contra una base de prueba): el volcado incluye el esquema, las extensiones y los índices GiST de PostGIS, y la restauración devuelve 0.
 
 ## Panel técnico (/admin)
 
