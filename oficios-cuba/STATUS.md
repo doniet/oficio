@@ -826,3 +826,24 @@
   cualquier otra cuenta demo.
 - Blockers: ninguno. Cambios commiteados en `master` local; **sin pushear** a
   `github.com/doniet/oficio` todavía.
+
+## 2026-09-30 23:47 UTC — claude-code (vps2) — Pin de selección en el mapa (misma gota del logo), coloreado por tipo
+- Changes (`664a6f4`): al tocar un negocio u oficio en `/explorar?vista=mapa`, su marcador pasa de
+  círculo a la silueta del glifo de marca (`favicon.svg`) — el ancla se mueve a la PUNTA de la
+  gota, no al centro, para que la coordenada real no "salte" al seleccionarlo. Vuelve a círculo al
+  cerrar la ficha o elegir otro punto; z-index por encima del resto para no quedar tapado. De paso
+  (pedido de Dariel tras ver el primer diseño en un artifact de previsualización, sin navegador
+  disponible en vps2 para verlo en vivo): el color del marcador —círculo y pin— deja de seguir el
+  *plan* y pasa a seguir el **tipo de perfil**: `brand-600` (naranja) para un negocio, `ink-700`
+  (oscuro) para un servicio suelto. Sin cambios de backend ni de esquema.
+- Tests: pass — frontend 49/49 (2 nuevos: el círculo se convierte en pin solo para el punto con la
+  ficha abierta y vuelve a círculo al soltarlo o cambiar de punto; el color sigue `tipo`, no `plan`,
+  en ambos estados). `tsc` y `vite build` limpios. Verificado en producción tras el deploy: el
+  chunk `MapaExplorar-D4xMLMAu.js` servido por Cloudflare contiene `map-pin--seleccionado`,
+  `bg-brand-600` y `bg-ink-700`.
+- Security: N/A — solo frontend, sin tocar `oficio_api` ni la base. Desplegado con
+  `docker compose up -d --build oficio_web` (sin reconstruir `oficio_api`/`oficio_db`): menor radio
+  de impacto para un cambio que no toca el backend.
+- Next: ninguno.
+- Blockers: ninguno. Sin verificación visual en navegador real (vps2 no tiene Chromium instalado);
+  se verificó con una previsualización aislada que usa el mismo SVG y las mismas clases del código.
