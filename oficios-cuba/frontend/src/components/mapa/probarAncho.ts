@@ -35,3 +35,17 @@ export function fijarAncho(px: number) {
   });
   for (const fns of oyentes.values()) for (const fn of fns) fn();
 }
+
+/**
+ * jsdom no hace layout: todo elemento mide 0×0. Leaflet calcula sus bounds a partir de
+ * `clientWidth`/`clientHeight` del contenedor, así que sin esto el mapa devuelve un rectángulo
+ * colapsado a un punto — y `usarMapa` lo ignora a propósito (no se gasta una petición que no
+ * puede devolver nada), con lo que en pruebas no se pediría NUNCA el área.
+ *
+ * Es el mismo tipo de parche que el de `offsetParent` para la trampa de foco: un hueco del
+ * entorno de pruebas, no algo que dependa del navegador real.
+ */
+export function darTamanoAlMapa(ancho = 800, alto = 600) {
+  Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return ancho; } });
+  Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return alto; } });
+}

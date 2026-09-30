@@ -113,6 +113,16 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
   }, [mapa, onAbrir, onAbrirLista]);
   const zoomRecien = useRef(false);
   const mapRef = useRef<LeafletMap | null>(null);
+  // `alMapa` va por ref y el callback del ref es ESTABLE: un `ref={(m) => …}` escrito en línea
+  // cambia de identidad en cada render, y React lo vuelve a invocar (null y luego el mapa) cada
+  // vez. Con MapContainer eso es pedir que la costura entre React y Leaflet se vuelva a montar —
+  // y una carga doble del área es justo lo que la prueba «no dobla la carga» existe para cazar.
+  const alMapaRef = useRef(alMapa);
+  alMapaRef.current = alMapa;
+  const guardarMapa = useCallback((m: LeafletMap | null) => {
+    mapRef.current = m;
+    if (m) alMapaRef.current?.(m);
+  }, []);
   const [localizando, setLocalizando] = useState(false);
   const [errorUbicacion, setErrorUbicacion] = useState('');
 
@@ -142,7 +152,7 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
   return (
     <div className="relative h-full w-full overflow-hidden">
       <MapContainer
-        ref={(m) => { mapRef.current = m; if (m) alMapa?.(m); }}
+        ref={guardarMapa}
         center={CUBA_CENTER}
         zoom={7}
         minZoom={6}

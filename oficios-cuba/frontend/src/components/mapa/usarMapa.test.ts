@@ -1,9 +1,10 @@
 import { createElement } from 'react';
 import { act, render, renderHook, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acotarACuba, acotarBbox, usarMapa } from './usarMapa';
 import MapaExplorar from './MapaExplorar';
 import { mapaApi } from '../../services/api';
+import { darTamanoAlMapa } from './probarAncho';
 import type { Bbox, MapaRespuesta, PuntoMapa } from '../../types';
 
 // Solo se sustituye mapaApi.buscar: con vi.importActual el resto del módulo (apiError,
@@ -18,6 +19,8 @@ vi.mock('../../services/api', async () => {
 const bbox: Bbox = { sur: 22, oeste: -83, norte: 23, este: -82 };
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+beforeAll(() => { darTamanoAlMapa(); });
 
 describe('acotarBbox', () => {
   // Móvil en vertical a zoom 7: el rectángulo visible es alto y se sale de los 19–24° que acepta
@@ -122,6 +125,24 @@ describe('usarMapa', () => {
 
     expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
     expect(vi.mocked(mapaApi.buscar).mock.calls[0][0]).toEqual(ultima);
+  });
+
+  // Lo descubrió un fallo intermitente de «no dobla la carga»: la PRIMERA petición del montaje
+  // llevaba un rectángulo colapsado a un punto (sur === norte, oeste === este). Es el mapa antes
+  // de tener tamaño, y no es cosa de jsdom: en un navegador pasa con el contenedor aún sin altura
+  // (CSS que no ha aplicado, pestaña oculta). Con el mapa a pantalla completa el alto lo da una
+  // clase CSS, así que el caso es MÁS probable que antes, no menos.
+  it('un rectángulo sin área no gasta una petición: no puede devolver nada', async () => {
+    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+
+    act(() => { result.current.alMover({ sur: 21.5, oeste: -79.5, norte: 21.5, este: -79.5 }, true); });
+    await act(async () => { await espera(320); });
+    expect(mapaApi.buscar).not.toHaveBeenCalled();
+
+    // Y en cuanto llega uno con área, se pide con normalidad.
+    act(() => { result.current.alMover({ sur: 21, oeste: -80, norte: 21.4, este: -79.5 }, true); });
+    await act(async () => { await espera(320); });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
   });
 
   it('cargarCelda pide con la zona que se PINTÓ, no con la que el mapa lleva ahora', async () => {

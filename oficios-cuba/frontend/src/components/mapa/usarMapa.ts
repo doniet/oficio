@@ -99,6 +99,13 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   }, [cargar]);
 
   const alMover = useCallback((b: Bbox, porZoom: boolean) => {
+    // Un rectángulo sin área es el mapa antes de tener tamaño: al montar, Leaflet devuelve unos
+    // bounds colapsados a un punto si el contenedor todavía no tiene altura (CSS que aún no
+    // aplicó, pestaña oculta, contenedor que la recibe por clase). Pedirlo gasta una petición que
+    // no puede devolver nada, y encima deja `bboxPintadoRef` apuntando a un rectángulo degenerado,
+    // del que luego `cargarCelda` deduciría un tamaño de celda absurdo. Se ignora y se espera al
+    // siguiente movimiento, que llega solo en cuanto el mapa se dimensiona.
+    if (b.norte <= b.sur || b.este <= b.oeste) return;
     bboxRef.current = b;
     programar(porZoom ? ANTIRREBOTE_ZOOM_MS : ANTIRREBOTE_PANEO_MS);
   }, [programar]);
