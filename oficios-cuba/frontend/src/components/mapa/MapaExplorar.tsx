@@ -14,12 +14,16 @@ function aBbox(b: LatLngBounds): Bbox {
   return acotarBbox({ sur: b.getSouth(), oeste: b.getWest(), norte: b.getNorth(), este: b.getEast() });
 }
 
+// El color dice el TIPO de perfil (negocio o servicio/oficio suelto), no el plan: brand-600 para
+// negocio, ink-700 para oficio. Las clases van completas y literales en cada sitio (nunca
+// `bg-${...}`, que Tailwind no puede extraer de una interpolación): JIT escanea el código fuente
+// buscando el texto exacto de la clase. brand-500 queda fuera porque no lleva texto ni sirve de
+// indicador sobre fondo claro (2,43:1, por debajo del 3:1 que pide WCAG 1.4.11).
+
 // divIcon en vez del icono por defecto de Leaflet, igual que PlaceMap/MapPointPicker: el default
 // carga PNGs por URL relativa que Vite no empaqueta.
-function pinIcon(plan: PuntoMapa['plan'], detras: number, aproximado: boolean) {
-  // Solo el plan pro usa brand-600: brand-500 no lleva texto ni sirve de indicador sobre fondo
-  // claro (2,43:1, por debajo del 3:1 que pide WCAG 1.4.11). Los demás planes van en ink-700.
-  const color = plan === 'pro' ? 'bg-brand-600' : 'bg-ink-700';
+function pinIcon(tipo: PuntoMapa['tipo'], detras: number, aproximado: boolean) {
+  const color = tipo === 'negocio' ? 'bg-brand-600' : 'bg-ink-700';
   const insignia = detras > 0
     ? `<span class="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-950 px-1 text-[10px] font-bold leading-none text-white">+${detras}</span>`
     : '';
@@ -36,6 +40,33 @@ function pinIcon(plan: PuntoMapa['plan'], detras: number, aproximado: boolean) {
     html: `<span class="relative flex h-7 w-7 items-center justify-center">
       ${aro}
       <span class="block h-5 w-5 rounded-full border-2 border-white ${color} shadow"></span>
+      ${insignia}
+    </span>`,
+  });
+}
+
+// Misma silueta que el glifo de la marca (frontend/public/favicon.svg): la gota original mide
+// 56×75 con centro del círculo en (28,28) y r=19 — coordenadas trasladadas aquí tal cual, para
+// poder reescalarlas sin tocar el trazado. El punto tocado dice «este soy yo» con la MISMA forma
+// que usa la marca para señalar un lugar, en vez del círculo genérico del resto de los pines.
+const GOTA_PATH = 'M28 0C43.5 0 56 12.5 56 28C56 41 47 51 37 63L28 75L19 63C9 51 0 41 0 28C0 12.5 12.5 0 28 0Z';
+
+// El pin del seleccionado: el ancla va en la PUNTA (abajo), no en el centro como el círculo — es
+// la punta la que tiene que caer sobre la coordenada real, o el punto "se movería" al seleccionarlo.
+function pinSeleccionadoIcon(tipo: PuntoMapa['tipo'], detras: number) {
+  const color = tipo === 'negocio' ? 'text-brand-600' : 'text-ink-700';
+  const insignia = detras > 0
+    ? '<span class="absolute -right-1.5 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-950 px-1 text-[10px] font-bold leading-none text-white">+' + detras + '</span>'
+    : '';
+  return L.divIcon({
+    className: 'map-pin map-pin--seleccionado',
+    iconSize: [34, 45.5],
+    iconAnchor: [17, 45.5],
+    html: `<span class="relative block h-full w-full drop-shadow-md ${color}">
+      <svg viewBox="0 0 56 75" class="h-full w-full" xmlns="http://www.w3.org/2000/svg">
+        <path d="${GOTA_PATH}" fill="currentColor"/>
+        <circle cx="28" cy="28" r="19" fill="#FFFFFF"/>
+      </svg>
       ${insignia}
     </span>`,
   });
@@ -95,8 +126,10 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, alMapa }: {
+export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, alMapa }: {
   tab: string; q: string; category: string;
+  /** El `id` del punto que tiene su ficha abierta: su marcador cambia de círculo a pin. */
+  seleccionadoId?: string | null;
   onAbrir: (p: PuntoMapa) => void;
   /**
    * Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). Si la
@@ -215,7 +248,10 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
             <Marker
               key={p.id}
               position={[p.lat, p.lng]}
-              icon={pinIcon(p.plan, p.detras, p.aproximado)}
+              icon={p.id === seleccionadoId ? pinSeleccionadoIcon(p.tipo, p.detras) : pinIcon(p.tipo, p.detras, p.aproximado)}
+              // Por encima del resto: si dos pines caen muy cerca, el que tiene la ficha abierta
+              // no debe quedar tapado por uno vecino sin seleccionar.
+              zIndexOffset={p.id === seleccionadoId ? 1000 : 0}
               eventHandlers={{ click: () => abrir(p) }}
             />
           )

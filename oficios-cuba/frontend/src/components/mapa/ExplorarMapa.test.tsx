@@ -153,6 +153,47 @@ describe('ExplorarMapa', () => {
     expect(ids).toEqual(['a', 'b']);
   });
 
+  // El punto con la ficha abierta se distingue en el mapa con la silueta del logo (un pin de
+  // ubicación), no con el círculo genérico del resto — y solo ESE, no los demás ni el que se dejó.
+  it('el punto con la ficha abierta cambia de círculo a pin, y vuelve a círculo al soltarlo', async () => {
+    const { container } = montar([punto('a', -76), punto('b', -75)]);
+    await act(async () => { await espera(320); });
+    const pines = () => container.querySelectorAll('.leaflet-marker-icon');
+
+    expect(pines()[0].className).not.toContain('map-pin--seleccionado');
+    expect(pines()[1].className).not.toContain('map-pin--seleccionado');
+
+    await act(async () => { (pines()[0] as HTMLElement).click(); await espera(30); });
+    expect(pines()[0].className).toContain('map-pin--seleccionado');
+    expect(pines()[1].className).not.toContain('map-pin--seleccionado');
+
+    // Elegir el otro punto mueve el pin, no lo duplica: el primero suelta la forma de pin.
+    await act(async () => { (pines()[1] as HTMLElement).click(); await espera(30); });
+    expect(pines()[0].className).not.toContain('map-pin--seleccionado');
+    expect(pines()[1].className).toContain('map-pin--seleccionado');
+
+    // Cerrar el panel no debe dejar ningún pin "pegado" en forma de gota.
+    fireEvent.click(screen.getByRole('button', { name: /cerrar/i }));
+    await waitFor(() => expect(pines()[1].className).not.toContain('map-pin--seleccionado'));
+  });
+
+  // El color dice el TIPO de perfil (negocio o servicio suelto), no el plan: un oficio Profesional
+  // sigue en ink-700, y un negocio Gratis ya sale en brand-600.
+  it('el color del marcador es por tipo (negocio en naranja, oficio en oscuro), no por plan', async () => {
+    const negocio = { ...punto('n', -76), tipo: 'negocio' as const, plan: 'free' as const };
+    const oficio = { ...punto('o', -75), tipo: 'oficio' as const, plan: 'pro' as const };
+    const { container } = montar([negocio, oficio]);
+    await act(async () => { await espera(320); });
+    const pines = () => container.querySelectorAll('.leaflet-marker-icon');
+
+    expect(pines()[0].innerHTML).toContain('bg-brand-600');
+    expect(pines()[1].innerHTML).toContain('bg-ink-700');
+
+    // Seleccionado (pin en forma de gota) sigue el mismo criterio.
+    await act(async () => { (pines()[0] as HTMLElement).click(); await espera(30); });
+    expect(pines()[0].innerHTML).toContain('text-brand-600');
+  });
+
   it('cambiar de pestaña con el panel abierto lo cierra', async () => {
     // Anfitrión con estado de verdad: con un `update` de mentira, `get('tab')` nunca cambiaría y
     // la prueba no ejercitaría nada.

@@ -108,6 +108,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
           tab={tab}
           q={get('q')}
           category={category}
+          seleccionadoId={punto?.id}
           alMapa={(m) => { mapRef.current = m; }}
           onAbrir={abrirPunto}
           onAbrirLista={abrirLista}
