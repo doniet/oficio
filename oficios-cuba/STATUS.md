@@ -711,3 +711,27 @@
   deducido un tamaño de celda absurdo; (3) el botón «Cerca de mí» quedaba **debajo de la hoja**:
   `--hoja-punto-alto` la publicaba `HojaPunto` desde hacía entregas y no la leía nadie.
 - Blockers: ninguno.
+
+## 2026-09-30 03:35 UTC — claude-code (vps2) — Cierre del mapa a pantalla completa: los arreglos de la revisión
+- Changes: commiteado lo que la revisión del rediseño dejó aplicado pero suelto en el working tree
+  (13 archivos). Tres defectos reales: el **«Reintentar» de la lista de celda era un botón muerto**
+  (copiaba el array y dejaba el error), **cambiar de punto pedía el perfil dos veces** y entre
+  petición y respuesta pintaba el teléfono del negocio anterior bajo el nombre del nuevo, y el
+  **historial y el foco vivían en los envoltorios**, que se desmontan al cruzar los 1024 px: cada
+  giro de tableta dejaba una entrada de historial huérfana y un Atrás que no hacía nada. Ahora los
+  posee `PanelMapa`, que sobrevive al cambio; la trampa de foco se queda solo en la hoja móvil
+  (`usarTrampaFoco`), porque el panel lateral declara `aria-modal="false"` y atraparlo ahí sería
+  desmentirlo. Además: el título de la lista ya no se recorta 6 px, un mapa que se monta sin altura
+  se recupera con un `ResizeObserver` en vez de quedarse mudo para siempre, y el «Saltar al
+  contenido» vuelve a quedar por encima del panel.
+- Tests: **46 en verde** (42 antes), typecheck en 0, `npm run build` OK. `vitest run` salía con
+  **código 1** aunque las 46 pasaran: la prueba del rectángulo sin área no le daba implementación al
+  espía de `mapaApi.buscar`, así que el `.then` de `cargar()` reventaba dentro del temporizador del
+  antirrebote como excepción no capturada. Arreglado y verificado con 15 corridas seguidas — en la
+  primera de todas hubo **un fallo suelto que no volvió a aparecer y quedó sin explicar**; este
+  fichero tiene historial de contagio entre pruebas, así que conviene no darlo por muerto.
+- Security: N/A. Solo frontend; sin cambios en red, puertos, auth ni datos.
+- Next: la rama `mapa-pantalla-completa` (12 commits, worktree `~/worktrees/oficio-mapa`) está lista
+  y **sin fusionar**: fusionar a `master` y desplegar es decisión de Dariel. Sigue pendiente el
+  `git push origin master` que bloqueó el harness (ver la entrada del 30-sep 00:26).
+- Blockers: ninguno técnico.
