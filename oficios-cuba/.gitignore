@@ -58,3 +58,9 @@ secrets/
 
 # APK publicado (lo sube mobile/scripts/publicar-apk.sh; no va al repo)
 descargas/
+
+# Volcados de la base (pg_dump). DOCKER.md manda crearlos en esta misma carpeta,
+# y llevan los hashes de contraseña y los secretos TOTP de todos los usuarios:
+# en un repo público no pueden depender de que nadie escriba `git add .`.
+*.dump
+*.sql.gz
