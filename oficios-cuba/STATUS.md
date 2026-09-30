@@ -645,8 +645,8 @@
   pública en la base nueva tiene el **mismo** md5 que la vieja, así que el `token_cipher` del respaldo
   de SQLite sigue siendo descifrable: se puede restaurar esa fila en vez de volver a pegar el token
   a mano. Sin decidir — mueve una credencial cifrada entre bases, así que lo decide Dariel.
-  Pendiente también: avisar a Doniet (`master` es su rama de trabajo y ahora lleva 49 commits que
-  reescriben 293 consultas), y nada se ha subido a GitHub. `seedMapa()` no se ejecutó, así que el
+  La coordinación con Doniet la lleva Dariel directamente (2026-09-30): no es un pendiente mío.
+  Nada se ha subido todavía a GitHub. `seedMapa()` no se ejecutó, así que el
   mapa tiene 9 puntos en vez de los ~300 de `npm run seed:mapa` — es lo esperado, no un fallo.
 - Blockers: ninguno.
 
@@ -682,7 +682,7 @@
 - Next: **el `git push origin master` lo bloqueó el harness** (`Out-of-Place Publication`), igual que
   el despliegue: `master` sigue 53 commits por delante de `origin/master` y hay que lanzarlo a mano.
   Revisado antes de intentarlo: ningún `.env`, clave ni volcado entre los archivos a subir, y los
-  `DATABASE_URL` del diff usan `${POSTGRES_PASSWORD}`, no una contraseña literal. Sigue pendiente
-  avisar a Doniet. El token de Telegram sigue sin restaurar (ver la entrada anterior y
+  `DATABASE_URL` del diff usan `${POSTGRES_PASSWORD}`, no una contraseña literal. La coordinación con Doniet
+  la lleva Dariel directamente (2026-09-30): no es un pendiente mío. El token de Telegram sigue sin restaurar (ver la entrada anterior y
   `docs/despliegue-postgres.md`).
 - Blockers: el push, que necesita permiso o que lo lance Dariel.
