@@ -761,3 +761,21 @@
   corregir la skill antes del próximo despliegue.
   Sigue sin restaurar el token de Telegram (el notificador arranca diciendo «Sin token»).
 - Blockers: ninguno.
+
+## 2026-09-30 04:25 UTC — claude-code (vps2) — Seed del mapa en desarrollo
+- Changes: `npm run seed:mapa` contra **`oficio_db_test`** (la base de desarrollo, loopback
+  `127.0.0.1:55432`, volumen aparte), nunca contra producción. 300 perfiles sembrados, 301 en total.
+- Tests: reparto de planes exacto al objetivo (40 % free / 35 % pro / 25 % basic), 133 perfiles en La
+  Habana —consistente con el 40 % que el seed apila allí para que se vean los «+N»— y **0
+  coordenadas fuera de Cuba**. Producción sin tocar: 18 usuarios, 12 perfiles, 22 servicios, iguales
+  antes y después.
+- Security: dos cosas que conviene saber. (1) El pestillo del seed **funciona**: se negó a correr sin
+  `DEMO_MODE=true` («sembraría 300 negocios falsos en datos reales»). (2) La contraseña del volumen
+  de `oficio_db_test` se había quedado atrás respecto al `.env` (verificado comparando huellas SHA,
+  sin exponer ninguna). Dariel ejecutó el `ALTER USER` —el harness me lo bloqueó por ser escritura de
+  credencial— y quedó alineado: comprobado conectando desde el host con la clave del `.env`, 301
+  perfiles intactos.
+- Next: faltaba `pg` en `backend/node_modules` (resto de antes del porte a Postgres); `npm install`
+  lo resolvió sin tocar el `package-lock.json`. Quien monte desarrollo desde cero en este host lo
+  necesitará.
+- Blockers: ninguno.
