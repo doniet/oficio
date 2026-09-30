@@ -9,7 +9,6 @@ import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../compo
 import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
 import CatalogItemModal from '../components/catalog/CatalogItemModal';
 import PanelMapa from '../components/mapa/PanelMapa';
-import ListaCelda from '../components/mapa/ListaCelda';
 
 // Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa (o cambia a la vista de mapa).
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
@@ -633,16 +632,9 @@ export default function Search() {
          vuelva a la lista mientras se cierra la hoja. */}
       <PanelMapa
         punto={puntoAbierto}
-        lista={null}
+        lista={listaCelda}
         onElegirDeLista={abrirPunto}
-        onCerrar={() => setPuntoAbierto(null)}
-      />
-      {/* Elegir uno de la lista abre su ficha y cierra la lista: Atrás vuelve al mapa, no a una
-          lista fantasma detrás de la hoja. */}
-      <ListaCelda
-        puntos={listaCelda}
-        onElegir={abrirPunto}
-        onCerrar={() => setListaCelda(null)}
+        onCerrar={() => { setPuntoAbierto(null); setListaCelda(null); }}
       />
     </div>
   );

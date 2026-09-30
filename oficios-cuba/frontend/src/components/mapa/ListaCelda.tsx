@@ -1,50 +1,48 @@
-import { useEffect, useRef } from 'react';
 import { MapPin, X } from 'lucide-react';
 import type { PuntoMapa } from '../../types';
 
 /**
- * Los negocios de una celda del mapa. Existe porque hasta esta entrega `detras` era solo una
- * insignia: si una celda tenía cinco, veías uno y los otros cuatro eran inalcanzables. Es la
- * misma interacción para el «+N» de un pin y para un área en modo zona.
+ * Los negocios de una celda del mapa, como CONTENIDO del panel: el envoltorio (hoja en móvil,
+ * panel lateral en escritorio) lo pone `PanelMapa`, igual que con la ficha.
  *
- * Se monta como hermano del mapa, igual que HojaPunto: así sobrevive a los re-render del mapa.
+ * Existe porque `detras` era solo una insignia: si una celda tenía cinco, veías uno y los otros
+ * cuatro eran inalcanzables. Es la misma interacción para el «+N» de un pin y para un área en
+ * modo zona.
  */
-export default function ListaCelda({ puntos, onElegir, onCerrar }: {
-  puntos: PuntoMapa[] | null;
+export default function ListaCelda({ puntos, tituloId, onElegir, onCerrar, error, onReintentar }: {
+  puntos: PuntoMapa[];
+  tituloId: string;
   onElegir(p: PuntoMapa): void;
   onCerrar(): void;
+  /** Mensaje si la celda no se pudo cargar. Con él se pinta «Reintentar». */
+  error?: string;
+  onReintentar?: () => void;
 }) {
-  const cerrarRef = useRef<HTMLButtonElement | null>(null);
-
-  // Esc cierra, igual que la hoja. El teclado tiene que poder salir de aquí sin el ratón.
-  useEffect(() => {
-    if (!puntos) return;
-    cerrarRef.current?.focus();
-    const alPulsar = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar(); };
-    window.addEventListener('keydown', alPulsar);
-    return () => window.removeEventListener('keydown', alPulsar);
-  }, [puntos, onCerrar]);
-
-  if (!puntos) return null;
-
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[500] mx-auto max-h-[70vh] w-full max-w-lg overflow-hidden rounded-t-3xl border border-sand-200 bg-white shadow-lift pb-safe">
-      <div className="flex items-center justify-between gap-3 border-b border-sand-200 px-4 py-3">
-        <h2 className="font-sans text-base font-bold text-ink-900">
-          {puntos.length === 1 ? '1 negocio en esta zona' : `${puntos.length} negocios en esta zona`}
+    <>
+      <div className="-mx-5 -mt-5 mb-3 flex items-center justify-between gap-3 border-b border-sand-200 px-4 py-3">
+        <h2 id={tituloId} className="font-sans text-base font-bold text-ink-900">
+          {error
+            ? 'Negocios de esta zona'
+            : puntos.length === 1 ? '1 negocio en esta zona' : `${puntos.length} negocios en esta zona`}
         </h2>
-        <button
-          ref={cerrarRef}
-          type="button"
-          onClick={onCerrar}
-          className="btn-ghost btn-sm rounded-full p-1.5"
-          aria-label="Cerrar la lista"
-        >
+        <button type="button" onClick={onCerrar} className="btn-ghost btn-sm rounded-full p-1.5" aria-label="Cerrar la lista">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <ul className="max-h-[calc(70vh-3.5rem)] divide-y divide-sand-200 overflow-y-auto">
+      {/* Sin esto, un fallo de red deja al usuario mirando una lista vacía sin saber si la zona
+          está vacía o si algo se rompió. No es lo mismo y no puede parecerlo. */}
+      {error && (
+        <p className="px-1 py-2 text-sm text-red-700" role="alert">
+          {error}{' '}
+          <button type="button" onClick={onReintentar} className="font-semibold underline decoration-2 underline-offset-2">
+            Reintentar
+          </button>
+        </p>
+      )}
+
+      <ul className="-mx-5 divide-y divide-sand-200">
         {puntos.map((p) => (
           <li key={p.id}>
             <button
@@ -68,6 +66,6 @@ export default function ListaCelda({ puntos, onElegir, onCerrar }: {
           </li>
         ))}
       </ul>
-    </div>
+    </>
   );
 }

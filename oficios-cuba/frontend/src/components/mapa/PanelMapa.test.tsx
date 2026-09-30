@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -271,5 +271,60 @@ describe('PanelMapa — elección de envoltorio', () => {
     fijarAncho(1280);
     rerender(createElement(MemoryRouter, null, panel({})));
     expect(screen.getByText('Juan Plomero')).toBeTruthy();
+  });
+});
+
+describe('PanelMapa — lista de celda', () => {
+  const dos: PuntoMapa[] = [punto, { ...punto, id: 'p2', nombre: 'Otro Negocio' }];
+
+  beforeEach(() => {
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as never);
+    window.history.replaceState(null, '');
+  });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  // Hasta esta entrega, elegir uno de la lista la descartaba: la única vuelta era volver a tocar
+  // el grupo en el mapa.
+  it('elegir uno de la lista muestra su ficha, y «Volver a la lista» la devuelve', async () => {
+    fijarAncho(1280);
+    function Anfitrion() {
+      const [lista, setLista] = useState<PuntoMapa[] | null>(dos);
+      const [p, setP] = useState<PuntoMapa | null>(null);
+      return createElement(PanelMapa, {
+        punto: p,
+        lista,
+        onElegirDeLista: (x: PuntoMapa) => { setP(x); setLista(null); },
+        onVolverALista: () => { setP(null); setLista(dos); },
+        onCerrar: vi.fn(),
+      });
+    }
+    render(createElement(MemoryRouter, null, createElement(Anfitrion)));
+    fireEvent.click(screen.getByText('Otro Negocio'));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Otro Negocio' })).toBeTruthy());
+    fireEvent.click(screen.getByText(/Volver a la lista/));
+    await waitFor(() => expect(screen.getByText('Juan Plomero')).toBeTruthy());
+  });
+
+  // La ficha ya se cerraba con Atrás; la lista no, porque no empujaba entrada propia.
+  it('Atrás con la lista abierta la cierra en vez de sacarte de Explorar', async () => {
+    fijarAncho(390);
+    const onCerrar = vi.fn();
+    render(createElement(MemoryRouter, null, createElement(PanelMapa, {
+      punto: null, lista: dos, onElegirDeLista: vi.fn(), onCerrar,
+    })));
+    window.history.back();
+    await waitFor(() => expect(onCerrar).toHaveBeenCalled());
+  });
+
+  it('si la celda falló, la lista enseña el error y «Reintentar»', () => {
+    fijarAncho(390);
+    const onReintentar = vi.fn();
+    render(createElement(MemoryRouter, null, createElement(PanelMapa, {
+      punto: null, lista: [], errorLista: 'No pudimos cargar los negocios de esta zona.',
+      onReintentarLista: onReintentar, onElegirDeLista: vi.fn(), onCerrar: vi.fn(),
+    })));
+    expect(screen.getByText(/No pudimos cargar los negocios de esta zona/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Reintentar'));
+    expect(onReintentar).toHaveBeenCalled();
   });
 });
