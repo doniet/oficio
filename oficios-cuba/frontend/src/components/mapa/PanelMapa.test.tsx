@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import HojaPunto from './HojaPunto';
+import PanelMapa from './PanelMapa';
 import { providerApi } from '../../services/api';
 import type { ProviderPublic, PuntoMapa } from '../../types';
 
@@ -54,7 +54,7 @@ const perfilMock: ProviderPublic = {
 };
 
 // jsdom no hace layout: `offsetParent` siempre da null, así que el filtro de "visible" de la
-// trampa de foco (HojaPunto.tsx) descartaría todo elemento y las pruebas de Tab no probarían
+// trampa de foco (usarPanel.ts) descartaría todo elemento y las pruebas de Tab no probarían
 // nada. Es un hueco conocido de jsdom (ver la documentación de testing-library al respecto),
 // no algo que dependa del navegador real: se parchea aquí, no en el componente.
 beforeAll(() => {
@@ -64,15 +64,22 @@ beforeAll(() => {
   });
 });
 
+function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?: PuntoMapa[] | null } = {}) {
+  return createElement(PanelMapa, {
+    punto: props.punto === undefined ? punto : props.punto,
+    lista: props.lista ?? null,
+    onElegirDeLista: vi.fn(),
+    onCerrar: props.onCerrar ?? vi.fn(),
+  });
+}
+
 function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null } = {}) {
   const onCerrar = props.onCerrar ?? vi.fn();
-  const utils = render(
-    createElement(MemoryRouter, null, createElement(HojaPunto, { punto: props.punto ?? punto, onCerrar })),
-  );
+  const utils = render(createElement(MemoryRouter, null, panel({ ...props, onCerrar })));
   return { onCerrar, ...utils };
 }
 
-describe('HojaPunto', () => {
+describe('PanelMapa — hoja móvil', () => {
   beforeEach(() => {
     vi.mocked(providerApi.getById).mockReset();
     vi.mocked(providerApi.contact).mockClear();
@@ -94,8 +101,20 @@ describe('HojaPunto', () => {
     document.body.style.overflow = 'scroll';
     const { rerender } = montar();
     expect(document.body.style.overflow).toBe('hidden');
-    rerender(createElement(MemoryRouter, null, createElement(HojaPunto, { punto: null, onCerrar: vi.fn() })));
+    rerender(createElement(MemoryRouter, null, panel({ punto: null })));
     expect(document.body.style.overflow).toBe('scroll');
+  });
+
+  // Con una entrada por punto, recorrer cinco negocios de una celda dejaría cinco entradas y
+  // haría falta pulsar Atrás cinco veces para salir de Explorar.
+  it('abrir otro punto sin cerrar no añade una segunda entrada de historial', async () => {
+    const onCerrar = vi.fn();
+    const largoInicial = window.history.length;
+    const { rerender } = montar({ onCerrar });
+    rerender(createElement(MemoryRouter, null, panel({ punto: { ...punto, id: 'p2', nombre: 'Otro' }, onCerrar })));
+    expect(window.history.length - largoInicial).toBe(1);
+    window.history.back();
+    await waitFor(() => expect(onCerrar).toHaveBeenCalled());
   });
 
   it('Esc cierra la hoja', () => {
@@ -172,7 +191,7 @@ describe('HojaPunto', () => {
 
     void cerrarBtn;
 
-    rerender(createElement(MemoryRouter, null, createElement(HojaPunto, { punto: null, onCerrar })));
+    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
     expect(document.activeElement).toBe(disparador);
 
     document.body.removeChild(disparador);
@@ -185,7 +204,7 @@ describe('HojaPunto', () => {
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toMatch(/^\d+px$/);
     expect(raiz.getPropertyValue('--hoja-punto-alto')).not.toBe('0px');
 
-    rerender(createElement(MemoryRouter, null, createElement(HojaPunto, { punto: null, onCerrar })));
+    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toBe('0px');
 
     unmount();

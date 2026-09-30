@@ -151,15 +151,20 @@ export function usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef }: {
  * La firma que comparten los dos envoltorios. `PanelMapa` elige uno u otro sin cambiar nada más,
  * y por eso tiene que ser literalmente la misma en los dos.
  *
- * `children` es una función y no un nodo porque el contenido necesita dos cosas que solo sabe el
+ * `children` es una función y no un nodo porque el contenido necesita tres cosas que solo sabe el
  * envoltorio: si hay sitio para pedir los datos caros (`expandida` — en la hoja móvil solo al
- * desplegarla; en el panel lateral, siempre) y cómo soltar la entrada de historial antes de
- * navegar a otra ruta.
+ * desplegarla; en el panel lateral, siempre), cómo soltar la entrada de historial antes de navegar
+ * a otra ruta, y cómo cerrarse.
+ *
+ * `cerrar` NO es el `onCerrar` del padre: pasa antes por el historial, así que la X del contenido
+ * deshace la entrada que la apertura empujó. Llamar al `onCerrar` crudo cierra el panel pero deja
+ * la entrada puesta, y entonces hace falta un Atrás de más, sin efecto visible, para salir de
+ * Explorar. Una prueba cazó exactamente eso durante la extracción.
  */
 export type PropsEnvoltorio = {
   abierta: string | null;
   tituloId: string;
   onCerrar(): void;
   focoOrigen?: HTMLElement | null;
-  children: (estado: { expandida: boolean; onAntesDeNavegar(): void }) => React.ReactNode;
+  children: (estado: { expandida: boolean; onAntesDeNavegar(): void; cerrar(): void }) => React.ReactNode;
 };

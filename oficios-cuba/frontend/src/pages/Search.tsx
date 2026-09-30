@@ -8,7 +8,7 @@ import { ProviderCard, ProviderCardSkeleton, ServiceCard, ServiceCardSkeleton } 
 import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../components/ui';
 import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
 import CatalogItemModal from '../components/catalog/CatalogItemModal';
-import HojaPunto from '../components/mapa/HojaPunto';
+import PanelMapa from '../components/mapa/PanelMapa';
 import ListaCelda from '../components/mapa/ListaCelda';
 
 // Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa (o cambia a la vista de mapa).
@@ -631,7 +631,12 @@ export default function Search() {
       {/* El punto abierto lo posee esta página, no el mapa: HojaPunto se monta como hermano de
          MapaExplorar (ver el escaneo de conflictos de la Entrega 2), y sobrevive aunque se
          vuelva a la lista mientras se cierra la hoja. */}
-      <HojaPunto punto={puntoAbierto} onCerrar={() => setPuntoAbierto(null)} />
+      <PanelMapa
+        punto={puntoAbierto}
+        lista={null}
+        onElegirDeLista={abrirPunto}
+        onCerrar={() => setPuntoAbierto(null)}
+      />
       {/* Elegir uno de la lista abre su ficha y cierra la lista: Atrás vuelve al mapa, no a una
           lista fantasma detrás de la hoja. */}
       <ListaCelda
