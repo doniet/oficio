@@ -133,7 +133,7 @@ describe('usarMapa', () => {
   // (CSS que no ha aplicado, pestaña oculta). Con el mapa a pantalla completa el alto lo da una
   // clase CSS, así que el caso es MÁS probable que antes, no menos.
   it('un rectángulo sin área no gasta una petición: no puede devolver nada', async () => {
-    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+    const { result, unmount } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
 
     act(() => { result.current.alMover({ sur: 21.5, oeste: -79.5, norte: 21.5, este: -79.5 }, true); });
     await act(async () => { await espera(320); });
@@ -143,6 +143,10 @@ describe('usarMapa', () => {
     act(() => { result.current.alMover({ sur: 21, oeste: -80, norte: 21.4, este: -79.5 }, true); });
     await act(async () => { await espera(320); });
     expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
+
+    // Este fichero no limpia entre pruebas: un hook que se queda montado con su bbox puesto se
+    // le cuela a la siguiente prueba como una petición de más. Se desmonta aquí mismo.
+    unmount();
   });
 
   it('cargarCelda pide con la zona que se PINTÓ, no con la que el mapa lleva ahora', async () => {
@@ -152,7 +156,7 @@ describe('usarMapa', () => {
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
     vi.mocked(mapaApi.celda).mockResolvedValue({ puntos: [], hay_mas: false } as never);
 
-    const { result } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
+    const { result, unmount } = renderHook(() => usarMapa({ tab: 'servicios', q: '', category: '' }));
     const pintada = { sur: 22.9, oeste: -82.6, norte: 23.3, este: -82.1 };
 
     act(() => { result.current.alMover(pintada, true); });
@@ -163,6 +167,12 @@ describe('usarMapa', () => {
     await act(async () => { await result.current.cargarCelda(3, 4); });
 
     expect(vi.mocked(mapaApi.celda).mock.calls[0][0]).toEqual(pintada);
+
+    // El arrastre de arriba dejó programada una recarga a 500 ms que esta prueba no espera. Este
+    // fichero no limpia entre pruebas, así que sin desmontar, ese temporizador se dispara DENTRO
+    // de la prueba siguiente y le cuenta una petición que no es suya (usarMapa sí limpia su
+    // temporizador al desmontarse). Era la causa del fallo intermitente de «no dobla la carga».
+    unmount();
   });
 });
 
