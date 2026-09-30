@@ -601,3 +601,51 @@
 - Security: N/A — mismo alcance que la entrada anterior, sin tocar red/puertos/auth/contenedores.
 - Next: sin cambios respecto a la entrada anterior.
 - Blockers: ninguno.
+
+## 2026-09-30 00:45 UTC — claude-code (vps2) — Despliegue del porte a Postgres 18 + PostGIS en producción
+- Changes: desplegado a producción el porte completo de SQLite a Postgres 18.6 + PostGIS 3.6 (los 48
+  commits ya mezclados en `master`, más `2ff9cdf` con el procedimiento). Dariel ejecutó el
+  `docker compose --profile telegram up -d --build`; el resto de esta entrada es la verificación de
+  los 7 pasos de `docs/despliegue-postgres.md`. Cuatro contenedores sanos (`oficio_api`, `oficio_web`,
+  `oficio_notifier` en `oficio-api:latest`/`oficio-web:latest`; `oficio_db` en `postgis/postgis:18-3.6`),
+  esquema en la versión 1, `postgis_version()` = `3.6 USE_GEOS=1 USE_PROJ=1 USE_STATS=1`. Sembrado:
+  16 provincias, 162 municipios, 99 categorías, 17 usuarios, 12 perfiles, 22 servicios.
+  Añadido `*.dump`/`*.sql.gz` al `.gitignore` (commit `27fced4`): `DOCKER.md` manda crear el volcado
+  en `oficios-cuba/`, ninguna regla lo cubría, y lleva `users.password_hash` y `users.totp_secret`
+  de todos los usuarios — en un repo público no puede depender de que nadie escriba `git add .`.
+  Los respaldos de la época SQLite estaban a salvo solo porque vivían en `data/`, que sí está ignorada.
+- Tests: verificado en producción a través de Cloudflare, no desde el servidor.
+  `/api/config` → `demo:true`; `/api/stats` → 12 proveedores, 22 servicios, 10 provincias, 34 reseñas,
+  4.4 de media. Búsqueda `tsvector`: `q=plomeria` **sin acento** encuentra "Reparación de plomería y
+  salideros", `q=electricidad` → 4, `q=plom` (prefijo) → 3. Mapa sobre PostGIS: `/api/mapa` → 9 puntos
+  con `celda`, `detras`, `aproximado` y resumen precalculado; `/api/mapa/celda` con los `cy`/`cx` que
+  devuelve el propio mapa → 3 negocios (1 mostrado + `detras=2`, cuadra), ordenados por plan.
+  Validación viva: `bbox` fuera de Cuba, invertido e inventado → 400; `tab` inventada → 400.
+  SPA: `/`, `/explorar`, `/explorar?vista=mapa`, `/planes`, `/login`, `/dashboard` → 200; `/nada.js` → 404;
+  los tres recursos que el HTML referencia y una imagen `/demo/*.webp` → 200 con su tipo correcto
+  (la clase de fallo del `location` sin `^~`). Las tres pestañas traen datos: 3 servicios, 11 artículos,
+  3 perfiles. Las dos herramientas de administración salen con 0 y **sin** el
+  `TypeError ... slice is not a function` que las reventaba antes del último arreglo del porte.
+  Volcado nuevo verificado con el `pg_restore` del contenedor: 200 entradas, 33 tablas con datos,
+  extensiones e índices dentro (`oficio-2026-09-30-0042-post-despliegue.dump`, en 600).
+  La comprobación visual en navegador queda pendiente para Dariel: este host no tiene Chrome
+  instalado y Playwright no puede arrancar.
+- Security: aislamiento de red intacto tras el despliegue — `oficio_api` **sin** salida a internet
+  (`EAI_AGAIN`), `oficio_notifier` **con** salida (HTTP 200). `oficio_db` sin puertos publicados,
+  solo en `oficio_net`, sin labels de Traefik.
+- Next: **dos cosas quedaron atrás con los datos viejos y hacen falta para operar.** (1) El SQLite
+  tenía un admin — `awaydsystems@gmail.com`, con 2FA activo — y en la base nueva hay **0 admins**, y
+  esa cuenta no existe (era un login real de Google, y el seed demo no la crea): sin admin no se
+  entra a `/admin`. Cadena para recuperarlo: entrar con Google para que se cree la cuenta →
+  `docker exec oficio_api node dist/scripts/admin.js dar awaydsystems@gmail.com` → montar el 2FA de nuevo.
+  (2) El token del bot de Telegram vivía cifrado en `telegram_state` y tampoco se migró: el notificador
+  dice `Sin token: esperando a que un admin lo pegue en el panel`, así que **los avisos por Telegram
+  están caídos** (el push por FCM **no**: su clave es un archivo, `Push FCM activo`). La pareja de
+  claves del notificador sobrevivió (la privada es `secrets/notifier/notifier.key`, un archivo) y la
+  pública en la base nueva tiene el **mismo** md5 que la vieja, así que el `token_cipher` del respaldo
+  de SQLite sigue siendo descifrable: se puede restaurar esa fila en vez de volver a pegar el token
+  a mano. Sin decidir — mueve una credencial cifrada entre bases, así que lo decide Dariel.
+  Pendiente también: avisar a Doniet (`master` es su rama de trabajo y ahora lleva 49 commits que
+  reescriben 293 consultas), y nada se ha subido a GitHub. `seedMapa()` no se ejecutó, así que el
+  mapa tiene 9 puntos en vez de los ~300 de `npm run seed:mapa` — es lo esperado, no un fallo.
+- Blockers: ninguno.
