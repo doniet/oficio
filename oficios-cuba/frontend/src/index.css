@@ -130,5 +130,15 @@
    «Cerca de mí»: si no, la hoja abierta lo deja enterrado. La variable la publica HojaPunto. */
 .region-mapa .leaflet-bottom.leaflet-left {
   margin-bottom: var(--hoja-punto-alto, 0px);
-  transition: margin-bottom .2s ease-out;
+  transition: margin-bottom .2s ease-out, margin-left .2s ease-out;
+}
+
+/* En escritorio el panel lateral aterriza justo encima de ese mismo rincón: medido en producción,
+   con el panel abierto el clic en «+»/«−» caía en el panel y no se podía hacer zoom. Se aparta a
+   su derecha, a la misma distancia que la barra flotante (23,5rem = panel + su margen). En móvil
+   no aplica: allí no hay panel lateral y el zoom ya esquiva la hoja por arriba. */
+@media (min-width: 1024px) {
+  .region-mapa--con-panel .leaflet-bottom.leaflet-left {
+    margin-left: 23.5rem;
+  }
 }

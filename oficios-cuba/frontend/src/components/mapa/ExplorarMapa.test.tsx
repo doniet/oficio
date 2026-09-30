@@ -59,6 +59,34 @@ describe('ExplorarMapa', () => {
     expect(region!.className).toContain('overflow-hidden');
   });
 
+  // El control de zoom de Leaflet vive abajo a la IZQUIERDA, que en escritorio es justo donde
+  // aterriza el panel lateral: con el panel abierto el clic caía en el panel y no se podía hacer
+  // zoom. Medido en produccion el 30-sep-2026 con elementFromPoint.
+  it('con el panel abierto en escritorio, la región se marca para apartar el zoom', async () => {
+    const { container } = montar([punto('a', -76)]);
+    await act(async () => { await espera(320); });
+    const region = () => container.querySelector('.region-mapa')!;
+    expect(region().className).not.toContain('region-mapa--con-panel');
+
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(30); });
+
+    expect(region().className).toContain('region-mapa--con-panel');
+  });
+
+  // En móvil no hay panel lateral: la hoja sube por abajo y el zoom ya la esquiva con
+  // --hoja-punto-alto. Marcar la región ahí desplazaría el zoom fuera de la pantalla.
+  it('en móvil no se marca: ahí el zoom lo esquiva la hoja, no el panel', async () => {
+    fijarAncho(390);
+    const { container } = montar([punto('a', -76)]);
+    await act(async () => { await espera(320); });
+
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(30); });
+
+    expect(container.querySelector('.region-mapa')!.className).not.toContain('region-mapa--con-panel');
+  });
+
   // El punto se toca a la izquierda, donde va el panel: si el mapa no se aparta, el usuario
   // abre una ficha y el marcador que acaba de tocar queda debajo de ella.
   it('un punto que cae bajo el panel hace que el mapa se aparte', async () => {

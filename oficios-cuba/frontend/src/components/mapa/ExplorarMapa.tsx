@@ -96,8 +96,13 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setErrorLista('');
   }, []);
 
+  // Hay panel lateral tapando la izquierda del mapa. Lo miran dos: los controles flotantes, que se
+  // apartan a su derecha, y el CSS del control de zoom, que vive abajo a la izquierda — es decir,
+  // debajo del panel — y sin apartarse deja de recibir clics.
+  const conPanel = esEscritorio && Boolean(punto || lista);
+
   return (
-    <div className="region-mapa relative w-full overflow-hidden">
+    <div className={`region-mapa relative w-full overflow-hidden${conPanel ? ' region-mapa--con-panel' : ''}`}>
       <Suspense fallback={<PageLoader />}>
         <MapaExplorar
           tab={tab}
@@ -114,7 +119,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
         tab={tab}
         category={category}
         categorias={categorias}
-        conPanel={esEscritorio && Boolean(punto || lista)}
+        conPanel={conPanel}
         onBuscar={(q) => update({ q: q || null })}
         // `servicios` se manda como null: es la convención de URL de Search.tsx para no ensuciar
         // la barra de direcciones. ControlesMapa no tiene por qué conocerla.
