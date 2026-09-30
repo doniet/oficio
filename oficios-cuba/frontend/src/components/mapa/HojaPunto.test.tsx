@@ -88,6 +88,16 @@ describe('HojaPunto', () => {
     vi.restoreAllMocks();
   });
 
+  // Fija la conducta ANTES de moverla a usarPanel: si la extracción se dejara el efecto por el
+  // camino, la página se quedaría sin poder hacer scroll para siempre tras cerrar la hoja.
+  it('bloquea el scroll del cuerpo mientras está abierta y devuelve el valor previo al cerrar', () => {
+    document.body.style.overflow = 'scroll';
+    const { rerender } = montar();
+    expect(document.body.style.overflow).toBe('hidden');
+    rerender(createElement(MemoryRouter, null, createElement(HojaPunto, { punto: null, onCerrar: vi.fn() })));
+    expect(document.body.style.overflow).toBe('scroll');
+  });
+
   it('Esc cierra la hoja', () => {
     const { onCerrar } = montar();
     // cerrar() delega en history.back() porque la entrada es nuestra; jsdom no dispara el

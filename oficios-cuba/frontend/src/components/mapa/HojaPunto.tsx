@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
 import { telLink, whatsappLink } from '../../lib/format';
 import { Avatar, ErrorState, RatingInline, Spinner } from '../ui';
 import { NegocioChip } from '../cards';
+import { usarPanel } from './usarPanel';
 import type { ProviderPublic, PuntoMapa } from '../../types';
 
 // Nombre de la variable CSS que expone cuánto de la parte de abajo del viewport ocupa la
@@ -52,131 +53,25 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
 
   const tituloId = useId();
   const sheetRef = useRef<HTMLDivElement>(null);
-  const puntoRef = useRef(punto);
-  const onCerrarRef = useRef(onCerrar);
-  const elementoAlAbrirRef = useRef<HTMLElement | null>(null);
   const arrastreRef = useRef<{ inicioY: number } | null>(null);
   const huboArrastreRef = useRef(false);
-  const habiaPuntoRef = useRef(false);
-  const historiaEmpujadaRef = useRef(false);
-  const teniaPuntoParaFocoRef = useRef(false);
 
-  puntoRef.current = punto;
-  onCerrarRef.current = onCerrar;
+  // Historial, Esc, Atrás, trampa de foco y bloqueo de scroll viven en el hook: son idénticos en
+  // la hoja y en el panel lateral, y tenerlos dos veces era la forma segura de que uno de los dos
+  // se quedara atrás en el próximo cambio.
+  const { cerrar, limpiarEntradaPropia } = usarPanel({
+    abierta: punto?.id ?? null,
+    onCerrar,
+    focoOrigen,
+    contenedorRef: sheetRef,
+  });
 
-  // Cierra: si la hoja dejó una entrada propia en el historial, retrocede (el popstate de abajo
-  // hace el resto); si no, avisa directo. Así el botón Atrás y las demás formas de cerrar
-  // (Esc, la X, soltar arrastrando bastante) pasan siempre por el mismo camino.
-  const cerrar = useCallback(() => {
-    if (historiaEmpujadaRef.current && window.history.state?.hojaPunto) {
-      window.history.back();
-    } else {
-      onCerrarRef.current();
-    }
-  }, []);
-
-  // Quita la marca de nuestra entrada sin navegar, para cuando la hoja se cierra por una vía
-  // que NO es cerrar() (el enlace "Ver perfil completo", u otro que el padre decida): si no se
-  // limpiara, la entrada {hojaPunto:true} queda huérfana bajo la ruta nueva y hace falta un
-  // segundo Atrás, sin efecto visible, para salir de verdad de Explorar.
-  const limpiarEntradaPropia = useCallback(() => {
-    if (historiaEmpujadaRef.current && window.history.state?.hojaPunto) {
-      window.history.replaceState(null, '');
-    }
-    historiaEmpujadaRef.current = false;
-  }, []);
-
-  // Al abrir un punto nuevo: vuelve a "asomada", limpia la ficha completa de otro punto y
-  // recuerda quién tenía el foco para devolvérselo al cerrar.
+  // Al abrir un punto nuevo: vuelve a "asomada" y limpia la ficha completa de otro punto.
   useEffect(() => {
     if (!punto) return;
     setPosicion('asomada');
     setPerfil(null);
     setErrorPerfil('');
-    elementoAlAbrirRef.current = focoOrigen ?? (document.activeElement as HTMLElement | null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [punto?.id]);
-
-  // Una sola entrada de historial por apertura (cambiar de punto sin cerrar no añade otra).
-  // Si `punto` pasa a null sin haber pasado por cerrar() (el padre lo puso en null por su
-  // cuenta), limpia igual la entrada en vez de dejarla huérfana.
-  useEffect(() => {
-    const abierto = Boolean(punto);
-    if (abierto && !habiaPuntoRef.current) {
-      window.history.pushState({ hojaPunto: true }, '');
-      historiaEmpujadaRef.current = true;
-    } else if (!abierto) {
-      limpiarEntradaPropia();
-    }
-    habiaPuntoRef.current = abierto;
-  }, [Boolean(punto), limpiarEntradaPropia]);
-
-  // Red de seguridad: si el componente se desmonta entero (p. ej. cambia de ruta) mientras
-  // nuestra entrada de historial sigue siendo la actual, sin haber pasado por ningún camino
-  // de cierre, límpiala igual.
-  useEffect(() => () => limpiarEntradaPropia(), [limpiarEntradaPropia]);
-
-  // El botón Atrás del navegador (o cualquier otro pop del historial) cierra la hoja sin
-  // recargar la página ni sacar al usuario de Explorar.
-  useEffect(() => {
-    const onPopState = () => {
-      if (puntoRef.current) onCerrarRef.current();
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  // Devuelve el foco a quien abrió la hoja justo cuando termina de cerrarse. Lleva su propia
-  // referencia de "había punto" (en vez de reusar habiaPuntoRef) porque ese otro ref ya lo
-  // actualiza, para este mismo render, el efecto del historial que corre antes que este.
-  useEffect(() => {
-    if (!punto && teniaPuntoParaFocoRef.current && elementoAlAbrirRef.current) {
-      elementoAlAbrirRef.current.focus?.();
-      elementoAlAbrirRef.current = null;
-    }
-    teniaPuntoParaFocoRef.current = Boolean(punto);
-  }, [punto]);
-
-  // Esc cierra.
-  useEffect(() => {
-    if (!punto) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cerrar();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [punto, cerrar]);
-
-  // Con la hoja abierta, el fondo no hace scroll (igual que el resto de los diálogos del sitio).
-  useEffect(() => {
-    if (!punto) return;
-    const previo = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previo; };
-  }, [punto]);
-
-  // Atrapa el foco de teclado dentro de la hoja y lo manda al primer control al abrir.
-  useEffect(() => {
-    if (!punto) return;
-    const contenedor = sheetRef.current;
-    if (!contenedor) return;
-    const enfocables = () => Array.from(
-      contenedor.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    ).filter((el) => el.offsetParent !== null);
-
-    (enfocables()[0] ?? contenedor).focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const els = enfocables();
-      if (els.length === 0) { e.preventDefault(); return; }
-      const primero = els[0];
-      const ultimo = els[els.length - 1];
-      if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
-      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
-    };
-    contenedor.addEventListener('keydown', onKey);
-    return () => contenedor.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [punto?.id]);
 
@@ -373,13 +268,8 @@ export default function HojaPunto({ punto, onCerrar, focoOrigen }: {
   );
 }
 
-// Contrato con la Tarea 7 (MapaExplorar.tsx / la página que la monta): mientras la hoja está
-// abierta, esta hoja mantiene la variable CSS `--hoja-punto-alto` en `document.documentElement`
-// con la altura (en px, p. ej. "320px") que ocupa desde abajo del viewport en cada instante —
-// "0px" cuando está cerrada, y cambia en vivo mientras se arrastra. El botón «Buscar en esta
-// zona» vive en MapaExplorar.tsx, que esta tarea tiene prohibido tocar: para que no quede
-// tapado, hace falta darle un `bottom` que la lea, por ejemplo con una clase arbitraria de
-// Tailwind: `bottom-[calc(var(--hoja-punto-alto,0px)+1rem)]`, o el `style` equivalente
-// (`bottom: 'calc(var(--hoja-punto-alto, 0px) + 16px)'`). Sin ese cambio en MapaExplorar.tsx
-// (o en la página que junta ambos componentes), el botón queda debajo de la hoja cuando está
-// asomada o abierta.
+// Contrato con quien monte esta hoja junto al mapa: mientras está abierta, mantiene la variable
+// CSS `--hoja-punto-alto` en `document.documentElement` con la altura (en px, p. ej. "320px") que
+// ocupa desde abajo del viewport en cada instante — "0px" cuando está cerrada, y cambia en vivo
+// mientras se arrastra. El botón «Cerca de mí» de `MapaExplorar.tsx` la lee en su `bottom` para no
+// quedar debajo.
