@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * La conducta que comparten los dos envoltorios del panel del mapa — la hoja inferior de móvil
@@ -168,3 +168,26 @@ export type PropsEnvoltorio = {
   focoOrigen?: HTMLElement | null;
   children: (estado: { expandida: boolean; onAntesDeNavegar(): void; cerrar(): void }) => React.ReactNode;
 };
+
+/**
+ * Si hay sitio para el panel lateral. 1024 px es el punto de corte `lg` de Tailwind, el mismo que
+ * ya separa la barra de filtros de escritorio del cajón móvil en `Search.tsx`: no se introduce un
+ * corte nuevo. Ojo, NO es el mismo corte que el de la barra inferior de navegación, que es `md`
+ * (768 px): entre 768 y 1024 no hay barra abajo pero tampoco hay panel lateral.
+ */
+export function usarEsEscritorio() {
+  const [esEscritorio, setEsEscritorio] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches === true,
+  );
+  useEffect(() => {
+    // Sin matchMedia (jsdom sin parchear, o cualquier entorno raro) se asume móvil: la hoja
+    // funciona en cualquier ancho, el panel lateral no.
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const alCambiar = () => setEsEscritorio(mq.matches);
+    alCambiar();
+    mq.addEventListener('change', alCambiar);
+    return () => mq.removeEventListener('change', alCambiar);
+  }, []);
+  return esEscritorio;
+}

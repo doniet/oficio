@@ -54,8 +54,13 @@ function urlActual() {
   return new URLSearchParams(screen.getByTestId('url').textContent ?? '');
 }
 
+import { fijarAncho } from '../components/mapa/probarAncho';
+
 describe('Search — el switch lista/mapa conserva la URL', () => {
   beforeEach(() => {
+    // jsdom no trae matchMedia y Search monta PanelMapa, que la consulta. 390 px = móvil,
+    // que es donde esta app se usa de verdad.
+    fijarAncho(390);
     vi.mocked(provinceApi.getAll).mockResolvedValue({ data: { provinces: [] } } as never);
     vi.mocked(provinceApi.getMunicipalities).mockResolvedValue({ data: { municipalities: [] } } as never);
     vi.mocked(categoryApi.getAll).mockResolvedValue({ data: { categories: [] } } as never);

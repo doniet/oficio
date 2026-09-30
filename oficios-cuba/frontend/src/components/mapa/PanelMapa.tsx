@@ -1,5 +1,7 @@
 import { useId } from 'react';
 import HojaPunto from './HojaPunto';
+import PanelLateral from './PanelLateral';
+import { usarEsEscritorio } from './usarPanel';
 import FichaPunto from './FichaPunto';
 import type { PuntoMapa } from '../../types';
 
@@ -15,9 +17,10 @@ export default function PanelMapa({ punto, onCerrar, focoOrigen }: {
   focoOrigen?: HTMLElement | null;
 }) {
   const tituloId = useId();
+  const Envoltorio = usarEsEscritorio() ? PanelLateral : HojaPunto;
 
   return (
-    <HojaPunto abierta={punto ? `punto:${punto.id}` : null} tituloId={tituloId} onCerrar={onCerrar} focoOrigen={focoOrigen}>
+    <Envoltorio abierta={punto ? `punto:${punto.id}` : null} tituloId={tituloId} onCerrar={onCerrar} focoOrigen={focoOrigen}>
       {({ expandida, onAntesDeNavegar, cerrar }) => (punto ? (
         <FichaPunto
           punto={punto}
@@ -27,6 +30,6 @@ export default function PanelMapa({ punto, onCerrar, focoOrigen }: {
           onAntesDeNavegar={onAntesDeNavegar}
         />
       ) : null)}
-    </HojaPunto>
+    </Envoltorio>
   );
 }

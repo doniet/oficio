@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import PanelMapa from './PanelMapa';
 import { providerApi } from '../../services/api';
 import type { ProviderPublic, PuntoMapa } from '../../types';
+import { fijarAncho } from './probarAncho';
 
 // Igual que en usarMapa.test.ts: solo se sustituyen las funciones de providerApi que usa la
 // hoja, con vi.importActual de por medio para no dejar apiError ni el resto del módulo undefined.
@@ -86,6 +87,7 @@ describe('PanelMapa — hoja móvil', () => {
     // Arranca cada prueba con una entrada neutra, sin restos de pushState/replaceState de la
     // prueba anterior (todas comparten el mismo window.history de jsdom dentro del archivo).
     window.history.replaceState(null, '');
+    fijarAncho(390);
   });
   afterEach(() => {
     // vitest, a diferencia de Jest, no registra el afterEach de limpieza automática de RTL
@@ -240,5 +242,34 @@ describe('PanelMapa — hoja móvil', () => {
     fireEvent.click(reintentar);
     await waitFor(() => expect(providerApi.getById).toHaveBeenCalledTimes(2));
     await screen.findByText(perfilMock.description!);
+  });
+});
+
+describe('PanelMapa — elección de envoltorio', () => {
+  beforeEach(() => { vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as never); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('a partir de 1024 px monta el panel lateral, no la hoja', () => {
+    fijarAncho(1280);
+    montar();
+    expect(screen.getByTestId('panel-lateral')).toBeTruthy();
+    expect(screen.queryByLabelText(/Ver la ficha completa|Recoger la ficha/)).toBeNull();
+  });
+
+  it('por debajo de 1024 px monta la hoja, con su asa', () => {
+    fijarAncho(390);
+    montar();
+    expect(screen.queryByTestId('panel-lateral')).toBeNull();
+    expect(screen.getByLabelText(/Ver la ficha completa|Recoger la ficha/)).toBeTruthy();
+  });
+
+  // Rotar una tableta con el panel abierto cambia de envoltorio: el contenido no puede perderse.
+  it('cruzar el corte con el panel abierto conserva el contenido', () => {
+    fijarAncho(390);
+    const { rerender } = montar();
+    expect(screen.getByText('Juan Plomero')).toBeTruthy();
+    fijarAncho(1280);
+    rerender(createElement(MemoryRouter, null, panel({})));
+    expect(screen.getByText('Juan Plomero')).toBeTruthy();
   });
 });
