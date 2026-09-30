@@ -117,6 +117,18 @@ router.post('/2fa/verify', limite2fa, asyncHandler(async (req: AuthRequest, res)
   res.json(abrirSesion(a));
 }));
 
+// Solo la cuenta de la demo (`admin@demo.com`, sembrada por seedDemo si DEMO_MODE) entra sin
+// código: es la única forma de enseñar el panel sin pedirle a quien prueba que configure un
+// autenticador. Cualquier otro admin —incluido uno real en producción con DEMO_MODE=true—
+// sigue exigiendo su código TOTP: esta ruta nunca abre sesión para otro email.
+router.post('/2fa/demo-enter', asyncHandler(async (req: AuthRequest, res) => {
+  const a = (await adminDe(req))!;
+  if (!DEMO_MODE || a.email !== 'admin@demo.com') throw new AppError('Ruta no encontrada', 404);
+  if (!a.totp_enabled_at) throw new AppError('Activa primero el 2FA', 400);
+  await auditar(req, 'entrada_panel_demo');
+  res.json(abrirSesion(a));
+}));
+
 router.use(sesionAdmin);
 
 // ── Sistema ─────────────────────────────────────────────────────────────────────────────────────

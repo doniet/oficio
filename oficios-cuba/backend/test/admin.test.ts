@@ -47,6 +47,11 @@ describe('panel de administración', () => {
     expect((await api.get('/api/admin/system').set(a.admin)).status).toBe(401);
   });
 
+  it('el atajo de entrada de la demo no existe fuera de DEMO_MODE', async () => {
+    const a = await adminCon2fa();
+    expect((await api.post('/api/admin/2fa/demo-enter').set(a.auth)).status).toBe(404);
+  });
+
   it('bloquea tras 5 códigos incorrectos', async () => {
     const a = await adminCon2fa();
     for (let i = 0; i < 5; i++) expect((await api.post('/api/admin/2fa/verify').set(a.auth).send({ code: '000000' })).status).toBe(401);

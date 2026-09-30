@@ -46,6 +46,7 @@ export const adminApi = {
   setup2fa: () => http.post<{ secret: string; uri: string }>('/2fa/setup'),
   enable2fa: (code: string) => http.post<AdminSession>('/2fa/enable', { code }),
   verify2fa: (code: string) => http.post<AdminSession>('/2fa/verify', { code }),
+  demoEnter: () => http.post<AdminSession>('/2fa/demo-enter'),
   system: () => http.get<AdminSystem>('/system'),
   telegram: () => http.get<AdminTelegram>('/telegram'),
   setTelegramToken: (token: string, code: string) => http.put<{ ok: true; hint: string }>('/telegram/token', { token, code }),

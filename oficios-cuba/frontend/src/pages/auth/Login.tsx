@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Briefcase, LogIn, User } from 'lucide-react';
+import { Briefcase, LogIn, ShieldCheck, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { apiError } from '../../services/api';
+import { adminApi, adminSession } from '../../services/adminApi';
 import { Alert, Spinner } from '../../components/ui';
 import { AuthShell, PasswordInput, safeNext } from './AuthShell';
 import GoogleButton, { OrDivider } from '../../components/GoogleButton';
@@ -12,6 +13,7 @@ const DEMO_PASSWORD = 'Demo123!';
 const DEMO_ACCOUNTS = [
   { email: 'cliente@demo.com', label: 'Cliente', detail: 'Laura Méndez · busca y contrata', icon: <User className="h-5 w-5" /> },
   { email: 'proveedor@demo.com', label: 'Profesional', detail: 'ElectroHogar Vedado · plan Profesional', icon: <Briefcase className="h-5 w-5" /> },
+  { email: 'admin@demo.com', label: 'Administrador', detail: 'Entra directo al panel Técnico', icon: <ShieldCheck className="h-5 w-5" /> },
 ];
 
 export default function Login() {
@@ -28,7 +30,17 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(e, p);
+      const user = await login(e, p);
+      // Solo esta cuenta exacta: es el atajo de admin.ts (POST /2fa/demo-enter, DEMO_MODE) para
+      // entrar al panel sin configurar un autenticador. Cualquier otro admin sigue pidiendo 2FA.
+      if (user.is_admin && e === 'admin@demo.com') {
+        try {
+          const { data } = await adminApi.demoEnter();
+          adminSession.set(data);
+        } catch { /* si el atajo falla, el panel pedirá el código normal */ }
+        navigate('/admin', { replace: true });
+        return;
+      }
       navigate(next ?? '/dashboard', { replace: true });
     } catch (err) {
       setError(apiError(err, 'No pudimos iniciar sesión.'));

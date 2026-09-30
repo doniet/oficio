@@ -4,6 +4,7 @@ import { q, qOne, tx } from './acceso.js';
 import { refreshProviderRating } from './index.js';
 import { puntoPublico } from '../lib/ubicacion.js';
 import { fechaLocal, instanteLocal, sumarDias } from '../lib/hora.js';
+import { nuevoSecreto } from '../lib/totp.js';
 
 export const DEMO_PASSWORD = 'Demo123!';
 
@@ -219,6 +220,9 @@ const clients = [
   { email: 'maria@demo.com', full_name: 'María José Ruiz' },
   { email: 'jorge@demo.com', full_name: 'Jorge Luis Batista' },
   { email: 'dayana@demo.com', full_name: 'Dayana Quintero' },
+  // Al final del array a propósito: el resto del sembrado referencia clientIds[0..4] por índice
+  // fijo (Laura y las citas de ejemplo, ver más abajo) — agregarla aquí no corre esos índices.
+  { email: 'admin@demo.com', full_name: 'Admin Demo' },
 ];
 
 const reviewComments: Record<number, string[]> = {
@@ -277,6 +281,15 @@ export async function seedDemo() {
       );
       clientIds.push(id);
     }
+
+    // admin@demo.com: entra directo al panel Técnico sin configurar un autenticador (ver
+    // routes/admin.ts → POST /2fa/demo-enter, que solo funciona para este email exacto y con
+    // DEMO_MODE=true). El secreto TOTP se genera igual pero nunca se le enseña a nadie: el
+    // atajo no lo necesita, y así la cuenta queda coherente con cualquier admin real.
+    await c.q(
+      "UPDATE users SET is_admin = true, totp_secret = $1, totp_enabled_at = $2 WHERE email = 'admin@demo.com'",
+      [nuevoSecreto(), daysAgo(200)],
+    );
 
     for (let i = 0; i < providers.length; i++) {
       const p = providers[i];
