@@ -779,3 +779,21 @@
   lo resolvió sin tocar el `package-lock.json`. Quien monte desarrollo desde cero en este host lo
   necesitará.
 - Blockers: ninguno.
+
+## 2026-09-30 04:10 UTC — claude-code (vps2) — Los 300 puntos de prueba, ahora en oficio.dardoit.com
+- Changes: `node dist/db/seed-mapa-cli.js` dentro de `oficio_api`, contra la base publicada. Decisión
+  de Dariel: **el sitio sigue siendo un entorno de desarrollo** hasta que él avise del paso a
+  producción real con negocios reales. Respaldo previo en
+  `data/oficio-2026-09-30-0403-pre-seed-mapa.dump` (185 entradas). `DEMO_MODE` ya estaba en `true`,
+  así que el pestillo del seed dejó pasar.
+- Tests: 18 → 318 usuarios, 12 → 312 perfiles, 22 → 322 servicios; las 34 reseñas sin tocar. **Nada
+  se sobrescribió**: la siembra solo añade, y los negocios originales siguen ahí (comprobados por
+  nombre). Los dos conjuntos se distinguen por el dominio del email — 300 en `@oficios.test`, los
+  18 originales en `@demo.com` y `@dardoit.com` —, así que la limpieza futura es separable.
+  Verificado desde fuera: `/api/mapa` sobre Cuba entera representa los 312 (22 puntos + agrupados),
+  158 en La Habana. En el navegador a 390 px el mapa sale con sus grupos «+12», «+13», «+10»…, que
+  es justo lo que el seed apila para que el «+N» se vea. 0 errores de consola sin justificar.
+- Security: N/A. Solo datos; sin cambios en red, puertos, auth ni configuración.
+- Next: cuando Dariel avise del paso a producción real, toca borrar lo sembrado
+  (`email like '%@oficios.test'`) y decidir qué pasa con `DEMO_MODE`.
+- Blockers: ninguno.
