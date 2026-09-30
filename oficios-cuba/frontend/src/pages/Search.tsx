@@ -1,18 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import ExplorarMapa from '../components/mapa/ExplorarMapa';
 import { ChevronLeft, ChevronRight, List, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Store, Wrench, X } from 'lucide-react';
 import { catalogApi, categoryApi, providerApi, provinceApi, serviceApi, apiError } from '../services/api';
-import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, ProviderCard as ProviderCardType, Province, PuntoMapa, ServiceSummary } from '../types';
+import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, ProviderCard as ProviderCardType, Province, ServiceSummary } from '../types';
 import { cup, plural, priceTypeLabel } from '../lib/format';
 import { ProviderCard, ProviderCardSkeleton, ServiceCard, ServiceCardSkeleton } from '../components/cards';
 import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../components/ui';
 import CatalogCard, { CatalogCardSkeleton } from '../components/catalog/CatalogCard';
 import CatalogItemModal from '../components/catalog/CatalogItemModal';
-import PanelMapa from '../components/mapa/PanelMapa';
 
-// Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa (o cambia a la vista de mapa).
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
-const MapaExplorar = lazy(() => import('../components/mapa/MapaExplorar'));
 
 // Lo único que el endpoint /api/mapa honra: el buscador de texto, la pestaña y la categoría.
 // Provincia, municipio, precio y orden no llegan al mapa (el rectángulo visible ya es la
@@ -244,13 +242,6 @@ export default function Search() {
   // Sin `vista` en la URL se ve la lista: el precio y la foto deciden un servicio, y eso el mapa
   // no lo enseña. `vista=mapa` es explícito y sobrevive a compartir el enlace.
   const enMapa = get('vista') === 'mapa';
-  const [puntoAbierto, setPuntoAbierto] = useState<PuntoMapa | null>(null);
-  // Los negocios de una celda, cuando se toca un grupo. Vive aquí y no en el mapa por la misma
-  // razón que el punto abierto: sobrevive a los re-render del mapa.
-  const [listaCelda, setListaCelda] = useState<PuntoMapa[] | null>(null);
-  // Hoja y lista son excluyentes: si se abren a la vez se pisan y no se entiende cuál manda.
-  const abrirPunto = useCallback((p: PuntoMapa) => { setListaCelda(null); setPuntoAbierto(p); }, []);
-  const abrirLista = useCallback((ps: PuntoMapa[]) => { setPuntoAbierto(null); setListaCelda(ps); }, []);
   const [negs, setNegs] = useState<ProviderCardType[]>([]);
   const [negPag, setNegPag] = useState<Pagination | null>(null);
   const [prod, setProd] = useState<CatalogSearchPage | null>(null);
@@ -408,6 +399,12 @@ export default function Search() {
     ? categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : TITULOS.servicios)
     : (get('q') ? `${TITULOS[pestaña]}: “${get('q')}”` : TITULOS[pestaña]);
   const filterProps = { categories, provinces, municipalities, get, update, pestaña, enMapa, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
+
+  // La vista de mapa es dueña de su propio layout a sangre, así que sale ANTES del marco de
+  // página (container-page, con su ancho máximo y su relleno) en vez de vivir en una caja dentro
+  // de la columna de resultados. Va después de TODOS los hooks de arriba: un retorno temprano por
+  // encima de cualquiera de ellos cambiaría el número de hooks entre renders y React se rompe.
+  if (enMapa) return <ExplorarMapa get={get} update={update} categorias={categories} />;
   const totalResultados = productos ? prod?.total : negocios ? negPag?.total : pagination?.total;
   const resultadosTexto = productos
     ? ['producto encontrado', 'productos encontrados']
@@ -511,13 +508,7 @@ export default function Search() {
             </div>
           )}
 
-          {enMapa ? (
-            <div className="h-[70vh] min-h-[420px]">
-              <Suspense fallback={<PageLoader />}>
-                <MapaExplorar tab={pestaña} q={get('q')} category={get('category')} onAbrir={abrirPunto} onAbrirLista={abrirLista} />
-              </Suspense>
-            </div>
-          ) : error ? (
+          {error ? (
             <ErrorState message={error} onRetry={() => setReload((n) => n + 1)} />
           ) : negocios ? (
             loading && negs.length === 0 ? (
@@ -627,15 +618,6 @@ export default function Search() {
         soloProvincia={negocios}
       />
 
-      {/* El punto abierto lo posee esta página, no el mapa: HojaPunto se monta como hermano de
-         MapaExplorar (ver el escaneo de conflictos de la Entrega 2), y sobrevive aunque se
-         vuelva a la lista mientras se cierra la hoja. */}
-      <PanelMapa
-        punto={puntoAbierto}
-        lista={listaCelda}
-        onElegirDeLista={abrirPunto}
-        onCerrar={() => { setPuntoAbierto(null); setListaCelda(null); }}
-      />
     </div>
   );
 }

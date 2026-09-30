@@ -136,7 +136,11 @@ describe('Search — el switch lista/mapa conserva la URL', () => {
     // interactuar, para no pulsar «Lista» a mitad del montaje asíncrono del mapa.
     await waitFor(() => expect(mapaApi.buscar).toHaveBeenCalled(), { timeout: 2000 });
 
-    fireEvent.click(screen.getByRole('tab', { name: /^Lista$/ }));
+    // En el mapa a pantalla completa ya no hay conmutador Lista/Mapa en el flujo de la página:
+    // «Ver en lista» vive detrás del botón de filtros de la barra flotante. Lo que esta prueba
+    // protege —que volver a la lista conserve tab y q— no cambia; solo el control que lo dispara.
+    fireEvent.click(screen.getByRole('button', { name: /Más filtros/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Ver en lista/ }));
 
     const url = urlActual();
     expect(url.get('vista')).toBeNull();
