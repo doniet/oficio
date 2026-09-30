@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Circle, MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import { Circle, MapContainer, Marker, TileLayer, ZoomControl, useMapEvents } from 'react-leaflet';
 import L, { type LatLngBounds, type Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed } from 'lucide-react';
@@ -158,6 +158,10 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
         minZoom={6}
         maxBounds={CUBA_BOUNDS}
         className="h-full w-full"
+        // El zoom por defecto va arriba a la izquierda, justo donde ahora vive la barra flotante:
+        // encima tapaba los controles y debajo quedaba inservible. Abajo a la izquierda no estorba
+        // a nada — «Cerca de mí» está abajo a la derecha — y sube con la hoja (ver index.css).
+        zoomControl={false}
         scrollWheelZoom
         attributionControl
       >
@@ -165,6 +169,7 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, 
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
+        <ZoomControl position="bottomleft" />
         <Eventos zoomRecien={zoomRecien} alMover={mapa.alMover} />
         {mapa.puntos.map((p) => (
           // En modo zona un punto aproximado deja de fingir un punto y se dibuja como área. Los

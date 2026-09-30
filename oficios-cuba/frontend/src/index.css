@@ -113,19 +113,22 @@
 .leaflet-tile-pane { filter: saturate(0.22) brightness(1.1) contrast(0.8); }
 .map-pin { background: transparent !important; border: 0 !important; }
 
-/* El alto del mapa a pantalla completa de /explorar.
+/* Alto de la aplicación cuando el mapa ocupa la página.
    `dvh` es lo correcto — con `vh`, la barra del navegador móvil tapa la franja de abajo, que es
    justo donde vive la hoja con la ficha —, pero no está en los WebView de Android viejos, que sí
-   son público de esta app: sin el respaldo en `vh`, el alto se queda en `auto` y el mapa colapsa
-   a 0 px, que es peor que una franja tapada.
-   4rem = la cabecera (h-16). 5rem = el pb-20 que Layout reserva para la barra inferior de
-   navegación, que solo existe por debajo de `md` (768px) — OJO: ese corte NO es el mismo que el
-   del panel lateral, que es `lg` (1024px). */
-.region-mapa { height: calc(100vh - 4rem - 5rem); }
-@supports (height: 100dvh) { .region-mapa { height: calc(100dvh - 4rem - 5rem); } }
-@media (min-width: 768px) {
-  .region-mapa { height: calc(100vh - 4rem); }
-}
-@supports (height: 100dvh) {
-  @media (min-width: 768px) { .region-mapa { height: calc(100dvh - 4rem); } }
+   son público de esta app: por eso el respaldo en `vh` va primero.
+   El mapa se lleva lo que sobre por flex (`.region-mapa { height: 100% }`) en vez de restar la
+   cabecera y la barra inferior con un calc: esos números (4rem, 5rem, el borde de 1px de la
+   cabecera) se desincronizan en cuanto alguien toca el layout, y el síntoma es un píxel de scroll
+   que nadie relaciona con la causa. */
+.alto-app { height: 100vh; }
+@supports (height: 100dvh) { .alto-app { height: 100dvh; } }
+
+.region-mapa { height: 100%; }
+
+/* El zoom del mapa vive abajo a la izquierda y sube con la hoja de la ficha, igual que el botón
+   «Cerca de mí»: si no, la hoja abierta lo deja enterrado. La variable la publica HojaPunto. */
+.region-mapa .leaflet-bottom.leaflet-left {
+  margin-bottom: var(--hoja-punto-alto, 0px);
+  transition: margin-bottom .2s ease-out;
 }

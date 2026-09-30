@@ -109,6 +109,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
         tab={tab}
         category={category}
         categorias={categorias}
+        conPanel={esEscritorio && Boolean(punto || lista)}
         onBuscar={(q) => update({ q: q || null })}
         // `servicios` se manda como null: es la convención de URL de Search.tsx para no ensuciar
         // la barra de direcciones. ControlesMapa no tiene por qué conocerla.

@@ -23,11 +23,13 @@ const MARCADORES: Record<string, string> = {
  * Avisa con los valores tal cual (`tab: 'servicios'`, no `null`): la convención de URL que usa
  * `Search.tsx` para no ensuciar la barra de direcciones la aplica quien consume este componente.
  */
-export default function ControlesMapa({ q, tab, category, categorias, onBuscar, onCambiar }: {
+export default function ControlesMapa({ q, tab, category, categorias, conPanel, onBuscar, onCambiar }: {
   q: string;
   tab: string;
   category: string;
   categorias: Category[];
+  /** Hay un panel lateral abierto a la izquierda: los controles se apartan para no quedar debajo. */
+  conPanel?: boolean;
   onBuscar(q: string): void;
   onCambiar(patch: Record<string, string | null>): void;
 }) {
@@ -40,7 +42,16 @@ export default function ControlesMapa({ q, tab, category, categorias, onBuscar, 
   return (
     // pointer-events-none en el contenedor: el mapa sigue recibiendo arrastres a los lados de la
     // tarjeta. z-[400] es la escala de los controles del mapa; el panel va por encima, en z-[500].
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-[400] p-3">
+    /* El desplazamiento va con transición: el panel aparece al tocar un punto, y un salto seco de
+       la barra de búsqueda en ese momento se lee como un fallo, no como una respuesta.
+      La escala de Leaflet (leaflet.css) NO acaba en 400: los paneles van de 200 a 700, pero los
+      contenedores de controles (.leaflet-top/.leaflet-bottom, donde viven el zoom y la atribución)
+      son z-index 1000. Por eso nada del mapa puede quedarse en 400 o 500 y esperar estar encima:
+      el control de zoom se pintaba sobre el panel y recortaba el título de la lista. */
+    <div className={cn(
+      'pointer-events-none absolute inset-x-0 top-0 z-[1010] p-3 transition-[padding] duration-300',
+      conPanel && 'lg:pl-[23.5rem]',
+    )}>
       <div className="pointer-events-auto mx-auto w-full max-w-2xl rounded-2xl bg-white/95 p-2 shadow-card backdrop-blur">
         <form
           onSubmit={(e) => { e.preventDefault(); onBuscar(texto.trim()); }}

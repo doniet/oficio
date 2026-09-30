@@ -20,7 +20,7 @@ export default function ListaCelda({ puntos, tituloId, onElegir, onCerrar, error
 }) {
   return (
     <>
-      <div className="-mx-5 -mt-5 mb-3 flex items-center justify-between gap-3 border-b border-sand-200 px-4 py-3">
+      <div className="-mx-5 -mt-5 mb-3 flex items-center justify-between gap-3 border-b border-sand-200 px-5 py-3">
         <h2 id={tituloId} className="font-sans text-base font-bold text-ink-900">
           {error
             ? 'Negocios de esta zona'
@@ -48,7 +48,7 @@ export default function ListaCelda({ puntos, tituloId, onElegir, onCerrar, error
             <button
               type="button"
               onClick={() => onElegir(p)}
-              className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-sand-100"
+              className="flex w-full items-start gap-3 px-5 py-3 text-left transition hover:bg-sand-100"
             >
               <MapPin className={`mt-0.5 h-4 w-4 shrink-0 ${p.plan === 'pro' ? 'text-brand-600' : 'text-ink-400'}`} aria-hidden="true" />
               <span className="min-w-0 flex-1">

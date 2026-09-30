@@ -103,12 +103,14 @@ export default function HojaPunto({ abierta, tituloId, onCerrar, focoOrigen, chi
   if (!abierta) return null;
 
   return (
-    // pointer-events-none: el mapa detrás sigue recibiendo toques salvo bajo la propia hoja.
-    // z-[500]: por encima de los controles flotantes del mapa (z-[400], la escala de Leaflet que
-    // usa el resto del mapa — ver ProvinceMapSelector.tsx), incluido el botón «Cerca de mí» que
-    // esta hoja existe justamente para no tapar. La variable CSS --hoja-punto-alto de más abajo
-    // no sirve de nada si el botón, aun recolocado, queda pintado por debajo de la hoja.
-    <div className="pointer-events-none fixed inset-0 z-[500]">
+    /* pointer-events-none: el mapa detrás sigue recibiendo toques salvo bajo la propia hoja.
+      La escala de Leaflet (leaflet.css) NO acaba en 400: los paneles van de 200 a 700, pero los
+      contenedores de controles (.leaflet-top/.leaflet-bottom, donde viven el zoom y la atribución)
+      son z-index 1000. Por eso nada del mapa puede quedarse en 400 o 500 y esperar estar encima:
+      el control de zoom se pintaba sobre el panel y recortaba el título de la lista.
+       Por encima también de la barra flotante (1010) y del botón «Cerca de mí»: la variable CSS
+       --hoja-punto-alto no sirve de nada si el botón, aun recolocado, se pinta sobre la hoja. */
+    <div className="pointer-events-none fixed inset-0 z-[1020]">
       <div
         ref={sheetRef}
         role="dialog"

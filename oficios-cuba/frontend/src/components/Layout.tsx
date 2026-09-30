@@ -131,13 +131,18 @@ export default function Layout() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
   const inChat = /^\/dashboard\/mensajes\/.+/.test(location.pathname);
+  // El mapa a pantalla completa ocupa el viewport menos la cabecera (y menos la barra inferior en
+  // móvil). Si además se pinta el pie, la página hace scroll y el mapa deja de ser lo único que
+  // hay: se ve media pantalla de mapa y media de enlaces. La barra inferior SÍ se queda — es la
+  // navegación, y quitarla obligaría a reponerla como control flotante.
+  const enMapa = location.pathname === '/explorar' && new URLSearchParams(location.search).get('vista') === 'mapa';
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className={cn('flex flex-col', enMapa ? 'alto-app overflow-hidden' : 'min-h-screen')}>
       <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lift">
         Saltar al contenido
       </a>
@@ -176,11 +181,13 @@ export default function Layout() {
         </div>
       </header>
 
-      <main id="contenido" className={cn('flex-1', !inChat && 'pb-20 md:pb-0')}>
+      {/* min-h-0 con el mapa: sin él, un hijo que quiere 100% de alto impide que flex-1 encoja y
+         la página vuelve a hacer scroll. */}
+      <main id="contenido" className={cn('flex-1', enMapa && 'min-h-0', !inChat && 'pb-20 md:pb-0')}>
         <Outlet />
       </main>
 
-      {!inChat && (
+      {!inChat && !enMapa && (
         <footer className="mt-16 bg-ink-950 pb-24 pt-14 text-ink-300 md:pb-10">
           <div className="container-page">
             <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">

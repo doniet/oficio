@@ -9,6 +9,8 @@ import { usarPanel, type PropsEnvoltorio } from './usarPanel';
  * Su ancho tiene que seguir cuadrando con `ANCHO_PANEL_PX` de `ExplorarMapa.tsx`, que es lo que el
  * paneo usa para saber qué zona del mapa queda tapada.
  */
+// z-[1020]: por encima de los contenedores de controles de Leaflet (z-index 1000), que si no se
+// pintan sobre el panel — el control de zoom recortaba el título de la lista.
 export default function PanelLateral({ abierta, tituloId, onCerrar, focoOrigen, children }: PropsEnvoltorio) {
   const ref = useRef<HTMLDivElement>(null);
   const { cerrar, limpiarEntradaPropia } = usarPanel({ abierta, onCerrar, focoOrigen, contenedorRef: ref });
@@ -25,7 +27,7 @@ export default function PanelLateral({ abierta, tituloId, onCerrar, focoOrigen, 
       aria-modal="false"
       aria-labelledby={tituloId}
       tabIndex={-1}
-      className="absolute bottom-4 left-4 top-4 z-[500] flex w-[22rem] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border border-sand-200 bg-white shadow-lift outline-none"
+      className="absolute bottom-4 left-4 top-4 z-[1020] flex w-[22rem] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border border-sand-200 bg-white shadow-lift outline-none"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {children({ expandida: true, onAntesDeNavegar: limpiarEntradaPropia, cerrar })}
