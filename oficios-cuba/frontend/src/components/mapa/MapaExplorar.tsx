@@ -82,11 +82,16 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }: {
+export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista, alMapa }: {
   tab: string; q: string; category: string;
   onAbrir: (p: PuntoMapa) => void;
-  /** Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). */
-  onAbrirLista: (puntos: PuntoMapa[]) => void;
+  /**
+   * Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). Si la
+   * celda no se pudo cargar, llega con la lista vacía y el mensaje: el panel se abre igual.
+   */
+  onAbrirLista: (puntos: PuntoMapa[], error?: string) => void;
+  /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
+  alMapa?: (m: LeafletMap) => void;
 }) {
   const mapa = usarMapa({ tab, q, category });
 
@@ -98,8 +103,13 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }
   // para el «+N» y para el área: enseñarle al usuario dos formas de decir «aquí hay varios»
   // sería pedirle que aprenda dos cosas para el mismo hecho.
   const abrir = useCallback((p: PuntoMapa) => {
-    if (p.detras > 0) mapa.cargarCelda(p.cy, p.cx).then((lista) => onAbrirLista(lista.length ? lista : [p]));
-    else onAbrir(p);
+    if (p.detras > 0) {
+      mapa.cargarCelda(p.cy, p.cx)
+        .then((lista) => onAbrirLista(lista.length ? lista : [p]))
+        // Sin este catch, un fallo de red es un rechazo no capturado: el usuario toca un grupo y
+        // no pasa NADA, ni panel ni mensaje. Se abre igual, con el error y su «Reintentar».
+        .catch(() => onAbrirLista([], 'No pudimos cargar los negocios de esta zona.'));
+    } else onAbrir(p);
   }, [mapa, onAbrir, onAbrirLista]);
   const zoomRecien = useRef(false);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -130,9 +140,9 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }
   }, []);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl border border-sand-200">
+    <div className="relative h-full w-full overflow-hidden">
       <MapContainer
-        ref={mapRef}
+        ref={(m) => { mapRef.current = m; if (m) alMapa?.(m); }}
         center={CUBA_CENTER}
         zoom={7}
         minZoom={6}
@@ -181,7 +191,8 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }
         ))}
       </MapContainer>
 
-      <div className="pointer-events-none absolute inset-x-0 top-3 z-[400] flex flex-col items-center gap-2 px-3">
+      <div // top-28: por debajo de la barra flotante de ControlesMapa, que ocupa la franja de arriba.
+        className="pointer-events-none absolute inset-x-0 top-28 z-[400] flex flex-col items-center gap-2 px-3">
         {mapa.cargando && (
           <span className="pointer-events-auto flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-ink-600 shadow-card">
             <Spinner className="h-3.5 w-3.5" /> Cargando…
@@ -213,7 +224,10 @@ export default function MapaExplorar({ tab, q, category, onAbrir, onAbrirLista }
         type="button"
         onClick={cercaDeMi}
         disabled={localizando}
-        className="btn-secondary btn-sm absolute bottom-3 right-3 z-[400] shadow-card"
+        className="btn-secondary btn-sm absolute right-3 z-[400] shadow-card"
+        // La hoja publica cuánto tapa en --hoja-punto-alto y cambia en vivo mientras se arrastra;
+        // sin leerla, este botón queda debajo de ella en cuanto se abre una ficha.
+        style={{ bottom: 'calc(var(--hoja-punto-alto, 0px) + 12px)' }}
       >
         {localizando ? <Spinner className="h-3.5 w-3.5" /> : <LocateFixed className="h-3.5 w-3.5" />} Cerca de mí
       </button>

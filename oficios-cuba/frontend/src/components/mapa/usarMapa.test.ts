@@ -171,4 +171,42 @@ describe('MapaExplorar', () => {
     // datos y con el botón puesto en vez de con la zona ya pedida.
     expect(screen.queryByText('Buscar en esta zona')).toBeNull();
   });
+
+  // Hasta ahora `cargarCelda` no tenía `.catch` ni en el hook ni en quien lo llamaba: un fallo de
+  // red era un rechazo no capturado y el usuario tocaba un grupo sin que pasara NADA — ni panel,
+  // ni mensaje. En la conexión que esta app apunta a servir, eso no es el caso raro.
+  it('si /mapa/celda falla, se abre la lista con el error en vez de no pasar nada', async () => {
+    vi.mocked(mapaApi.buscar).mockResolvedValue({
+      puntos: [{ id: 'p1', tipo: 'oficio', nombre: 'Grupo', lat: 23, lng: -82, plan: 'free', aproximado: false, cy: 1, cx: 1, detras: 2, resumen: 'Varios negocios' }],
+      celda: 0.01,
+      hay_mas: false,
+    });
+    vi.mocked(mapaApi.celda).mockRejectedValue(new Error('red caída'));
+    const onAbrirLista = vi.fn();
+
+    const { container } = render(createElement(MapaExplorar, {
+      tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista,
+    }));
+    await act(async () => { await espera(280); });
+
+    const pin = container.querySelector('.leaflet-marker-icon');
+    expect(pin).toBeTruthy();
+    await act(async () => { (pin as HTMLElement).click(); await espera(10); });
+
+    expect(onAbrirLista).toHaveBeenCalledWith([], expect.stringContaining('No pudimos'));
+  });
+
+  // El contrato que HojaPunto dejó escrito y que nunca llegó a cumplirse: con la hoja abierta,
+  // este botón quedaba debajo de ella.
+  it('«Cerca de mí» se coloca leyendo --hoja-punto-alto, para no quedar bajo la hoja', async () => {
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    // Acotado a su propio contenedor: este fichero no limpia el DOM entre pruebas, así que una
+    // búsqueda global encontraría también los mapas de las pruebas anteriores.
+    const { container } = render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {} }));
+    await act(async () => { await espera(280); });
+
+    const boton = Array.from(container.querySelectorAll('button')).find((b) => /Cerca de mí/.test(b.textContent ?? ''))!;
+    expect(boton).toBeTruthy();
+    expect(boton.getAttribute('style')).toContain('--hoja-punto-alto');
+  });
 });
