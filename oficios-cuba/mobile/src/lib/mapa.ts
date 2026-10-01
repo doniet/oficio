@@ -177,6 +177,11 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   // Regla 3: escribir en el buscador (o cambiar categoría/pestaña) recarga solo, con el mismo
   // tipo de antirrebote que el zoom — es una petición deliberada, igual que hacer zoom.
   useEffect(() => {
+    // Va con los otros dos reinicios y no es orden: la pregunta por Cuba entera del término
+    // anterior sigue en vuelo, y si llega sin abortar escribe `sugerencia` con las coordenadas de
+    // una búsqueda que el usuario ya abandonó — MapaExplorar vuela hasta allá, lejos de los
+    // resultados del término nuevo. Es la diferencia entre un vuelo que se pidió y uno que no.
+    controladorCuba.current?.abort();
     intentada.current = false;
     setEstado((e) => (e.sugerencia === null ? e : { ...e, sugerencia: null }));
     if (!bboxVisible.current) return;

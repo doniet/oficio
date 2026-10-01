@@ -479,6 +479,31 @@ describe('usarMapa', () => {
     h.desmontar();
   });
 
+  it('cambiar la búsqueda aborta la pregunta de Cuba entera: su respuesta ya no puede mover el mapa', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+    const cuba = llamadas[1];
+    expect(new URL(cuba.url).searchParams.get('q')).toBe('soldador');
+
+    // El usuario reescribe antes de que la pregunta por «soldador» vuelva.
+    h.actualizar({ tab: 'servicios', q: 'plomero', category: '' });
+    expect(cuba.signal.aborted).toBe(true);
+
+    // Y aunque la respuesta vieja llegue después, no puede fijar un salto: volar a donde hay
+    // soldadores sería sacar al usuario de los resultados de «plomero» que sí está viendo.
+    act(() => { cuba.resolver(respuestaFalsa([{ ...puntoFalso('lejano'), lat: 22.4, lng: -79.9 }])); });
+    await avanzarYVaciar(0);
+    expect(h.estado.sugerencia).toBeNull();
+
+    h.desmontar();
+  });
+
   it('desmontar con la pregunta de Cuba entera en vuelo la aborta', async () => {
     const { fetchMock, llamadas } = fetchControlable();
     global.fetch = fetchMock as unknown as typeof fetch;
