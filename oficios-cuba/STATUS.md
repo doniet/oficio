@@ -1205,3 +1205,43 @@
 - Next: ninguno.
 - Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
   serie de esta sesión.
+
+## 2026-10-01 22:26 — claude-code (vps2) — El mapa de la app alcanza a la web (sub-proyecto 1 de la 0.2.5)
+- Changes (`3792f35..0c4b248`, 14 commits, 14 archivos, todos dentro de `oficios-cuba/mobile/`):
+  el mapa de la app (Explorar) llega a la paridad de conducta que ya tenía el mapa web. `cargarCelda`
+  pide los negocios de una celda «+N» y recuerda el bbox pintado para que la lista coincida con lo
+  que se tocó. El Atrás de la hoja pasa a tener tres estados reales (cierra la hoja / vuelve a la
+  lista / no hace nada) en vez de uno binario — `FichaPunto` se separó del envoltorio `HojaPunto`
+  para que la hoja elija contenido (ficha sola, lista, o ficha-tras-lista) sin duplicar el cierre.
+  Los pines dejan de colorearse por plan (pro/básico/gratis) y pasan a colorear por tipo (negocio u
+  oficio), tabla única en `lib/pines.ts` con el par relleno+glifo ya validado por contraste. El punto
+  con la ficha abierta se dibuja como gota con la punta en su coordenada (el cálculo de altura del
+  envoltorio se corrigió de 52 a 46 a mitad de la tarea: la cola rotada 45° no llega más abajo que
+  eso). Si una búsqueda de texto no tiene nada en la zona visible pero sí en otra provincia, el mapa
+  pregunta una vez por toda Cuba y, si aparece algo, vuela hasta allí (`flyTo`, mismo zoom/duración
+  que «Cerca de mí»); una guarda (`intentada`) evita repetir la pregunta en cada arrastre mientras el
+  término no cambie. Divergencia deliberada frente a la web: en la app, tocar una celda que resuelve
+  en un solo negocio abre su ficha directamente, donde la web muestra una lista de un elemento.
+- Tests: pass — app **79/79** en 9 suites (línea base 47/7 + 32 nuevas de este plan); `tsc --noEmit`
+  limpio.
+- Security: sin cambios de superficie — ningún archivo fuera de `oficios-cuba/mobile/`, sin tocar
+  backend ni esquema; los mismos endpoints públicos de antes (`/api/mapa`, `/catalog/provider/:id`),
+  ninguno nuevo.
+- Pendiente de verificar en un teléfono real (y por qué no se hizo aquí): el recorrido completo de
+  los 9 puntos del plan sigue SIN caminarse — no es un recorte, es que este host (vps2) no tiene con
+  qué: falta `oficios-cuba/mobile/android/` (proyecto Expo gestionado, nunca prebuilt en vps2), falta
+  el keystore de `~/.claude/.oficio-firma`, no hay SDK de Android instalado y no hay `adb`. No se vio
+  nada en pantalla y no se afirma lo contrario. En particular queda sin la verificación empírica que
+  el punto 9 del recorrido pedía a propósito: que un pinch-zoom cruce siempre `UMBRAL_ZOOM = 0.05`
+  (recarga a 250 ms) y que la inercia de un arrastre nunca lo cruce sola (recarga a 500 ms) — ese
+  valor sigue anotado en el código como «empírico sin verificar en hardware real». Pendientes también
+  de una decisión visual de Dariel, ambas de accesibilidad: el icono de tipo en la fila de
+  `ListaCelda` usa `brand[400]` como glifo suelto sobre fondo claro (≈2,2:1, por debajo del 3:1 que
+  pide WCAG para un elemento gráfico — el único indicador de tipo en esa fila); y la lista de error
+  de un solo negocio se anuncia «1 negocio aquí» mientras su cuerpo muestra un fallo. Checklist
+  completo para quien lo camine con un dispositivo real en `.superpowers/sdd/2026-10-01-mapa-app-
+  paridad/task-10-report.md`.
+- Next: sub-proyecto 2 (ficha, catálogo, reseñas, Compartir, portada, pantalla proveedor/[id]) sigue
+  sin empezar. Después de eso, compilar y publicar la 0.2.5.
+- Blockers: ninguno de código. La **0.2.5 no está compilada ni publicada** — esta tarea no generó
+  ningún APK.
