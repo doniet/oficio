@@ -1207,7 +1207,7 @@
   serie de esta sesión.
 
 ## 2026-10-01 22:26 — claude-code (vps2) — El mapa de la app alcanza a la web (sub-proyecto 1 de la 0.2.5)
-- Changes (`3792f35..0c4b248`, 14 commits, 14 archivos, todos dentro de `oficios-cuba/mobile/`):
+- Changes (`f5f29fd..0c4b248`, 14 commits, 14 archivos, todos dentro de `oficios-cuba/mobile/`):
   el mapa de la app (Explorar) llega a la paridad de conducta que ya tenía el mapa web. `cargarCelda`
   pide los negocios de una celda «+N» y recuerda el bbox pintado para que la lista coincida con lo
   que se tocó. El Atrás de la hoja pasa a tener tres estados reales (cierra la hoja / vuelve a la
@@ -1239,8 +1239,8 @@
   `ListaCelda` usa `brand[400]` como glifo suelto sobre fondo claro (≈2,2:1, por debajo del 3:1 que
   pide WCAG para un elemento gráfico — el único indicador de tipo en esa fila); y la lista de error
   de un solo negocio se anuncia «1 negocio aquí» mientras su cuerpo muestra un fallo. Checklist
-  completo para quien lo camine con un dispositivo real en `.superpowers/sdd/2026-10-01-mapa-app-
-  paridad/task-10-report.md`.
+  completo para quien lo camine con un dispositivo real en
+  `docs/superpowers/2026-10-01-mapa-app-paridad-pendiente-dispositivo.md`.
 - Next: sub-proyecto 2 (ficha, catálogo, reseñas, Compartir, portada, pantalla proveedor/[id]) sigue
   sin empezar. Después de eso, compilar y publicar la 0.2.5.
 - Blockers: ninguno de código. La **0.2.5 no está compilada ni publicada** — esta tarea no generó
