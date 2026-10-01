@@ -358,6 +358,37 @@ describe('usarMapa', () => {
     h.desmontar();
   });
 
+  it('si la celda no responde en 20 s, la promesa RECHAZA en vez de quedarse colgada', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    let promesa!: Promise<PuntoMapa[]>;
+    act(() => { promesa = h.estado.cargarCelda(0, 0); });
+    // Una conexión que se cuelga (no falla): sin tiempo de espera esto no se asienta nunca y quien
+    // tocó el «+N» no ve nada — ni hoja, ni error, ni «Reintentar».
+    let desenlace = 'pendiente';
+    promesa.then(() => { desenlace = 'resuelta'; }, () => { desenlace = 'rechazada'; });
+    const celda = llamadas.find((l) => l.url.includes('/mapa/celda'))!;
+
+    await avanzarYVaciar(19999);
+    expect(celda.signal.aborted).toBe(false);
+    expect(desenlace).toBe('pendiente');
+
+    await avanzarYVaciar(1);
+    expect(celda.signal.aborted).toBe(true);
+    // Rechaza, no resuelve vacía: vacía sería «la celda no trajo nada» y abriría una hoja en
+    // blanco; el rechazo es lo que lleva al mensaje de error con su «Reintentar».
+    expect(desenlace).toBe('rechazada');
+
+    h.desmontar();
+  });
+
   it('un rectángulo sin área no gasta petición ni se queda como bbox pintado', async () => {
     const { fetchMock } = fetchControlable();
     global.fetch = fetchMock as unknown as typeof fetch;

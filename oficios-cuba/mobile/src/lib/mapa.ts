@@ -227,12 +227,23 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
     controladorCelda.current?.abort();
     const propio = new AbortController();
     controladorCelda.current = propio;
+    // Mismo tiempo de espera que `cargar()`, por el mismo motivo y uno más: una conexión que se
+    // CUELGA sin fallar nunca asienta esta promesa, así que quien tocó un «+N» no ve nada en
+    // absoluto — ni hoja, ni error, ni «Reintentar». Con esto el cuelgue rechaza y cae en el
+    // camino de error que ya existe. La bandera separa las dos cancelaciones: la del segundo
+    // toque sigue resolviendo vacía y en silencio; la del tiempo agotado sí tiene que rechazar.
+    let expiroPorTiempo = false;
+    const tiempoEsperaCelda = setTimeout(() => { expiroPorTiempo = true; propio.abort(); }, TIEMPO_ESPERA_MS);
     return pedirCelda(bbox, cy, cx, { tab, q: q || undefined, category: category || undefined }, propio.signal)
-      .then((r) => (propio.signal.aborted ? [] : r.puntos))
+      .then((r) => {
+        clearTimeout(tiempoEsperaCelda);
+        return propio.signal.aborted ? [] : r.puntos;
+      })
       // Abandonada (otro toque o desmontaje): no es un error que mostrar, resuelve vacía y quien
       // llama lo trata como «la celda no trajo nada». Cualquier otro fallo sí se propaga.
       .catch((e: unknown) => {
-        if (propio.signal.aborted) return [];
+        clearTimeout(tiempoEsperaCelda);
+        if (propio.signal.aborted && !expiroPorTiempo) return [];
         throw e;
       });
   }, [tab, q, category]);
