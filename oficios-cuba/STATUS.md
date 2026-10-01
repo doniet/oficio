@@ -886,3 +886,31 @@
 - Next: ninguno.
 - Blockers: ninguno. Mismo límite de siempre: sin navegador en vps2 para una verificación visual
   en vivo; este ajuste lo pidió Dariel tras verlo él mismo en producción.
+
+## 2026-10-01 01:08 UTC — claude-code (vps2) — Ficha del mapa: portada, "Compartir" y acordeón de reseñas
+- Changes (`cac6216`): Dariel pidió enriquecer la ficha del mapa con una captura de Google Maps de
+  referencia; de ahí se tomó lo que aplica a Encuentrauno (no el resto: pedidos en línea y
+  atributos de restaurante no existen en el modelo de datos, no se inventaron). Tres piezas sobre
+  `FichaPunto.tsx`:
+  1. **Portada arriba**: `CoverImage` con el mismo fallback al ícono de categoría que ya usa
+     `ProviderProfile.tsx`. El botón de cerrar pasa a flotar en una posición absoluta fija (esquina
+     superior derecha de toda la ficha) para no moverse según haya o no portada ni según el estado
+     de carga; un esqueleto ocupa su lugar mientras llega la respuesta, para que el avatar/nombre
+     de abajo no salten al aparecer la foto real.
+  2. **"Compartir"** junto a «Ver perfil completo»: `navigator.share` si el dispositivo lo tiene
+     (share nativo), o `navigator.clipboard.writeText` + aviso (`useToast`) si no.
+  3. **Acordeón "Reseñas (N)"**: mismo patrón que el de Servicios de la entrada anterior — cerrado
+     por defecto, sin petición aparte (`GET /providers/:id` ya trae `reviews` en la misma
+     respuesta), muestra las 3 más recientes (`ReviewItem`, reusado de `ReviewList.tsx`) y enlaza
+     a `/proveedor/:id#resenas` si hay más.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **53/53** (4 nuevos: reseñas en acordeón cerrado con enlace a verlas
+  todas; compartir llama a `navigator.share` cuando existe y cae a `clipboard.writeText` cuando no;
+  1 test de trampa de foco actualizado porque el último elemento tabulable de la hoja pasó a ser el
+  botón «Compartir»). `tsc` y `vite build` limpios. Verificado en producción tras el deploy: el
+  chunk `Search-CcEoSRa7.js` servido por Cloudflare contiene `navigator.share`, `Compartir` y
+  `resenas`.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
+  previsualización aislada (artifact) con el mismo HTML/clases que el componente real.
