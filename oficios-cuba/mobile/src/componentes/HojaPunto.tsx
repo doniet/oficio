@@ -3,7 +3,9 @@ import { BackHandler, StyleSheet } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import type { PuntoMapa } from '@oficio/shared';
 import FichaPunto from './FichaPunto';
+import ListaCelda from './ListaCelda';
 import { accionAtras } from '../lib/hojaPunto';
+import { tituloCelda } from '../lib/listaCelda';
 import { radios, sand } from '../lib/tema';
 
 // espacio del mapa y que sus controles flotantes (Cerca de mí, Reintentar) no queden tapados — ver el comentario
@@ -19,14 +21,18 @@ const PUNTOS_ANCLAJE = [`${ANCLA_ASOMADA * 100}%`, `${ANCLA_ABIERTA * 100}%`];
  * Hoja inferior que se abre al tocar un punto del mapa. La monta explorar.tsx (no MapaExplorar):
  * el mapa solo avisa con `onAbrir`, quién está abierto vive en la pantalla, igual que en la web.
  */
-export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
+export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambiaIndice, onElegirDeLista, onReintentarLista }: {
   punto: PuntoMapa | null;
+  lista?: PuntoMapa[] | null;
+  errorLista?: string;
   onCerrar(): void;
   /**
    * -1 cerrada, 0 asomada, 1 abierta. Opcional: solo lo usa explorar.tsx para reservar el alto
    * del mapa (ver el comentario junto a ANCLA_ASOMADA arriba). Nadie más depende de esto.
    */
   onCambiaIndice?(indice: number): void;
+  onElegirDeLista?(p: PuntoMapa): void;
+  onReintentarLista?(): void;
 }) {
   const sheetRef = useRef<BottomSheet>(null);
   // El botón físico Atrás y el cierre por `onClose` de la propia hoja necesitan la última
@@ -43,9 +49,9 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
   // igual que en la web. Cuando punto pasa a null se cierra (arrastre, X, fondo o Atrás ya
   // dejaron a `punto` en null antes de que esto se dispare — ver más abajo).
   useEffect(() => {
-    if (punto) sheetRef.current?.snapToIndex(0);
+    if (punto || lista) sheetRef.current?.snapToIndex(0);
     else sheetRef.current?.close();
-  }, [punto?.id]);
+  }, [punto?.id, lista]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -78,10 +84,18 @@ export default function HojaPunto({ punto, onCerrar, onCambiaIndice }: {
       backdropComponent={renderBackdrop}
       backgroundStyle={e.fondo}
       handleIndicatorStyle={e.asa}
-      accessibilityLabel={punto ? `Ficha de ${punto.nombre}` : 'Ficha del punto seleccionado'}
+      accessibilityLabel={lista ? tituloCelda(lista.length) : punto ? `Ficha de ${punto.nombre}` : 'Ficha del punto seleccionado'}
     >
       <BottomSheetScrollView contentContainerStyle={e.contenido}>
-        {punto ? (
+        {lista ? (
+          <ListaCelda
+            puntos={lista}
+            error={errorLista}
+            onReintentar={onReintentarLista}
+            onElegir={(p) => onElegirDeLista?.(p)}
+            onCerrar={() => sheetRef.current?.close()}
+          />
+        ) : punto ? (
           <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()} />
         ) : null}
       </BottomSheetScrollView>
