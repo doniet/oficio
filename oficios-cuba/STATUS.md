@@ -1062,3 +1062,26 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno.
+
+## 2026-10-01 02:54 UTC — claude-code (vps2) — En el mapa (móvil) el header desaparece del todo
+- Changes (`aa8577d`): la entrega anterior dejó el círculo del logo visible en el mapa móvil,
+  siguiendo al pie de la letra lo que Dariel había pedido — pero al verlo, seguía percibiendo "la
+  barra detrás del círculo". La causa real: la tarjeta de búsqueda de `ControlesMapa.tsx` flota
+  justo debajo del header, con su propio fondo blanco translúcido (`bg-white/95 backdrop-blur`,
+  sin relación con el header de `Layout.tsx`) — el conjunto círculo + esa tarjeta se leía como "una
+  barra con un logo encima", aunque el header en sí ya no tuviera ni fondo ni desenfoque.
+  Nueva variable `bannerOculto` (`esMovil && enMapa`): el `<header>` entero deja de renderizarse
+  ahí —no solo pierde apariencia, sale del documento—, así que el mapa (y la tarjeta de
+  `ControlesMapa`) suben a ocupar también esos 64 px, sin nada arriba que se pueda confundir con
+  una barra. `bannerRecogido` (el círculo, por scroll) vuelve a aplicar solo al resto del sitio. La
+  barra inferior no sigue esta regla nueva — en el mapa sigue siendo la única navegación, así que
+  su condición (`tabBarOculta`) vuelve a ser la misma que `bannerRecogido`, no `bannerOculto`.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **64/64** (el test de mapa se reescribió: ya no comprueba que el header
+  esté "recogido" sino que `getByRole('banner')` no exista en absoluto; se agregó el caso de
+  escritorio en el mapa, donde el header se queda igual que siempre). `tsc` y `vite build`
+  limpios. Verificado en producción: el hash del chunk `index-CutFRM06.js` servido por Cloudflare
+  coincide exactamente con el del build local.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno.
