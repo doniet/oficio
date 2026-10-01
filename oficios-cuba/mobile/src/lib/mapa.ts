@@ -113,7 +113,9 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   // dejaría la hoja abierta y sin contenido.
   const controladorCelda = useRef<AbortController | null>(null);
   // Una vez sabida la respuesta para ESTA búsqueda (haya salto o no), repetir la pregunta en cada
-  // arrastre sería gastar peticiones de sobra.
+  // arrastre sería gastar peticiones de sobra. MapaExplorar reacciona a cambios de `sugerencia` con
+  // un flyTo, así que sin esta guarda cada arrastre en zona vacía produciría un nuevo objeto de
+  // sugerencia y un vuelo no solicitado.
   const intentada = useRef(false);
   const controladorCuba = useRef<AbortController | null>(null);
 
