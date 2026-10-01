@@ -847,3 +847,28 @@
 - Next: ninguno.
 - Blockers: ninguno. Sin verificación visual en navegador real (vps2 no tiene Chromium instalado);
   se verificó con una previsualización aislada que usa el mismo SVG y las mismas clases del código.
+
+## 2026-10-01 00:16 UTC — claude-code (vps2) — Acordeón de servicios en el panel del mapa
+- Changes (`5519a02`): la ficha de un punto en `/explorar?vista=mapa` (panel lateral y hoja móvil,
+  `FichaPunto.tsx`) ganaba calificación, descripción, categorías y contacto, pero no mostraba los
+  servicios publicados — a diferencia del perfil completo. Pedido de Dariel: enriquecer el panel sin
+  gastar datos de más. Ahora, después de WhatsApp/Llamar, hay un acordeón **«Servicios (N)»**
+  cerrado por defecto (`SeccionServicios` + `ServicioMiniCard`, con el patrón de acordeón ya usado
+  en `DescargarApp.tsx`). Decisión técnica explicada a Dariel: `GET /providers/:id` YA incluye
+  `services` en la misma respuesta que el resto de la ficha — separarlo en una segunda petición
+  habría sido tráfico duplicado, lo contrario de "ayudar a la conexión". Lo que sí se difiere al
+  clic es el **renderizado**: las tarjetas de servicio y sus fotos no existen en el DOM mientras el
+  acordeón está cerrado (más estricto que el `loading="lazy"` que ya usa el resto del sitio, que
+  igual pide la imagen si el panel es corto y entra en pantalla). Sin cambios de backend ni de
+  esquema.
+- Tests: pass — frontend **51/51** (2 nuevos en `PanelMapa.test.tsx`: el acordeón arranca cerrado
+  sin ningún `<img>` en el DOM y sin el link al servicio; tras el clic aparecen ambos). `tsc` y
+  `vite build` limpios. Verificado en producción tras el deploy: el chunk `Search-Cr3DpoDJ.js`
+  servido por Cloudflare (mismo hash que el build local) contiene las dos ocurrencias esperadas de
+  `aria-expanded` (ControlesMapa + la nueva) y la ruta `/servicio/` del `ServicioMiniCard`.
+- Security: N/A — solo frontend, sin tocar `oficio_api` ni la base. Desplegado con
+  `docker compose up -d --build oficio_web`, mismo criterio que el deploy anterior.
+- Next: si en el futuro se agregan más secciones (fotos, reseñas), seguir el mismo patrón de
+  acordeón cerrado antes de darlas por buenas sin preguntar el alcance.
+- Blockers: ninguno. Sin verificación visual en navegador real (vps2 no tiene Chromium); se
+  verificó con una previsualización aislada (artifact) con el mismo HTML/clases del componente.
