@@ -948,3 +948,28 @@
 - Next: ninguno.
 - Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
   previsualización aislada (artifact) comparando la vista "asomada" antes/después.
+
+## 2026-10-01 01:57 UTC — claude-code (vps2) — Indicador de scroll desde el primer toque, y cerrar tocando el mapa vacío
+- Changes (`e89d7c6`): dos ajustes pedidos por Dariel tras usar la entrega anterior.
+  1. **Indicador de "hay más abajo" — bug de raíz corregido**: dependía de medir `scrollHeight`
+     real (`ResizeObserver`); como el perfil carga asíncrono, en el PRIMER toque la medida llegaba
+     tarde y el aviso no salía — recién aparecía al abrir un SEGUNDO punto, cuando el observer ya
+     llevaba un rato activo. Reemplazado por una regla síncrona: `hayMasAbajo = posicion ===
+     'asomada'` (`HojaPunto.tsx`). Se fue todo lo que dependía del DOM para esto —
+     `ResizeObserver`, el listener de `scroll`, `contenidoRef`, `ALTO_ASA_PX`—: ya no hace falta
+     medir nada, así que sale desde el instante en que se abre un punto, sin esperar al perfil.
+  2. **Tocar el mapa donde no hay ningún punto cierra la ficha o lista abierta** (como en Google
+     Maps), igual que el botón «Cerrar»: nuevo evento `click` en `useMapEvents` (`Eventos`,
+     `MapaExplorar.tsx`) que llama a `onCerrarPanel` (la misma `cerrarPanel` de
+     `ExplorarMapa.tsx` que ya usa el botón «Cerrar»). Leaflet no deja que este clic llegue si fue
+     sobre un `Marker` o un `Circle` — esas capas detienen la propagación por su cuenta —, así que
+     no hace falta ninguna comprobación extra para no cerrar la ficha que se acaba de abrir.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **57/57** (3 nuevos/actualizados: el indicador aparece ya "asomada" y
+  desaparece al desplegar la hoja del todo —sin simular scrollHeight a mano, ya no hace falta—;
+  tocar el `.leaflet-container` con una ficha abierta la cierra). `tsc` y `vite build` limpios.
+  Verificado en producción: el chunk `MapaExplorar-Bc_5ioJr.js` servido por Cloudflare contiene
+  `onClicVacio` (su definición y su uso).
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2 para probarlo en vivo).
