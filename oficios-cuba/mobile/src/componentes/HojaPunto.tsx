@@ -21,7 +21,7 @@ const PUNTOS_ANCLAJE = [`${ANCLA_ASOMADA * 100}%`, `${ANCLA_ABIERTA * 100}%`];
  * Hoja inferior que se abre al tocar un punto del mapa. La monta explorar.tsx (no MapaExplorar):
  * el mapa solo avisa con `onAbrir`, quién está abierto vive en la pantalla, igual que en la web.
  */
-export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambiaIndice, onElegirDeLista, onReintentarLista }: {
+export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambiaIndice, onElegirDeLista, onReintentarLista, onVolverALista }: {
   punto: PuntoMapa | null;
   lista?: PuntoMapa[] | null;
   errorLista?: string;
@@ -33,6 +33,8 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
   onCambiaIndice?(indice: number): void;
   onElegirDeLista?(p: PuntoMapa): void;
   onReintentarLista?(): void;
+  /** Volver a la lista de la que salió esta ficha. Que exista ES la señal de que hay lista previa. */
+  onVolverALista?(): void;
 }) {
   const sheetRef = useRef<BottomSheet>(null);
   // El botón físico Atrás y el cierre por `onClose` de la propia hoja necesitan la última
@@ -41,6 +43,12 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
   const onCerrarRef = useRef(onCerrar);
   puntoRef.current = punto;
   onCerrarRef.current = onCerrar;
+  const listaRef = useRef(lista);
+  const hayPreviaRef = useRef(Boolean(onVolverALista));
+  listaRef.current = lista;
+  hayPreviaRef.current = Boolean(onVolverALista);
+  const onVolverRef = useRef(onVolverALista);
+  onVolverRef.current = onVolverALista;
   // Solo para decidir cuándo pedir la ficha completa (ver más abajo): la hoja empieza asomada,
   // así que la primera vez que se abre un punto no debe disparar la petición todavía.
   const [indiceActual, setIndiceActual] = useState(-1);
@@ -55,8 +63,11 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      const accion = accionAtras({ punto: puntoRef.current, lista: null, hayListaPrevia: false });
+      const accion = accionAtras({ punto: puntoRef.current, lista: listaRef.current ?? null, hayListaPrevia: hayPreviaRef.current });
       if (accion === 'nada') return false;
+      // Volver a la lista NO cierra la hoja: cambia su contenido. Cerrarla y reabrirla haría
+      // desaparecer y reaparecer la hoja entera por un paso atrás.
+      if (accion === 'volver-a-lista') { onVolverRef.current?.(); return true; }
       // No se llama a onCerrar directo: se le pide a la hoja que se cierre con su propia
       // animación, y es su `onClose` (más abajo) quien avisa al padre cuando ya terminó.
       sheetRef.current?.close();

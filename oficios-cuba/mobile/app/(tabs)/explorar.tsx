@@ -12,6 +12,15 @@ import { Chip, EstadoError, EstadoVacio, u } from '../../src/componentes/ui';
 import MapaExplorar from '../../src/componentes/MapaExplorar';
 import HojaPunto, { ANCLA_ABIERTA, ANCLA_ASOMADA } from '../../src/componentes/HojaPunto';
 import { useSesion } from '../../src/lib/contexto';
+import {
+  ESTADO_PANEL_VACIO,
+  type EstadoPanel,
+  reduceAbrirLista,
+  reduceAbrirPunto,
+  reduceCerrar,
+  reduceElegirDeLista,
+  reduceVolverALista,
+} from '../../src/lib/panelMapa';
 import { brand, fuentes, ink, paper, radios, sand } from '../../src/lib/tema';
 
 type Categoria = { slug: string; nombre: string };
@@ -32,7 +41,7 @@ export default function Explorar() {
   // aterriza en él. Un mapa es la vista más cara de cargar en una conexión cubana lenta, y un
   // servicio se elige por precio y foto — algo que un mapa no puede mostrar.
   const [vista, setVista] = useState<Vista>('lista');
-  const [puntoAbierto, setPuntoAbierto] = useState<PuntoMapa | null>(null);
+  const [panel, setPanel] = useState<EstadoPanel>(ESTADO_PANEL_VACIO);
   // -1 cerrada, 0 asomada, 1 abierta. Lo mantiene esta pantalla (no HojaPunto) porque también lo
   // necesita el mapa, para no quedar tapado — ver `altoReservado` más abajo.
   const [indiceHoja, setIndiceHoja] = useState(-1);
@@ -64,10 +73,25 @@ export default function Explorar() {
   const quitarFiltros = () => { setTexto(''); setQ(''); setCategoria(null); };
 
   const alAbrirPunto = useCallback((p: PuntoMapa) => {
-    setPuntoAbierto(p);
-    setIndiceHoja(0); // coincide con el snapToIndex(0) que hace HojaPunto al recibir un punto nuevo.
+    setPanel((e) => reduceAbrirPunto(e, p));
+    setIndiceHoja(0); // coincide con el snapToIndex(0) que hace HojaPunto al recibir contenido nuevo.
   }, []);
-  const alCerrarHoja = useCallback(() => { setPuntoAbierto(null); setIndiceHoja(-1); }, []);
+
+  const alAbrirLista = useCallback((puntos: PuntoMapa[], error?: string, reintentar?: () => void) => {
+    setPanel((e) => reduceAbrirLista(e, puntos, error ?? '', reintentar ?? null));
+    setIndiceHoja(0);
+  }, []);
+
+  const alElegirDeLista = useCallback((p: PuntoMapa) => { setPanel((e) => reduceElegirDeLista(e, p)); }, []);
+  const alVolverALista = useCallback(() => { setPanel((e) => reduceVolverALista(e)); }, []);
+  const alCerrarHoja = useCallback(() => { setPanel(reduceCerrar); setIndiceHoja(-1); }, []);
+
+  // Cambiar de categoría o de texto cierra la hoja: lo abierto puede no pertenecer ya a lo que el
+  // mapa muestra, y eso vale igual para una lista que para una ficha.
+  useEffect(() => {
+    setPanel(reduceCerrar);
+    setIndiceHoja(-1);
+  }, [q, categoria?.slug]);
 
   // 0 % cuando está cerrada; si no, la fracción del anclaje actual (30 % o 85 %) del mismo
   // contenedor que mide `onLayout` más abajo — el mismo que usa HojaPunto para sus snapPoints
@@ -197,11 +221,27 @@ export default function Explorar() {
             // (ver onCambiaIndice de HojaPunto), no en cada cuadro del arrastre — es la única vía
             // sin acoplar esta pantalla a los valores animados internos de HojaPunto.
             <View style={{ flex: 1, paddingBottom: altoReservado }}>
-              <MapaExplorar tab="servicios" q={q} category={categoria?.slug ?? ''} onAbrir={alAbrirPunto} />
+              <MapaExplorar
+                tab="servicios"
+                q={q}
+                category={categoria?.slug ?? ''}
+                seleccionadoId={panel.punto?.id ?? null}
+                onAbrir={alAbrirPunto}
+                onAbrirLista={alAbrirLista}
+              />
             </View>
           )}
 
-          <HojaPunto punto={puntoAbierto} onCerrar={alCerrarHoja} onCambiaIndice={setIndiceHoja} />
+          <HojaPunto
+            punto={panel.punto}
+            lista={panel.lista}
+            errorLista={panel.errorLista || undefined}
+            onReintentarLista={panel.reintentarLista ?? undefined}
+            onElegirDeLista={alElegirDeLista}
+            onVolverALista={panel.listaPrevia ? alVolverALista : undefined}
+            onCerrar={alCerrarHoja}
+            onCambiaIndice={setIndiceHoja}
+          />
         </View>
       </SafeAreaView>
     </GestureHandlerRootView>

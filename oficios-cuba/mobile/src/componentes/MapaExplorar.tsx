@@ -14,6 +14,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 import { ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '@oficio/shared';
 import { acotarACuba, acotarBbox, CUBA, usarMapa } from '../lib/mapa';
+import { contenidoDeCelda } from '../lib/panelMapa';
 import { brand, fuentes, ink, radios, sand, sombra } from '../lib/tema';
 
 // Solo OpenStreetMap: mismas teselas que Leaflet en la web, sin clave de API. `attribution` en
@@ -111,8 +112,16 @@ const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; 
   );
 });
 
-export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: string; q: string; category: string; onAbrir(p: PuntoMapa): void }) {
-  const { puntos, cargando, error, celda, alMoverMapa, buscarZonaVisible } = usarMapa({ tab, q, category });
+export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista }: {
+  tab: string; q: string; category: string;
+  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota. */
+  seleccionadoId?: string | null;
+  onAbrir(p: PuntoMapa): void;
+  /** Los negocios de una celda al tocar un grupo. Si la celda falla, llega vacía con el mensaje:
+   *  la hoja se abre igual. */
+  onAbrirLista(puntos: PuntoMapa[], error?: string, reintentar?: () => void): void;
+}) {
+  const { puntos, cargando, error, celda, alMoverMapa, buscarZonaVisible, cargarCelda } = usarMapa({ tab, q, category });
 
   // Mismo umbral que la web (ZONA_DESDE_GRADOS, en @oficio/shared): por debajo de este tamaño de
   // celda el área ya no cabe en ella. Una constante y dos clientes, o el mismo negocio se vería
@@ -144,6 +153,24 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
     zoomAnterior.current = zoom;
     alMoverMapa(bboxDeLimites(bounds), esZoom);
   }, [alMoverMapa]);
+
+  // Un punto suelto abre su ficha; un grupo abre la lista de su celda. Es la misma interacción para
+  // el «+N» y para un área: enseñar dos gestos para el mismo hecho sería pedirle al usuario que
+  // aprenda dos cosas.
+  const abrir = useCallback((p: PuntoMapa) => {
+    if (p.detras === 0) { onAbrir(p); return; }
+    cargarCelda(p.cy, p.cx)
+      .then((devueltos) => {
+        const c = contenidoDeCelda(p, devueltos);
+        if (c.clase === 'ficha') onAbrir(c.punto);
+        else onAbrirLista(c.puntos);
+      })
+      // Sin este catch, un fallo de red es un rechazo sin capturar: se toca un grupo y no pasa
+      // NADA, ni hoja ni mensaje. Se abre igual, con el punto que sí se conoce, el mensaje y CÓMO
+      // reintentar — quien abre la hoja no sabe pedir celdas, así que sin la clausura el botón
+      // «Reintentar» existiría y no haría nada, que es peor que no tenerlo.
+      .catch(() => onAbrirLista([p], 'No pudimos cargar los negocios de esta zona.', () => abrir(p)));
+  }, [cargarCelda, onAbrir, onAbrirLista]);
 
   const alPresionarCercaDeMi = useCallback(async () => {
     setErrorUbicacion(null);
@@ -190,8 +217,8 @@ export default function MapaExplorar({ tab, q, category, onAbrir }: { tab: strin
         {puntos.map((p) => (
           // Los exactos siguen siendo pin: su punto sí es cierto y mezclarlos mentiría sobre los dos.
           modoZona && p.aproximado
-            ? <AreaZona key={p.id} punto={p} onAbrir={onAbrir} />
-            : <Pin key={p.id} punto={p} onAbrir={onAbrir} />
+            ? <AreaZona key={p.id} punto={p} onAbrir={abrir} />
+            : <Pin key={p.id} punto={p} onAbrir={abrir} />
         ))}
       </MapaLibre>
 
