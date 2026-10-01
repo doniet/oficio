@@ -1005,3 +1005,18 @@
 - Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
   previsualización interactiva (artifact) que reproduce el mismo trazado del logo y los mismos
   umbrales de scroll, scrolleable de verdad dentro de un teléfono simulado.
+
+## 2026-10-01 02:22 UTC — claude-code (vps2) — La barra inferior también se oculta al recoger el banner
+- Changes (`d74552b`): Dariel pidió que la barra inferior traslúcida (`MobileTabBar`,
+  `bg-white/95 backdrop-blur`) se oculte junto con el banner superior, no solo este último.
+  `MobileTabBar` gana una prop `oculta` (= `bannerRecogido`, el mismo booleano del header): se
+  desliza fuera de la pantalla con `translate-y-full` y la misma transición de 300ms, con
+  `inert` + `aria-hidden` igual que ya lleva el contenido que se desvanece en el header — mismo
+  criterio en los dos sitios: oculto de verdad, no solo invisible y alcanzable con Tab.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **62/62** (1 nuevo: la barra inferior pasa a `aria-hidden="true"` al
+  recoger el banner y vuelve a `"false"` al desplegarlo). `tsc` y `vite build` limpios. Verificado
+  en producción: el chunk `index-NnaRdrzP.js` servido por Cloudflare contiene `translate-y-full`.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno.
