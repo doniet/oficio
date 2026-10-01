@@ -299,7 +299,6 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
           {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => { pedidoRef.current = null; setReintentos((n) => n + 1); }} />}
           {perfilVigente && !cargandoPerfil && (
             <div className="space-y-4">
-              <RatingInline rating={perfilVigente.rating} count={perfilVigente.review_count} />
               {perfilVigente.description && <p className="text-sm text-ink-700">{perfilVigente.description}</p>}
               {lugar && <p className="text-sm text-ink-500">{lugar}</p>}
               {perfilVigente.horario && <p className="text-sm text-ink-500">Horario: {perfilVigente.horario}</p>}
@@ -313,6 +312,11 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
                 abierta={serviciosAbiertos}
                 onToggle={() => setServiciosAbiertos((v) => !v)}
               />
+              {/* La calificación va PEGADA a las reseñas, no arriba con el resto de los datos: es
+                  el mismo dato que "lo que dicen los demás" — y ambos, al final del todo. Antes el
+                  resumen de estrellas abría la ficha, lo que dejaba la ficha leyéndose como
+                  "reseñas primero, qué ofrece después". */}
+              <RatingInline rating={perfilVigente.rating} count={perfilVigente.review_count} />
               <SeccionResenas
                 resenas={resenasVigentes}
                 providerId={punto.id}

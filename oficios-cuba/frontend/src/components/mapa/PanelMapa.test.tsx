@@ -259,6 +259,28 @@ describe('PanelMapa — hoja móvil', () => {
     expect(await screen.findByText(perfilMock.description!)).toBeTruthy();
   });
 
+  // La calificación va pegada a las reseñas (es el mismo dato: "lo que dicen los demás"), no
+  // arriba del todo junto con la descripción — ambos al final, después de qué ofrece el negocio.
+  it('la calificación y las reseñas van al final, después de qué ofrece y de los servicios', async () => {
+    const servicios = [{
+      id: 's1', title: 'Cambio de tubería', description: null, price_min: 1000, price_max: null,
+      price_type: 'fixed' as const, price_currency: 'CUP' as const, cover: null,
+      category_name: 'Plomería', category_icon: '🔧', category_slug: 'plomeria', created_at: '2024-01-01T00:00:00.000Z',
+    }];
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock, services: servicios } } as any);
+    const { container } = montar();
+    await screen.findByText(perfilMock.description!);
+    await screen.findByText(/Servicios/);
+
+    const html = container.innerHTML;
+    const posDescripcion = html.indexOf(perfilMock.description!);
+    const posServicios = html.indexOf('Servicios');
+    const posCalificacion = html.indexOf('4.6');
+    expect(posDescripcion).toBeGreaterThan(-1);
+    expect(posServicios).toBeGreaterThan(posDescripcion);
+    expect(posCalificacion).toBeGreaterThan(posServicios);
+  });
+
   it('los iconos de contacto (llamar, WhatsApp, cita) salen junto a "Compartir" en cuanto se sabe qué ofrece el perfil', async () => {
     vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: { ...perfilMock, has_agenda: true } } } as any);
     montar();
