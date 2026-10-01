@@ -973,3 +973,35 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2 para probarlo en vivo).
+
+## 2026-10-01 02:18 UTC — claude-code (vps2) — Banner móvil que se recoge a un círculo con el logo al bajar
+- Changes (`641f18c`): Dariel pidió el patrón clásico de app móvil — el header se recoge al bajar
+  la página y vuelve a desplegarse al subir. Alcance acotado con él antes de implementar: todo el
+  sitio en móvil (Home, Explorar en lista, perfiles, dashboard…), no la vista de mapa, que no tiene
+  scroll de página propio (el body queda fijo a pantalla completa ahí).
+  - Dos hooks nuevos en `hooks/`: `useDireccionScroll` (compara `window.scrollY` contra el último
+    valor, con un umbral de 10px contra el jitter de scroll y sin activarse hasta los primeros
+    48px — nadie espera que se recoja apenas se empieza a leer) y `useEsMovil` (breakpoint `md`,
+    768px — el que ya separa el header móvil del de escritorio en este mismo archivo; distinto del
+    `usarEsEscritorio` del mapa, que corta en 1024px por otra razón de layout).
+  - `Layout.tsx`: con el banner recogido, el `<header>` pierde fondo y borde (se vuelve
+    transparente), el nav y los botones de la derecha se desvanecen con `opacity-0` +
+    `pointer-events-none` + `aria-hidden` + `inert` (para que no queden alcanzables por teclado
+    mientras están invisibles — el anti-patrón que WCAG marca si solo se pone `aria-hidden`), y el
+    logo pierde el texto "Encuentrauno" quedando solo el glifo dentro de un círculo con fondo,
+    borde y sombra. `inert` todavía no está en los tipos de `@types/react` 18: va con un cast
+    acotado, no con `any` suelto.
+  - `ui.tsx`: `Logo` gana un prop `soloIcono` que omite el wordmark, para ese estado colapsado.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **61/61** (4 nuevos en `Layout.test.tsx`: se recoge al bajar y se
+  despliega al subir —simulando `scrollY` y el evento `scroll` a mano, con un frame de
+  `requestAnimationFrame` de margen porque el hook lo debounea—; no se recoge cerca del tope de la
+  página aunque el delta diera "bajando"; no se recoge en escritorio; no se recoge en la vista de
+  mapa). `tsc` y `vite build` limpios. Verificado en producción: el chunk `index-Dp-5xg0t.js`
+  servido por Cloudflare contiene `soloIcono` y `banner-resto` (el `data-testid` del contenedor que
+  se desvanece).
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
+  previsualización interactiva (artifact) que reproduce el mismo trazado del logo y los mismos
+  umbrales de scroll, scrolleable de verdad dentro de un teléfono simulado.
