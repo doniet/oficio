@@ -1085,3 +1085,20 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno.
+
+## 2026-10-01 02:58 UTC — claude-code (vps2) — La calificación y las reseñas van al final de la ficha del mapa
+- Changes (`0a1afb3`): Dariel pidió reordenar la ficha del mapa para que las reseñas queden al
+  final, abajo del todo. El acordeón `SeccionResenas` ya estaba ahí, pero el resumen de estrellas
+  (`RatingInline`, "★ 4.6 (12)") abría la ficha desde antes incluso de la descripción — la misma
+  información ("lo que dicen los demás") estaba partida en dos lugares opuestos del orden. Se movió
+  `RatingInline` de arriba del todo a justo antes de `SeccionResenas`, después de `SeccionServicios`
+  — orden final: descripción → lugar → horario → categorías → Servicios → calificación + Reseñas.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **65/65** (1 nuevo: compara posiciones en el HTML renderizado —
+  descripción antes que "Servicios", "Servicios" antes que la calificación— para fijar el orden
+  nuevo y que no se repita accidentalmente). `tsc` y `vite build` limpios. Verificado en
+  producción: el chunk `Search-BQBFYCSN.js` servido por Cloudflare tiene el mismo hash que el
+  build local.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno.
