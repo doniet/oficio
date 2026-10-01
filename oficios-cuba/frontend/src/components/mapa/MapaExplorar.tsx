@@ -84,7 +84,9 @@ function etiquetaZona(n: number) {
   });
 }
 
-function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<boolean>; alMover: (b: Bbox, porZoom: boolean) => void }) {
+function Eventos({ zoomRecien, alMover, onClicVacio }: {
+  zoomRecien: React.MutableRefObject<boolean>; alMover: (b: Bbox, porZoom: boolean) => void; onClicVacio: () => void;
+}) {
   const map = useMapEvents({
     zoomend: (e) => {
       // `moveend` dispara también después de un zoom; este flag se lo indica al handler de abajo
@@ -96,6 +98,10 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
     moveend: (e) => {
       if (!zoomRecien.current) alMover(aBbox(e.target.getBounds()), false);
     },
+    // Leaflet no deja que esto llegue aquí si el toque fue sobre un Marker o un Circle: esas capas
+    // detienen la propagación del clic hacia el mapa por su cuenta (si no, cada punto cerraría su
+    // propia ficha apenas se abriera). Solo se dispara sobre las teselas, el mar o tierra vacía.
+    click: () => onClicVacio(),
   });
 
   // `MapContainer` llama a `map.setView()` de forma síncrona dentro del callback de ref del div
@@ -126,7 +132,7 @@ function Eventos({ zoomRecien, alMover }: { zoomRecien: React.MutableRefObject<b
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, alMapa }: {
+export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, onCerrarPanel, alMapa }: {
   tab: string; q: string; category: string;
   /** El `id` del punto que tiene su ficha abierta: su marcador cambia de círculo a pin. */
   seleccionadoId?: string | null;
@@ -136,6 +142,8 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
    * celda no se pudo cargar, llega con la lista vacía y el mensaje: el panel se abre igual.
    */
   onAbrirLista: (puntos: PuntoMapa[], error?: string, reintentar?: () => void) => void;
+  /** Tocar el mapa donde no hay ningún punto cierra la ficha o lista abierta, igual que el botón «Cerrar». */
+  onCerrarPanel: () => void;
   /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
   alMapa?: (m: LeafletMap) => void;
 }) {
@@ -219,7 +227,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         <ZoomControl position="bottomleft" />
-        <Eventos zoomRecien={zoomRecien} alMover={mapa.alMover} />
+        <Eventos zoomRecien={zoomRecien} alMover={mapa.alMover} onClicVacio={onCerrarPanel} />
         {mapa.puntos.map((p) => (
           // En modo zona un punto aproximado deja de fingir un punto y se dibuja como área. Los
           // exactos siguen siendo pin, porque el suyo sí es cierto: mezclarlos mentiría sobre los

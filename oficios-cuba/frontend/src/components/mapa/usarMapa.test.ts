@@ -198,7 +198,7 @@ describe('MapaExplorar', () => {
     // del hook no pueden ver.
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
 
-    render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {} }));
+    render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {}, onCerrarPanel: () => {} }));
 
     await act(async () => { await espera(280); }); // pasa el antirrebote de zoom (250 ms)
 
@@ -221,7 +221,7 @@ describe('MapaExplorar', () => {
     const onAbrirLista = vi.fn();
 
     const { container } = render(createElement(MapaExplorar, {
-      tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista,
+      tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista, onCerrarPanel: () => {},
     }));
     await act(async () => { await espera(280); });
 
@@ -239,7 +239,7 @@ describe('MapaExplorar', () => {
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
     // Acotado a su propio contenedor: este fichero no limpia el DOM entre pruebas, así que una
     // búsqueda global encontraría también los mapas de las pruebas anteriores.
-    const { container } = render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {} }));
+    const { container } = render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {}, onCerrarPanel: () => {} }));
     await act(async () => { await espera(280); });
 
     const boton = Array.from(container.querySelectorAll('button')).find((b) => /Cerca de mí/.test(b.textContent ?? ''))!;

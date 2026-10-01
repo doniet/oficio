@@ -234,27 +234,20 @@ describe('PanelMapa — hoja móvil', () => {
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toBe('');
   });
 
-  // jsdom no hace layout real (todo mide 0): se simulan scrollHeight/scrollTop a mano y se dispara
-  // el 'scroll' que el componente escucha — ResizeObserver, que es la otra vía de recálculo, no
-  // existe en jsdom (ver el guard de HojaPunto.tsx) así que aquí no hace falta simularlo.
-  it('el indicador de "hay más abajo" aparece si el contenido no cabe en lo visible, y se va al llegar al final', () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
+  // Antes se medía scrollHeight real (vía ResizeObserver) para decidir si hacía falta el aviso,
+  // pero esa medida llega tarde: el perfil carga asíncrono, así que en el PRIMER toque el aviso no
+  // alcanzaba a salir (recién aparecía al abrir un segundo punto, cuando el observer ya llevaba un
+  // rato activo). Ahora depende solo de la posición de la hoja —síncrono, sin esperar nada del
+  // perfil ni del DOM—, así que tiene que estar desde el instante en que se abre.
+  it('el indicador de "hay más abajo" sale ya en el primer toque (asomada) y se va al desplegar la hoja del todo', () => {
     montar();
-    const contenido = screen.getByTestId('hoja-contenido');
-
-    expect(screen.queryByTestId('hoja-indicador-mas')).toBeNull();
-
-    // altoVisibleContenido con innerHeight=768 y la hoja recién abierta (asomada): unos 382px.
-    // 500px de contenido, sin haber scrolleado nada, sobran de sobra para que haga falta el aviso.
-    Object.defineProperty(contenido, 'scrollHeight', { configurable: true, value: 500 });
-    Object.defineProperty(contenido, 'scrollTop', { configurable: true, value: 0, writable: true });
-    fireEvent.scroll(contenido);
     expect(screen.getByTestId('hoja-indicador-mas')).toBeTruthy();
 
-    // Scrollear hasta cerca del final lo hace desaparecer.
-    Object.defineProperty(contenido, 'scrollTop', { configurable: true, value: 120 });
-    fireEvent.scroll(contenido);
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
     expect(screen.queryByTestId('hoja-indicador-mas')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recoger la ficha' }));
+    expect(screen.getByTestId('hoja-indicador-mas')).toBeTruthy();
   });
 
   // Antes de este cambio, la hoja no pedía el perfil hasta desplegarla del todo (`expandida`

@@ -118,6 +118,23 @@ describe('ExplorarMapa', () => {
     expect(panBy).not.toHaveBeenCalled();
   });
 
+  // Como en Google Maps: tocar un sitio sin ningún negocio cierra la ficha, igual que el botón
+  // «Cerrar». Leaflet no deja que este clic llegue aquí si fue sobre un Marker (ver el comentario
+  // de MapaExplorar.tsx), así que no hace falta comprobar aparte que un clic EN el pin no cierre.
+  it('tocar el mapa donde no hay ningún punto cierra la ficha abierta', async () => {
+    const { container } = montar([punto('a', -76)]);
+    await act(async () => { await espera(320); });
+
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(20); });
+    await waitFor(() => expect(screen.getByTestId('panel-lateral')).toBeTruthy());
+
+    const mapa = container.querySelector('.leaflet-container') as HTMLElement;
+    await act(async () => { mapa.click(); });
+
+    await waitFor(() => expect(screen.queryByTestId('panel-lateral')).toBeNull());
+  });
+
   // El botón existía y no hacía nada: ExplorarMapa no sabe pedir celdas (eso vive en usarMapa),
   // así que «Reintentar» copiaba un array y dejaba el error en pantalla. La prueba de PanelMapa
   // no lo veía porque le inyecta su propio onReintentar: comprueba el cableado de ListaCelda.

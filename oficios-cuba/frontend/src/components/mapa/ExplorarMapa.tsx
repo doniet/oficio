@@ -112,6 +112,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
           alMapa={(m) => { mapRef.current = m; }}
           onAbrir={abrirPunto}
           onAbrirLista={abrirLista}
+          onCerrarPanel={cerrarPanel}
         />
       </Suspense>
 
