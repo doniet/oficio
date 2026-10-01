@@ -153,12 +153,16 @@ export default function Layout() {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
-  // Solo en móvil, y nunca en el mapa: ahí la página no hace scroll (está fija a pantalla
-  // completa, ver el comentario de `enMapa` más abajo), así que `useDireccionScroll` nunca
-  // despegaría del "arriba" inicial — da igual, pero de paso queda explícito que no aplica ahí.
   const esMovil = useEsMovil();
   const vieneBajando = useDireccionScroll();
-  const bannerRecogido = esMovil && vieneBajando && !enMapa;
+  // En el mapa (móvil) el banner se queda SIEMPRE recogido, no por scroll —ahí la página no
+  // scrollea, está fija a pantalla completa— sino porque el mapa ya tiene sus propios controles
+  // flotantes (ControlesMapa.tsx) y la barra completa solo le resta alto útil al mapa.
+  const bannerRecogido = esMovil && (vieneBajando || enMapa);
+  // La barra inferior, en cambio, sigue la regla de siempre: nunca se oculta en el mapa, porque
+  // ahí ES la navegación (ver el comentario de `enMapa` más arriba) — si se recogiera con el
+  // header no quedaría ninguna forma de volver a Inicio o a Mensajes.
+  const tabBarOculta = esMovil && vieneBajando && !enMapa;
 
   return (
     <div className={cn('flex flex-col', enMapa ? 'alto-app overflow-hidden' : 'min-h-screen')}>
@@ -272,7 +276,7 @@ export default function Layout() {
       )}
 
       {/* En el chat la barra inferior tapaba la caja de texto: la conversación ocupa toda la pantalla. */}
-      {!inChat && <MobileTabBar oculta={bannerRecogido} />}
+      {!inChat && <MobileTabBar oculta={tabBarOculta} />}
     </div>
   );
 }

@@ -102,9 +102,19 @@ describe('Layout — banner móvil que se recoge al bajar', () => {
     expect(contenedorResto().getAttribute('aria-hidden')).toBe('false');
   });
 
-  it('en la vista de mapa no se recoge (ahí la página no hace scroll)', async () => {
+  // El mapa no tiene scroll de página del que depender, así que ahí el banner se recoge SIEMPRE
+  // en móvil, de entrada: le deja más alto útil al mapa, que ya trae sus propios controles
+  // flotantes (ControlesMapa.tsx). La barra inferior, en cambio, sigue visible — en el mapa ES
+  // la navegación (ver el comentario de `enMapa` en Layout.tsx).
+  it('en la vista de mapa el banner arranca ya recogido, pero la barra inferior se queda', () => {
     montar('/explorar?vista=mapa');
-    await act(async () => { await scrollearA(300); });
+    expect(contenedorResto().getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('navigation', { name: 'Navegación principal' }).getAttribute('aria-hidden')).toBe('false');
+  });
+
+  it('en la vista de mapa, en escritorio, el banner no se recoge', () => {
+    fijarAncho(1280);
+    montar('/explorar?vista=mapa');
     expect(contenedorResto().getAttribute('aria-hidden')).toBe('false');
   });
 });
