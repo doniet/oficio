@@ -1137,3 +1137,24 @@
 - Next: ninguno.
 - Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
   serie de esta sesión.
+
+## 2026-10-01 03:30 — claude-code (vps2) — Mapa: si la búsqueda no tiene resultados en la zona, salta a donde sí los hay
+- Changes: `usarMapa.ts` — cuando una búsqueda de texto vuelve con 0 puntos en la zona visible,
+  pregunta UNA vez por el bbox de Cuba entera con el mismo término (`buscarEnTodaCuba`); si
+  aparece algo, expone sus coordenadas como `sugerencia`. Un `intentadaRef` evita repetir esa
+  pregunta en cada arrastre/zoom mientras el término no cambie, y se reinicia (junto con la
+  sugerencia) al cambiar pestaña, texto o categoría. `MapaExplorar.tsx` reacciona a `sugerencia`
+  con `flyTo` al mismo zoom/duración que usa «Cerca de mí» (13, 0.8 s). Silencioso si la petición a
+  toda Cuba falla: se queda el "sin resultados" normal.
+- Tests: pass — frontend **69/69** (4 nuevos en `usarMapa.test.ts`: pregunta por toda Cuba y guarda
+  la sugerencia; no repite la pregunta en movimientos siguientes del mismo término; cambiar el
+  término limpia la sugerencia y permite un nuevo intento; el `flyTo` del mapa real se llama con
+  las coordenadas correctas). `tsc --noEmit` y `vite build` limpios.
+- Security: sin cambios de superficie — mismo endpoint `/api/mapa`, ya público, con un bbox más
+  grande en vez de uno nuevo.
+- Completado en producción: `docker compose up -d --build oficio_web` → verificado por hash de
+  contenido: el chunk `MapaExplorar-DqwdRRPB.js` del build local (con este cambio) responde 200 en
+  `oficio.dardoit.com`.
+- Next: ninguno.
+- Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
+  serie de esta sesión.
