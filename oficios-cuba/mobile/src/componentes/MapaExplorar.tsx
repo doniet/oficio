@@ -331,9 +331,10 @@ const e = StyleSheet.create({
     borderWidth: 1, borderColor: sand[200], ...sombra.card,
   },
   zonaTexto: { fontFamily: fuentes.textoFuerte, fontSize: 11, color: ink[800] },
-  // 40 de círculo + 12 de cola visible. El envoltorio mide lo mismo que el dibujo para que
-  // `anchor="bottom"` ponga la punta exactamente en la coordenada.
-  gotaEnvoltorio: { width: 44, height: 52, alignItems: 'center' },
+  // El envoltorio debe medir exactamente lo que ocupa el dibujo (40 + ~6.14 de cola visible), no más.
+  // Con `anchor="bottom"` = {y: 1}, el borde inferior del box cae sobre la coordenada real;
+  // si el box es más grande que el dibujo, la punta flota sin alcanzar su punto.
+  gotaEnvoltorio: { width: 44, height: 46, alignItems: 'center' },
   gotaCirculo: {
     width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
     borderWidth: 2.5, borderColor: '#ffffff', ...sombra.lift,
@@ -342,6 +343,8 @@ const e = StyleSheet.create({
     position: 'absolute', top: 22, width: 20, height: 20,
     borderBottomLeftRadius: 3, borderBottomRightRadius: 3, borderTopRightRadius: 3,
     transform: [{ rotate: '45deg' }],
+    // La cola en top: 22 hace que su centro (y=32) sea más ancho que el círculo en esa altura (y quede
+    // hidden), emergiendo como punta sólo abajo. Con top más bajo los costados sobresalen: rompe la silueta.
   },
   insigniaGota: {
     position: 'absolute', top: -4, right: 0, minWidth: 20, height: 20, borderRadius: 10,
