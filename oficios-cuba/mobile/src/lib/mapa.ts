@@ -7,6 +7,11 @@ import { configApi } from './api';
 // React en @oficio/shared, que hoy no lo tiene.
 export const CUBA = { sur: 19, oeste: -85.5, norte: 24, este: -73.5 } as const;
 
+// El rectángulo con el que se pregunta «¿existe esta búsqueda en ALGÚN lado de Cuba?» cuando la
+// zona visible no tiene nada. Mismos límites que CUBA: el servidor lo trata como cualquier otro
+// bbox — agrupa en celdas grandes y devuelve un representante por zona con datos.
+const CUBA_ENTERA: Bbox = { sur: CUBA.sur, oeste: CUBA.oeste, norte: CUBA.norte, este: CUBA.este };
+
 // Regla 5: un cubano en Miami, o cualquiera detrás de una VPN, recibe una geolocalización fuera
 // de Cuba. Centrar el mapa ahí produce un rectángulo que el endpoint rechaza con 400 y el usuario
 // ve un error en vez de un mapa — mejor mostrarle el punto de Cuba más cercano a donde está.
@@ -82,9 +87,12 @@ export type EstadoMapa = {
   hayMas: boolean;
   /** Tamaño de celda que devolvió el servidor. Decide si lo aproximado se dibuja como área. */
   celda: number;
+  /** Adónde saltar cuando la búsqueda no tiene NADA en la zona visible pero sí en otra parte de
+   *  Cuba. null = no hay salto pendiente. Quien monta el mapa reacciona con un flyTo. */
+  sugerencia: { lat: number; lng: number } | null;
 };
 
-const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, hayMas: false, celda: 0 };
+const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, hayMas: false, celda: 0, sugerencia: null };
 
 /**
  * El mismo hook de carga que usarMapa.ts de la web (frontend/src/components/mapa/), con las
@@ -104,10 +112,27 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   // Controlador propio de la celda: NO es el del área. Abortar la celda porque el mapa se movió
   // dejaría la hoja abierta y sin contenido.
   const controladorCelda = useRef<AbortController | null>(null);
+  // Una vez sabida la respuesta para ESTA búsqueda (haya salto o no), repetir la pregunta en cada
+  // arrastre sería gastar peticiones de sobra.
+  const intentada = useRef(false);
+  const controladorCuba = useRef<AbortController | null>(null);
 
   function limpiarTiempoEspera() {
     if (tiempoEspera.current) { clearTimeout(tiempoEspera.current); tiempoEspera.current = null; }
   }
+
+  const buscarEnTodaCuba = useCallback(() => {
+    controladorCuba.current?.abort();
+    const propio = new AbortController();
+    controladorCuba.current = propio;
+    pedirMapa(CUBA_ENTERA, { tab, q: q || undefined, category: category || undefined }, propio.signal)
+      .then((r) => {
+        if (propio.signal.aborted || r.puntos.length === 0) return;
+        setEstado((e) => ({ ...e, sugerencia: { lat: r.puntos[0].lat, lng: r.puntos[0].lng } }));
+      })
+      // Silencioso a propósito: si falla, se queda el «sin resultados» normal. No es crítico.
+      .catch(() => {});
+  }, [tab, q, category]);
 
   const cargar = useCallback((bbox: Bbox) => {
     // Regla 4: se cancela la petición en vuelo antes de lanzar la siguiente. Sin esto, escribir
@@ -126,7 +151,13 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
         limpiarTiempoEspera();
         if (propio.signal.aborted) return;
         bboxPintado.current = bbox;
-        setEstado({ puntos: r.puntos, cargando: false, error: false, hayMas: r.hay_mas, celda: r.celda });
+        setEstado((e) => ({ ...e, puntos: r.puntos, cargando: false, error: false, hayMas: r.hay_mas, celda: r.celda }));
+        // Solo con texto: sin término, «¿existe en algún lado?» no significa nada, y abrir el mapa
+        // sobre el mar dispararía una petición de Cuba entera y un salto que nadie pidió.
+        if (r.puntos.length === 0 && q && !intentada.current) {
+          intentada.current = true;
+          buscarEnTodaCuba();
+        }
       })
       .catch(() => {
         limpiarTiempoEspera();
@@ -135,7 +166,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
         if (propio.signal.aborted && !expiroPorTiempo) return;
         setEstado((e) => ({ ...e, cargando: false, error: true }));
       });
-  }, [tab, q, category]);
+  }, [tab, q, category, buscarEnTodaCuba]);
 
   function limpiarTemporizador() {
     if (temporizador.current) { clearTimeout(temporizador.current); temporizador.current = null; }
@@ -144,6 +175,8 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   // Regla 3: escribir en el buscador (o cambiar categoría/pestaña) recarga solo, con el mismo
   // tipo de antirrebote que el zoom — es una petición deliberada, igual que hacer zoom.
   useEffect(() => {
+    intentada.current = false;
+    setEstado((e) => (e.sugerencia === null ? e : { ...e, sugerencia: null }));
     if (!bboxVisible.current) return;
     limpiarTemporizador();
     temporizador.current = setTimeout(() => cargar(bboxVisible.current!), ANTIRREBOTE_TEXTO_MS);
@@ -154,6 +187,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   useEffect(() => () => {
     controlador.current?.abort();
     controladorCelda.current?.abort();
+    controladorCuba.current?.abort();
     limpiarTemporizador();
     limpiarTiempoEspera();
   }, []);

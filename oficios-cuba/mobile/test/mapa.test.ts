@@ -374,4 +374,123 @@ describe('usarMapa', () => {
 
     h.desmontar();
   });
+
+  it('sin resultados en la zona pero con texto, pregunta por Cuba entera y guarda el salto', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+
+    expect(h.estado.sugerencia).toBeNull();
+    const cuba = llamadas[1];
+    expect(cuba).toBeDefined();
+    expect(new URL(cuba.url).searchParams.get('bbox')).toBe('19,-85.5,24,-73.5');
+    expect(new URL(cuba.url).searchParams.get('q')).toBe('soldador');
+
+    act(() => { cuba.resolver(respuestaFalsa([{ ...puntoFalso('lejano'), lat: 22.4, lng: -79.9 }])); });
+    await avanzarYVaciar(0);
+    expect(h.estado.sugerencia).toEqual({ lat: 22.4, lng: -79.9 });
+
+    h.desmontar();
+  });
+
+  it('sin resultados y SIN texto no pregunta nada: no hay término que buscar en otra parte', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(h.estado.sugerencia).toBeNull();
+
+    h.desmontar();
+  });
+
+  it('no repite la pregunta en los movimientos siguientes de la misma búsqueda', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+    const trasElPrimero = fetchMock.mock.calls.length;
+
+    act(() => { h.estado.alMoverMapa(BBOX_B, false); });
+    await avanzarYVaciar(500);
+    act(() => { llamadas[llamadas.length - 1].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+
+    // Una del área nueva, y ninguna de Cuba entera.
+    expect(fetchMock.mock.calls.length).toBe(trasElPrimero + 1);
+
+    h.desmontar();
+  });
+
+  it('cambiar el texto borra el salto pendiente y permite preguntar de nuevo', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+    act(() => { llamadas[1].resolver(respuestaFalsa([{ ...puntoFalso('lejano'), lat: 22.4, lng: -79.9 }])); });
+    await avanzarYVaciar(0);
+    expect(h.estado.sugerencia).not.toBeNull();
+
+    h.actualizar({ tab: 'servicios', q: 'plomero', category: '' });
+    expect(h.estado.sugerencia).toBeNull();
+
+    await avanzarYVaciar(300);
+    act(() => { llamadas[llamadas.length - 1].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+    // La búsqueda nueva es un caso distinto del ya investigado: vuelve a preguntar.
+    expect(new URL(llamadas[llamadas.length - 1].url).searchParams.get('bbox')).toBe('19,-85.5,24,-73.5');
+
+    h.desmontar();
+  });
+
+  it('si la pregunta por Cuba entera falla, se queda el «sin resultados» normal', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+    act(() => { llamadas[1].rechazar(new Error('red')); });
+    await avanzarYVaciar(0);
+
+    expect(h.estado.sugerencia).toBeNull();
+    expect(h.estado.error).toBe(false);
+
+    h.desmontar();
+  });
+
+  it('desmontar con la pregunta de Cuba entera en vuelo la aborta', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: 'soldador', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([])); });
+    await avanzarYVaciar(0);
+
+    const cuba = llamadas[1];
+    h.desmontar();
+    expect(cuba.signal.aborted).toBe(true);
+  });
 });
