@@ -1158,3 +1158,23 @@
 - Next: ninguno.
 - Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
   serie de esta sesión.
+
+## 2026-10-01 03:37 — claude-code (vps2) — Mapa: botón «Yo» y atribución fundida con el mar
+- Changes: el botón «Cerca de mí» de `MapaExplorar.tsx` pasa a decir «Yo» (mismo icono y
+  comportamiento). La atribución de Leaflet (obligatoria por licencia) sigue en el DOM pero su
+  fondo y su texto pasan al mismo tono — `#c6ced0`, resultado de pasar el azul real del mar de la
+  tesela de OpenStreetMap (`#aad3df`, muestreado de una tesela real) por el MISMO filtro CSS que ya
+  desatura el mapa (`saturate(0.22) brightness(1.1) contrast(0.8)`, aplicado con la fórmula de la
+  spec de CSS Filter Effects) — así deja de desentonar como rectángulo blanco sobre el mar
+  desaturado. Acotado a `.region-mapa` (el mapa grande de Explorar): los mapas pequeños (selector
+  de provincia, recoger punto), que no llevan ese filtro, conservan la atribución blanca normal de
+  Leaflet.
+- Tests: pass — frontend **69/69** (los 2 que mencionaban el texto del botón, actualizados al nuevo
+  nombre). `tsc --noEmit` y `vite build` limpios.
+- Security: sin cambios de superficie. La atribución de OpenStreetMap/Leaflet sigue presente en el
+  DOM (requisito de licencia), solo deja de llamar la atención visualmente.
+- Completado en producción: `docker compose up -d --build oficio_web` → verificado por hash de
+  contenido: `index-BifouhJS.js` (con este cambio) es el que sirve `oficio.dardoit.com`.
+- Next: ninguno.
+- Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
+  serie de esta sesión.
