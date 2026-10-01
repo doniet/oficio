@@ -181,14 +181,14 @@ describe('PanelMapa — hoja móvil', () => {
     expect(document.activeElement).toBe(asa);
 
     const cerrarBtn = screen.getByRole('button', { name: 'Cerrar la ficha' });
-    const enlace = screen.getByRole('link', { name: 'Ver perfil completo' });
+    const compartirBtn = screen.getByRole('button', { name: /Compartir/ });
 
-    // Shift+Tab desde el primero (el asa) rebota al último (el enlace).
+    // Shift+Tab desde el primero (el asa) rebota al último (el botón «Compartir»).
     fireEvent.keyDown(asa, { key: 'Tab', shiftKey: true });
-    expect(document.activeElement).toBe(enlace);
+    expect(document.activeElement).toBe(compartirBtn);
 
-    // Tab desde el último (el enlace, con el foco ya ahí) rebota al primero (el asa).
-    fireEvent.keyDown(enlace, { key: 'Tab' });
+    // Tab desde el último (compartir, con el foco ya ahí) rebota al primero (el asa).
+    fireEvent.keyDown(compartirBtn, { key: 'Tab' });
     expect(document.activeElement).toBe(asa);
 
     void cerrarBtn;
@@ -250,6 +250,45 @@ describe('PanelMapa — hoja móvil', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(await screen.findByRole('link', { name: /Cambio de tubería/ })).toBeTruthy();
     expect(container.querySelectorAll('img')).toHaveLength(1);
+  });
+
+  it('las reseñas van en el mismo tipo de acordeón, con un enlace al resto si hay más de 3', async () => {
+    const resenas = Array.from({ length: 5 }, (_, i) => ({
+      id: `r${i}`, rating: 5, comment: `Reseña número ${i}`, created_at: '2024-01-01T00:00:00.000Z', client_name: `Cliente ${i}`,
+    }));
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock, reviews: resenas } } as any);
+    montar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const toggle = await screen.findByRole('button', { name: /Reseñas/ });
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Reseña número 0')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(await screen.findByText('Reseña número 0')).toBeTruthy();
+    // Solo las 3 primeras: la 4.ª y 5.ª quedan detrás del enlace a verlas todas.
+    expect(screen.queryByText('Reseña número 3')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Ver las 5 reseñas' }).getAttribute('href')).toBe('/proveedor/p1#resenas');
+  });
+
+  it('«Compartir» usa el share nativo del dispositivo, o copia el enlace si no hay', async () => {
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as any);
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    montar();
+
+    const compartir = screen.getByRole('button', { name: /Compartir/ });
+    fireEvent.click(compartir);
+    await waitFor(() => expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/proveedor/p1') })));
+
+    // @ts-expect-error — se borra para simular un navegador (de escritorio) sin share nativo.
+    delete navigator.share;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    fireEvent.click(compartir);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/proveedor/p1')));
   });
 
   it('si falla la carga de la ficha completa, "Reintentar" vuelve a pedirla', async () => {

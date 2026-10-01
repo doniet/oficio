@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Share2, X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
 import { telLink, whatsappLink, priceFrom } from '../../lib/format';
 import { useTasa } from '../../hooks/useTasa';
-import { Avatar, cn, CoverImage, ErrorState, RatingInline, Spinner } from '../ui';
+import { useToast } from '../../hooks/useToast';
+import { Avatar, cn, CoverImage, ErrorState, RatingInline } from '../ui';
 import { NegocioChip } from '../cards';
-import type { ProviderPublic, ProviderServiceItem, PuntoMapa } from '../../types';
+import { ReviewItem } from '../ReviewList';
+import type { ProviderPublic, ProviderServiceItem, PuntoMapa, Review } from '../../types';
 
 /**
  * Tarjeta compacta de un servicio dentro del panel del mapa: foto, categoría, título y precio.
@@ -64,6 +66,40 @@ function SeccionServicios({ servicios, abierta, onToggle }: { servicios: Provide
   );
 }
 
+const MAX_RESENAS_ADELANTO = 3;
+
+/** Mismo acordeón cerrado que `SeccionServicios`, con las reseñas más recientes (el backend ya
+ *  las manda ordenadas así). Si hay más de las que caben, un enlace lleva a verlas todas. */
+function SeccionResenas({ resenas, providerId, abierta, onToggle }: { resenas: Review[]; providerId: string; abierta: boolean; onToggle: () => void }) {
+  if (resenas.length === 0) return null;
+  const adelanto = resenas.slice(0, MAX_RESENAS_ADELANTO);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierta}
+        className="flex w-full items-center justify-between py-1 text-sm font-bold text-ink-900"
+      >
+        <span>Reseñas <span className="font-sans font-semibold text-ink-400">({resenas.length})</span></span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-ink-400 transition-transform', abierta && 'rotate-180')} aria-hidden="true" />
+      </button>
+      {abierta && (
+        <div className="mt-2 animate-fade-in">
+          <ul className="divide-y divide-sand-200">
+            {adelanto.map((r) => <ReviewItem key={r.id} review={r} showService />)}
+          </ul>
+          {resenas.length > adelanto.length && (
+            <Link to={`/proveedor/${providerId}#resenas`} className="link mt-1 inline-block text-sm">
+              Ver las {resenas.length} reseñas
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * El CONTENIDO de la ficha de un punto del mapa. No sabe nada del envoltorio que lo contiene:
  * sirve igual dentro de la hoja inferior de móvil que del panel lateral de escritorio.
@@ -88,14 +124,17 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   // al clic es su RENDERIZADO — y con él, la descarga de sus fotos — en `SeccionServicios`.
   const [servicios, setServicios] = useState<ProviderServiceItem[]>([]);
   const [serviciosAbiertos, setServiciosAbiertos] = useState(false);
+  const [resenas, setResenas] = useState<Review[]>([]);
+  const [resenasAbiertas, setResenasAbiertas] = useState(false);
   const [cargandoPerfil, setCargandoPerfil] = useState(false);
   const [errorPerfil, setErrorPerfil] = useState('');
   const [reintentos, setReintentos] = useState(0);
+  const toast = useToast();
 
-  // Un punto nuevo empieza siempre con la sección cerrada: si no, al pasar de un negocio con
-  // servicios abiertos a otro, el acordeón seguiría desplegado mostrando (por un instante) la
-  // lista vacía o la del anterior mientras llega la respuesta.
-  useEffect(() => { setServiciosAbiertos(false); }, [punto.id]);
+  // Un punto nuevo empieza siempre con las secciones cerradas: si no, al pasar de un negocio con
+  // algo desplegado a otro, el acordeón seguiría abierto mostrando (por un instante) lo del
+  // anterior mientras llega la respuesta.
+  useEffect(() => { setServiciosAbiertos(false); setResenasAbiertas(false); }, [punto.id]);
 
   // El id ya pedido. Antes esto se hacía con un efecto que ponía `setPerfil(null)` al cambiar de
   // punto y con `perfil` entre las dependencias del efecto de carga: el resultado era que al pasar
@@ -120,6 +159,7 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
         if (cancelado) return;
         setPerfil(r.data.provider);
         setServicios(r.data.services ?? []);
+        setResenas(r.data.reviews ?? []);
         setCargandoPerfil(false);
       })
       .catch((err) => {
@@ -137,24 +177,63 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   // respuesta, `perfil` todavía guarda el anterior, y pintarlo mostraría el teléfono de un
   // negocio bajo el nombre de otro.
   const perfilVigente = perfil?.id === punto.id ? perfil : null;
-  // `servicios` se guarda en el mismo `.then()` que `perfil`: si uno es del punto vigente, el otro
-  // también. Nada que comparar aparte.
+  // `servicios`/`resenas` se guardan en el mismo `.then()` que `perfil`: si uno es del punto
+  // vigente, los otros también. Nada que comparar aparte.
   const serviciosVigentes = perfilVigente ? servicios : [];
+  const resenasVigentes = perfilVigente ? resenas : [];
 
   const telefonoContacto = perfilVigente?.whatsapp ?? null;
   const mostrarWhatsapp = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'call';
   const mostrarLlamar = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'whatsapp';
   const lugar = [perfilVigente?.municipality_name, perfilVigente?.province_name].filter(Boolean).join(', ');
 
+  const compartir = async () => {
+    const url = `${window.location.origin}/proveedor/${punto.id}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: punto.nombre, url }); } catch { /* el usuario cerró el panel de compartir: no es un error */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Enlace copiado');
+    } catch {
+      toast('No se pudo copiar el enlace', 'error');
+    }
+  };
+
   return (
-    <>
+    <div className="relative">
+      {/* Flotante y SIEMPRE en el mismo sitio: con o sin portada, cargando o no, el botón de
+          cerrar no se mueve. bg-white/90 + backdrop-blur es el mismo recurso que ya usa
+          ProviderProfile.tsx para su botón «Explorar» sobre la foto de portada. */}
+      <button
+        type="button"
+        onClick={onCerrar}
+        className="absolute -right-1 -top-1 z-10 rounded-xl bg-white/90 p-2 text-ink-500 shadow-sm backdrop-blur hover:bg-white hover:text-ink-700"
+        aria-label="Cerrar la ficha"
+      >
+        <X className="h-5 w-5" />
+      </button>
+
       {onVolverALista && (
         <button type="button" onClick={onVolverALista} className="btn-ghost btn-sm -ml-2 mb-2">
           <ArrowLeft className="h-4 w-4" /> Volver a la lista
         </button>
       )}
 
-      <div className="flex items-start gap-3">
+      {/* Esqueleto mientras carga, en el MISMO lugar que ocupará la foto real: si solo apareciera
+          al terminar la carga, el avatar y el nombre de abajo saltarían hacia abajo de golpe. */}
+      {expandida && (cargandoPerfil || perfilVigente) && (
+        <div className="-mt-1 mb-4 h-32 w-full overflow-hidden rounded-xl bg-sand-100">
+          {perfilVigente ? (
+            <CoverImage src={perfilVigente.cover} seed={perfilVigente.categories[0] ?? punto.nombre} alt="" />
+          ) : (
+            <div className="skeleton h-full w-full" role="status" aria-label="Cargando la ficha completa" />
+          )}
+        </div>
+      )}
+
+      <div className="flex items-start gap-3 pr-9">
         <Avatar name={punto.nombre} size="md" square={punto.tipo === 'negocio'} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -163,27 +242,19 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
           </div>
           {punto.resumen && <p className="mt-1 line-clamp-2 text-sm text-ink-600">{punto.resumen}</p>}
         </div>
-        <button
-          type="button"
-          onClick={onCerrar}
-          className="-m-2 shrink-0 rounded-xl p-2 text-ink-400 hover:bg-ink-50 hover:text-ink-700"
-          aria-label="Cerrar la ficha"
-        >
-          <X className="h-5 w-5" />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <Link to={`/proveedor/${punto.id}`} onClick={onAntesDeNavegar} className="link text-sm">
+          Ver perfil completo
+        </Link>
+        <button type="button" onClick={compartir} className="btn-ghost btn-sm -mr-2 shrink-0">
+          <Share2 className="h-4 w-4" /> Compartir
         </button>
       </div>
 
-      <Link to={`/proveedor/${punto.id}`} onClick={onAntesDeNavegar} className="link mt-3 inline-block text-sm">
-        Ver perfil completo
-      </Link>
-
       {expandida && (
         <div className="mt-5 border-t border-sand-200 pt-5">
-          {cargandoPerfil && (
-            <div className="flex justify-center py-6" role="status" aria-label="Cargando la ficha completa">
-              <Spinner />
-            </div>
-          )}
           {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => { pedidoRef.current = null; setReintentos((n) => n + 1); }} />}
           {perfilVigente && !cargandoPerfil && (
             <div className="space-y-4">
@@ -219,10 +290,16 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
                 abierta={serviciosAbiertos}
                 onToggle={() => setServiciosAbiertos((v) => !v)}
               />
+              <SeccionResenas
+                resenas={resenasVigentes}
+                providerId={punto.id}
+                abierta={resenasAbiertas}
+                onToggle={() => setResenasAbiertas((v) => !v)}
+              />
             </div>
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
