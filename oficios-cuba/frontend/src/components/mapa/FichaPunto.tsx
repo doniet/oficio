@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Share2, X } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, ChevronDown, Phone, Share2, X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
 import { telLink, whatsappLink, priceFrom } from '../../lib/format';
 import { useTasa } from '../../hooks/useTasa';
@@ -8,6 +8,8 @@ import { useToast } from '../../hooks/useToast';
 import { Avatar, cn, CoverImage, ErrorState, RatingInline } from '../ui';
 import { NegocioChip } from '../cards';
 import { ReviewItem } from '../ReviewList';
+import { WhatsAppIcon } from '../ContactActions';
+import BookingModal from '../BookingModal';
 import type { ProviderPublic, ProviderServiceItem, PuntoMapa, Review } from '../../types';
 
 /**
@@ -129,6 +131,7 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   const [cargandoPerfil, setCargandoPerfil] = useState(false);
   const [errorPerfil, setErrorPerfil] = useState('');
   const [reintentos, setReintentos] = useState(0);
+  const [reservando, setReservando] = useState(false);
   const toast = useToast();
 
   // Un punto nuevo empieza siempre con las secciones cerradas: si no, al pasar de un negocio con
@@ -248,9 +251,47 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
         <Link to={`/proveedor/${punto.id}`} onClick={onAntesDeNavegar} className="link text-sm">
           Ver perfil completo
         </Link>
-        <button type="button" onClick={compartir} className="btn-ghost btn-sm -mr-2 shrink-0">
-          <Share2 className="h-4 w-4" /> Compartir
-        </button>
+        {/* Accesos rápidos de contacto, condicionados a lo que el perfil de verdad ofrezca: solo
+            existen una vez que carga (antes no se sabe si hay teléfono, WhatsApp o agenda). Igual
+            criterio que ya usa ContactActions (showWhatsapp/showCall/hasAgenda) — aquí en iconos,
+            porque esta fila vive siempre visible, incluso antes de bajar al resto de la ficha. */}
+        <div className="-mr-2 flex shrink-0 items-center gap-0.5">
+          {mostrarLlamar && telefonoContacto && (
+            <a
+              href={telLink(telefonoContacto)}
+              onClick={() => providerApi.contact(punto.id, 'call')}
+              className="rounded-xl p-2 text-ink-500 hover:bg-sand-100 hover:text-ink-800"
+              aria-label="Llamar"
+            >
+              <Phone className="h-4 w-4" />
+            </a>
+          )}
+          {mostrarWhatsapp && telefonoContacto && (
+            <a
+              href={whatsappLink(telefonoContacto, 'Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.')}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => providerApi.contact(punto.id, 'whatsapp')}
+              className="rounded-xl p-2 text-[#25D366] hover:bg-sand-100"
+              aria-label="WhatsApp"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+            </a>
+          )}
+          {perfilVigente?.has_agenda && (
+            <button
+              type="button"
+              onClick={() => setReservando(true)}
+              className="rounded-xl p-2 text-ink-500 hover:bg-sand-100 hover:text-ink-800"
+              aria-label="Pedir cita"
+            >
+              <CalendarPlus className="h-4 w-4" />
+            </button>
+          )}
+          <button type="button" onClick={compartir} className="rounded-xl p-2 text-ink-500 hover:bg-sand-100 hover:text-ink-800" aria-label="Compartir">
+            <Share2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {expandida && (
@@ -267,24 +308,6 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
                   {perfilVigente.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
                 </ul>
               )}
-              {(mostrarWhatsapp || mostrarLlamar) && telefonoContacto && (
-                <div className="grid grid-cols-2 gap-2">
-                  {mostrarWhatsapp && (
-                    <a
-                      href={whatsappLink(telefonoContacto, `Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => providerApi.contact(punto.id, 'whatsapp')}
-                      className="btn-whatsapp btn-sm"
-                    >
-                      WhatsApp
-                    </a>
-                  )}
-                  {mostrarLlamar && (
-                    <a href={telLink(telefonoContacto)} onClick={() => providerApi.contact(punto.id, 'call')} className="btn-secondary btn-sm">Llamar</a>
-                  )}
-                </div>
-              )}
               <SeccionServicios
                 servicios={serviciosVigentes}
                 abierta={serviciosAbiertos}
@@ -299,6 +322,10 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
             </div>
           )}
         </div>
+      )}
+
+      {perfilVigente?.has_agenda && (
+        <BookingModal open={reservando} onClose={() => setReservando(false)} providerId={punto.id} providerName={punto.nombre} />
       )}
     </div>
   );

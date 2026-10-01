@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { usarTrampaFoco, type PropsEnvoltorio } from './usarPanel';
 
 // Nombre de la variable CSS que expone cuánto de la parte de abajo del viewport ocupa la
@@ -7,7 +8,13 @@ import { usarTrampaFoco, type PropsEnvoltorio } from './usarPanel';
 const VAR_ALTO_HOJA = '--hoja-punto-alto';
 
 const ALTO_ABIERTA_VH = 85;
-const ALTO_ASOMADA_VH = 30;
+// Bastante más que un asomo: tiene que caber ya la portada y la cabecera —lo que antes solo se
+// veía al desplegar del todo— sin que el usuario tenga que adivinar que hay que arrastrar para
+// ver algo más que el nombre. Deja igual la mitad de la pantalla larga para seguir viendo el mapa.
+const ALTO_ASOMADA_VH = 55;
+// Alto aproximado del asa (barra + su padding): el indicador de "hay más abajo" lo descuenta del
+// visible real, o compararía el contenido contra MÁS alto del que en verdad se ve en pantalla.
+const ALTO_ASA_PX = 40;
 // Distancia mínima de arrastre (px) para que cuente como arrastre y no como toque en el asa.
 const UMBRAL_TOQUE = 6;
 // Cuánto hay que pasarse de "asomada" arrastrando hacia abajo para que la hoja se cierre.
@@ -36,8 +43,12 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
   const [offsetArrastre, setOffsetArrastre] = useState<number | null>(null);
   // Fuerza a recalcular las anclas (en px) si cambia el tamaño de la ventana.
   const [, tocar] = useState(0);
+  // Degradado + flecha en el borde inferior: dicen "hay más si sigues bajando" sin que haya que
+  // arrastrar a ciegas para descubrirlo.
+  const [hayMasAbajo, setHayMasAbajo] = useState(false);
 
   const sheetRef = useRef<HTMLDivElement>(null);
+  const contenidoRef = useRef<HTMLDivElement>(null);
   const arrastreRef = useRef<{ inicioY: number } | null>(null);
   const huboArrastreRef = useRef(false);
 
@@ -64,6 +75,10 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
   const offsetActual = offsetArrastre === null
     ? offsetBase
     : clamp(offsetBase + offsetArrastre, -REBOTE_ARRIBA, offsetAsomada + HOLGURA_CIERRE + REBOTE_CIERRE);
+  // Cuánto del contenido (sin contar el asa) se ve ahora mismo en la pantalla REAL — no el alto
+  // interno del contenedor con scroll, que es siempre el de "abierta" (el resto, cuando está
+  // asomada, no está "scrolleado", está fuera de la pantalla por el translateY de más abajo).
+  const altoVisibleContenido = Math.max(0, altoAbierta - offsetActual - ALTO_ASA_PX);
 
   // Comunica al mapa (fuera de nuestro control) cuánto tapa la hoja ahora mismo.
   useEffect(() => {
@@ -72,6 +87,31 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
   }, [abierta, altoAbierta, offsetActual]);
 
   useEffect(() => () => { document.documentElement.style.removeProperty(VAR_ALTO_HOJA); }, []);
+
+  const actualizarHayMasAbajo = useCallback(() => {
+    const el = contenidoRef.current;
+    if (!el) return;
+    // Margen de unos pocos px: con el redondeo de subpíxeles, "llegó al final" rara vez da 0 exacto.
+    setHayMasAbajo(el.scrollHeight - el.scrollTop - altoVisibleContenido > 4);
+    // altoVisibleContenido se lee del cierre más reciente de este callback (se recrea cada
+    // render), así que no hace falta como dependencia del efecto de abajo aparte de en su cuerpo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [altoVisibleContenido]);
+
+  useEffect(() => {
+    const el = contenidoRef.current;
+    if (!el || !abierta) return;
+    actualizarHayMasAbajo();
+    el.addEventListener('scroll', actualizarHayMasAbajo);
+    // ResizeObserver, no solo el listener de scroll: el contenido crece sin que nadie haga scroll
+    // (termina de cargar el perfil, se abre "Servicios") y ahí también puede aparecer o desaparecer
+    // el indicador. Mismo guard que ya usa MapaExplorar.tsx: jsdom (los tests) no lo implementa.
+    if (typeof ResizeObserver === 'undefined') return () => el.removeEventListener('scroll', actualizarHayMasAbajo);
+    const ro = new ResizeObserver(actualizarHayMasAbajo);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => { el.removeEventListener('scroll', actualizarHayMasAbajo); ro.disconnect(); };
+  }, [abierta, actualizarHayMasAbajo]);
 
   const onAsaPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -138,8 +178,19 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
           <span className="h-1.5 w-10 rounded-full bg-sand-300" aria-hidden="true" />
         </button>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          {children({ expandida: posicion === 'abierta', onAntesDeNavegar, cerrar })}
+        <div className="relative min-h-0 flex-1">
+          <div ref={contenidoRef} data-testid="hoja-contenido" className="h-full overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            {children({ expandida: true, onAntesDeNavegar, cerrar })}
+          </div>
+          {hayMasAbajo && (
+            <div
+              data-testid="hoja-indicador-mas"
+              className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-white via-white/80 to-transparent pb-1 pt-8"
+              aria-hidden="true"
+            >
+              <ChevronDown className="h-5 w-5 animate-bounce text-ink-300" />
+            </div>
+          )}
         </div>
       </div>
     </div>

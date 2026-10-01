@@ -3,16 +3,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PanelMapa from './PanelMapa';
-import { providerApi } from '../../services/api';
+import { AuthProvider } from '../../hooks/useAuth';
+import { configApi, providerApi } from '../../services/api';
 import type { ProviderPublic, PuntoMapa } from '../../types';
 import { fijarAncho } from './probarAncho';
 
 // Igual que en usarMapa.test.ts: solo se sustituyen las funciones de providerApi que usa la
 // hoja, con vi.importActual de por medio para no dejar apiError ni el resto del módulo undefined.
+// configApi.get también, porque AuthProvider la llama sola al montar (hace falta desde que
+// FichaPunto puede montar BookingModal — "Pedir cita" —, que usa useAuth y por tanto exige el
+// provider; Search.test.tsx mockea lo mismo por la misma razón).
 vi.mock('../../services/api', async () => {
   const real = await vi.importActual<typeof import('../../services/api')>('../../services/api');
   return {
     ...real,
+    configApi: { ...real.configApi, get: vi.fn() },
     providerApi: { ...real.providerApi, getById: vi.fn(), contact: vi.fn(() => Promise.resolve()) },
   };
 });
@@ -74,15 +79,31 @@ function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?:
   });
 }
 
+// AuthProvider hace falta desde que FichaPunto puede montar BookingModal ("Pedir cita"), que usa
+// useAuth: tanto el primer render como cualquier rerender necesitan este mismo árbol, o React,
+// al ver un MemoryRouter cuyo hijo cambió de "AuthProvider" a "PanelMapa", desmonta de más.
+function envolver(nodo: ReturnType<typeof createElement>) {
+  return createElement(MemoryRouter, null, createElement(AuthProvider, null, nodo));
+}
+
 function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null } = {}) {
   const onCerrar = props.onCerrar ?? vi.fn();
-  const utils = render(createElement(MemoryRouter, null, panel({ ...props, onCerrar })));
+  // Imperativo y no en un beforeEach: los `afterEach(() => vi.restoreAllMocks())` de este archivo
+  // borrarían cualquier mockResolvedValue puesto fuera de aquí antes de que el siguiente test
+  // llegue a renderizar — AuthProvider llama a configApi.get() sola, en cuanto se monta.
+  vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
+  const utils = render(envolver(panel({ ...props, onCerrar })));
   return { onCerrar, ...utils };
 }
 
 describe('PanelMapa — hoja móvil', () => {
   beforeEach(() => {
     vi.mocked(providerApi.getById).mockReset();
+    // La hoja ya pide el perfil completo apenas se abre (ni "asomada" espera a que la desplieguen
+    // del todo): sin este valor por defecto, los tests que no les importa el perfil en sí —y por
+    // eso no lo mockean a mano— reventarían con "Cannot read properties of undefined (reading
+    // 'then')" en cuanto montaran la hoja.
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as any);
     vi.mocked(providerApi.contact).mockClear();
     // Arranca cada prueba con una entrada neutra, sin restos de pushState/replaceState de la
     // prueba anterior (todas comparten el mismo window.history de jsdom dentro del archivo).
@@ -103,7 +124,7 @@ describe('PanelMapa — hoja móvil', () => {
     document.body.style.overflow = 'scroll';
     const { rerender } = montar();
     expect(document.body.style.overflow).toBe('hidden');
-    rerender(createElement(MemoryRouter, null, panel({ punto: null })));
+    rerender(envolver(panel({ punto: null })));
     expect(document.body.style.overflow).toBe('scroll');
   });
 
@@ -113,7 +134,7 @@ describe('PanelMapa — hoja móvil', () => {
     const onCerrar = vi.fn();
     const largoInicial = window.history.length;
     const { rerender } = montar({ onCerrar });
-    rerender(createElement(MemoryRouter, null, panel({ punto: { ...punto, id: 'p2', nombre: 'Otro' }, onCerrar })));
+    rerender(envolver(panel({ punto: { ...punto, id: 'p2', nombre: 'Otro' }, onCerrar })));
     expect(window.history.length - largoInicial).toBe(1);
     window.history.back();
     await waitFor(() => expect(onCerrar).toHaveBeenCalled());
@@ -193,7 +214,7 @@ describe('PanelMapa — hoja móvil', () => {
 
     void cerrarBtn;
 
-    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
+    rerender(envolver(panel({ punto: null, onCerrar })));
     expect(document.activeElement).toBe(disparador);
 
     document.body.removeChild(disparador);
@@ -206,19 +227,48 @@ describe('PanelMapa — hoja móvil', () => {
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toMatch(/^\d+px$/);
     expect(raiz.getPropertyValue('--hoja-punto-alto')).not.toBe('0px');
 
-    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
+    rerender(envolver(panel({ punto: null, onCerrar })));
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toBe('0px');
 
     unmount();
     expect(raiz.getPropertyValue('--hoja-punto-alto')).toBe('');
   });
 
-  it('al desplegar la ficha completa, contactar por WhatsApp o llamar registra el contacto (derecho a reseñar)', async () => {
-    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as any);
+  // jsdom no hace layout real (todo mide 0): se simulan scrollHeight/scrollTop a mano y se dispara
+  // el 'scroll' que el componente escucha — ResizeObserver, que es la otra vía de recálculo, no
+  // existe en jsdom (ver el guard de HojaPunto.tsx) así que aquí no hace falta simularlo.
+  it('el indicador de "hay más abajo" aparece si el contenido no cabe en lo visible, y se va al llegar al final', () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
     montar();
+    const contenido = screen.getByTestId('hoja-contenido');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    expect(screen.queryByTestId('hoja-indicador-mas')).toBeNull();
+
+    // altoVisibleContenido con innerHeight=768 y la hoja recién abierta (asomada): unos 382px.
+    // 500px de contenido, sin haber scrolleado nada, sobran de sobra para que haga falta el aviso.
+    Object.defineProperty(contenido, 'scrollHeight', { configurable: true, value: 500 });
+    Object.defineProperty(contenido, 'scrollTop', { configurable: true, value: 0, writable: true });
+    fireEvent.scroll(contenido);
+    expect(screen.getByTestId('hoja-indicador-mas')).toBeTruthy();
+
+    // Scrollear hasta cerca del final lo hace desaparecer.
+    Object.defineProperty(contenido, 'scrollTop', { configurable: true, value: 120 });
+    fireEvent.scroll(contenido);
+    expect(screen.queryByTestId('hoja-indicador-mas')).toBeNull();
+  });
+
+  // Antes de este cambio, la hoja no pedía el perfil hasta desplegarla del todo (`expandida`
+  // dependía de la posición). Ahora pide siempre, apenas se abre: "asomada" ya es una vista real,
+  // no un simple avance — así que no hay razón para no pedir lo que ya se está mirando.
+  it('pide el perfil apenas se abre el punto, sin esperar a que se despliegue del todo', async () => {
+    montar();
     await waitFor(() => expect(providerApi.getById).toHaveBeenCalledWith('p1'));
+    expect(await screen.findByText(perfilMock.description!)).toBeTruthy();
+  });
+
+  it('los iconos de contacto (llamar, WhatsApp, cita) salen junto a "Compartir" en cuanto se sabe qué ofrece el perfil', async () => {
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: { ...perfilMock, has_agenda: true } } } as any);
+    montar();
 
     const whatsapp = await screen.findByRole('link', { name: 'WhatsApp' });
     fireEvent.click(whatsapp);
@@ -227,6 +277,22 @@ describe('PanelMapa — hoja móvil', () => {
     const llamar = screen.getByRole('link', { name: 'Llamar' });
     fireEvent.click(llamar);
     expect(providerApi.contact).toHaveBeenCalledWith('p1', 'call');
+
+    // "Pedir cita" abre el modal de agenda — basta con que exista y abra, el flujo de reserva en
+    // sí ya lo prueba BookingModal.test.tsx.
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir cita' }));
+    expect(await screen.findByRole('dialog', { name: /cita|agenda/i })).toBeTruthy();
+  });
+
+  it('sin WhatsApp, teléfono ni agenda, solo queda "Compartir" en esa fila', async () => {
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: { ...perfilMock, whatsapp: null, has_agenda: false } } } as any);
+    montar();
+    await waitFor(() => expect(providerApi.getById).toHaveBeenCalled());
+
+    expect(screen.queryByRole('link', { name: 'WhatsApp' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Llamar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pedir cita' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Compartir/ })).toBeTruthy();
   });
 
   it('los servicios van en un acordeón cerrado: sus fotos no se piden hasta desplegarlo', async () => {
@@ -336,12 +402,13 @@ describe('PanelMapa — elección de envoltorio', () => {
     origen.focus();
 
     const largoInicial = window.history.length;
-    const { rerender } = render(createElement(MemoryRouter, null, panel({ onCerrar })));
+    vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
+    const { rerender } = render(envolver(panel({ onCerrar })));
     fijarAncho(1280);
-    rerender(createElement(MemoryRouter, null, panel({ onCerrar })));
+    rerender(envolver(panel({ onCerrar })));
     expect(window.history.length - largoInicial).toBe(1);
 
-    rerender(createElement(MemoryRouter, null, panel({ punto: null, onCerrar })));
+    rerender(envolver(panel({ punto: null, onCerrar })));
     await waitFor(() => expect(document.activeElement).toBe(origen));
     origen.remove();
   });
@@ -351,7 +418,7 @@ describe('PanelMapa — elección de envoltorio', () => {
     const { rerender } = montar();
     expect(screen.getByText('Juan Plomero')).toBeTruthy();
     fijarAncho(1280);
-    rerender(createElement(MemoryRouter, null, panel({})));
+    rerender(envolver(panel({})));
     expect(screen.getByText('Juan Plomero')).toBeTruthy();
   });
 });
