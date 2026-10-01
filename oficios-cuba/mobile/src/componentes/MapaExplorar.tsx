@@ -106,10 +106,41 @@ const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; 
   );
 });
 
+/**
+ * El punto con su ficha abierta: deja de ser un círculo y pasa a gota, para decir «este soy yo» con
+ * la misma forma que la marca usa para señalar un lugar.
+ *
+ * `anchor="bottom"` es lo que hace que la PUNTA caiga sobre la coordenada real; con el «center» por
+ * defecto el punto parecería moverse al seleccionarlo. Verificado en los tipos de MapLibre RN.
+ *
+ * Dentro va el MISMO relleno y el mismo glifo de PIN_POR_TIPO, no una combinación nueva: así es el
+ * pin normal con cola, el contraste ya está validado y no hay un segundo juego de colores que
+ * mantener. (La gota de la web lleva un círculo blanco liso porque sus pines nunca llevaron icono.)
+ */
+const PinSeleccionado = memo(function PinSeleccionado({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p: PuntoMapa): void }) {
+  const { fondo, glifo } = PIN_POR_TIPO[punto.tipo];
+  return (
+    <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} anchor="bottom" onPress={() => onAbrir(punto)}>
+      <View style={e.gotaEnvoltorio}>
+        {/* La cola: un cuadrado rotado 45° con tres esquinas redondeadas, debajo del círculo y
+            tapado a medias por él. Sin react-native-svg a propósito (ver el spec, decisión 4). */}
+        <View style={[e.gotaCola, { backgroundColor: fondo }]} />
+        <View style={[e.gotaCirculo, { backgroundColor: fondo }]}>
+          <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={18} color={glifo} />
+        </View>
+        {punto.detras > 0 ? (
+          <View style={e.insigniaGota}>
+            <Text style={e.insigniaTexto}>+{punto.detras}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Marker>
+  );
+});
+
 export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista }: {
   tab: string; q: string; category: string;
-  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota.
-   *  Todavía no se lee aquí: lo consume la Tarea 8. No es código muerto, no limpiarlo. */
+  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota. */
   seleccionadoId?: string | null;
   onAbrir(p: PuntoMapa): void;
   /** Los negocios de una celda al tocar un grupo. Si la celda falla, llega vacía con el mensaje:
@@ -225,12 +256,13 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
         onRegionDidChange={alCambiarRegion}
       >
         <Camera ref={camaraRef} initialViewState={{ center: CENTRO_INICIAL, zoom: ZOOM_INICIAL }} maxBounds={LIMITES_CUBA} />
-        {puntos.map((p) => (
+        {puntos.map((p) => {
+          if (p.id === seleccionadoId) return <PinSeleccionado key={p.id} punto={p} onAbrir={abrir} />;
           // Los exactos siguen siendo pin: su punto sí es cierto y mezclarlos mentiría sobre los dos.
-          modoZona && p.aproximado
+          return modoZona && p.aproximado
             ? <AreaZona key={p.id} punto={p} onAbrir={abrir} />
-            : <Pin key={p.id} punto={p} onAbrir={abrir} />
-        ))}
+            : <Pin key={p.id} punto={p} onAbrir={abrir} />;
+        })}
       </MapaLibre>
 
       {cargando ? (
@@ -299,6 +331,23 @@ const e = StyleSheet.create({
     borderWidth: 1, borderColor: sand[200], ...sombra.card,
   },
   zonaTexto: { fontFamily: fuentes.textoFuerte, fontSize: 11, color: ink[800] },
+  // 40 de círculo + 12 de cola visible. El envoltorio mide lo mismo que el dibujo para que
+  // `anchor="bottom"` ponga la punta exactamente en la coordenada.
+  gotaEnvoltorio: { width: 44, height: 52, alignItems: 'center' },
+  gotaCirculo: {
+    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#ffffff', ...sombra.lift,
+  },
+  gotaCola: {
+    position: 'absolute', top: 22, width: 20, height: 20,
+    borderBottomLeftRadius: 3, borderBottomRightRadius: 3, borderTopRightRadius: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  insigniaGota: {
+    position: 'absolute', top: -4, right: 0, minWidth: 20, height: 20, borderRadius: 10,
+    backgroundColor: ink[900], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+    borderWidth: 1.5, borderColor: '#ffffff',
+  },
   pildoraCarga: {
     position: 'absolute', top: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#ffffff', borderRadius: radios.chip, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: sand[200], ...sombra.card,
