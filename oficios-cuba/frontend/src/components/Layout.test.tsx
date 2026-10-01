@@ -102,19 +102,22 @@ describe('Layout — banner móvil que se recoge al bajar', () => {
     expect(contenedorResto().getAttribute('aria-hidden')).toBe('false');
   });
 
-  // El mapa no tiene scroll de página del que depender, así que ahí el banner se recoge SIEMPRE
-  // en móvil, de entrada: le deja más alto útil al mapa, que ya trae sus propios controles
-  // flotantes (ControlesMapa.tsx). La barra inferior, en cambio, sigue visible — en el mapa ES
-  // la navegación (ver el comentario de `enMapa` en Layout.tsx).
-  it('en la vista de mapa el banner arranca ya recogido, pero la barra inferior se queda', () => {
+  // El mapa no tiene scroll de página del que depender. Primero se probó con el círculo puesto
+  // ("recogido"), pero la tarjeta de búsqueda de ControlesMapa.tsx —que flota justo debajo, con su
+  // propio fondo translúcido— seguía leyéndose como "la barra sigue ahí". Por eso el header no se
+  // recoge ahí: directamente no existe en el documento, sin dejar nada arriba. La barra inferior,
+  // en cambio, sigue visible — en el mapa ES la navegación (ver el comentario de `enMapa` en
+  // Layout.tsx).
+  it('en la vista de mapa (móvil) no hay ningún header, pero la barra inferior se queda', () => {
     montar('/explorar?vista=mapa');
-    expect(contenedorResto().getAttribute('aria-hidden')).toBe('true');
+    expect(screen.queryByRole('banner')).toBeNull();
     expect(screen.getByRole('navigation', { name: 'Navegación principal' }).getAttribute('aria-hidden')).toBe('false');
   });
 
-  it('en la vista de mapa, en escritorio, el banner no se recoge', () => {
+  it('en la vista de mapa, en escritorio, el header se queda (nada de esto aplica ahí)', () => {
     fijarAncho(1280);
     montar('/explorar?vista=mapa');
+    expect(screen.getByRole('banner')).toBeTruthy();
     expect(contenedorResto().getAttribute('aria-hidden')).toBe('false');
   });
 });

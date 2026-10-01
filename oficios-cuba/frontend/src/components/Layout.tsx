@@ -155,20 +155,28 @@ export default function Layout() {
 
   const esMovil = useEsMovil();
   const vieneBajando = useDireccionScroll();
-  // En el mapa (móvil) el banner se queda SIEMPRE recogido, no por scroll —ahí la página no
-  // scrollea, está fija a pantalla completa— sino porque el mapa ya tiene sus propios controles
-  // flotantes (ControlesMapa.tsx) y la barra completa solo le resta alto útil al mapa.
-  const bannerRecogido = esMovil && (vieneBajando || enMapa);
-  // La barra inferior, en cambio, sigue la regla de siempre: nunca se oculta en el mapa, porque
-  // ahí ES la navegación (ver el comentario de `enMapa` más arriba) — si se recogiera con el
-  // header no quedaría ninguna forma de volver a Inicio o a Mensajes.
-  const tabBarOculta = esMovil && vieneBajando && !enMapa;
+  // En el mapa (móvil) el banner no se "recoge" a un círculo: desaparece del todo. Probado con el
+  // círculo puesto, la tarjeta de búsqueda de ControlesMapa.tsx —que flota justo debajo, con su
+  // propio fondo blanco translúcido— seguía leyéndose como "la barra sigue ahí, solo que con un
+  // círculo encima". Sacando el header entero del documento, el mapa (y esa tarjeta) suben a
+  // ocupar también esos 64 px, y no queda nada parecido a una barra arriba.
+  const bannerOculto = esMovil && enMapa;
+  // El resto del sitio sigue la regla de recogerse a un círculo, solo por scroll (nunca en el
+  // mapa: ahí ya se resuelve con bannerOculto de arriba).
+  const bannerRecogido = esMovil && vieneBajando && !enMapa;
+  // La barra inferior nunca se oculta en el mapa —ahí ES la navegación (ver el comentario de
+  // `enMapa` más arriba)—, así que coincide con `bannerRecogido`, no con `bannerOculto`.
+  const tabBarOculta = bannerRecogido;
 
   return (
     <div className={cn('flex flex-col', enMapa ? 'alto-app overflow-hidden' : 'min-h-screen')}>
       <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[1030] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lift">
         Saltar al contenido
       </a>
+      {/* Nada de header en absoluto en el mapa móvil (bannerOculto): ni siquiera el círculo —
+          sacarlo del documento le devuelve esos 64 px al mapa, y de paso no queda nada arriba que
+          se pueda confundir con "la barra" aunque sea sin fondo. */}
+      {!bannerOculto && (
       <header className={cn(
         'sticky top-0 z-40 border-b transition-[background-color,border-color,backdrop-filter] duration-300',
         // backdrop-blur-md solo con la barra puesta: recogida no puede dejar ni el desenfoque como
@@ -229,6 +237,7 @@ export default function Layout() {
           </div>
         </div>
       </header>
+      )}
 
       {/* min-h-0 con el mapa: sin él, un hijo que quiere 100% de alto impide que flex-1 encoja y
          la página vuelve a hacer scroll. */}
