@@ -148,7 +148,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
    *  la hoja se abre igual. */
   onAbrirLista(puntos: PuntoMapa[], error?: string, reintentar?: () => void): void;
 }) {
-  const { puntos, cargando, error, celda, alMoverMapa, buscarZonaVisible, cargarCelda } = usarMapa({ tab, q, category });
+  const { puntos, cargando, error, celda, sugerencia, alMoverMapa, buscarZonaVisible, cargarCelda } = usarMapa({ tab, q, category });
 
   // Mismo umbral que la web (ZONA_DESDE_GRADOS, en @oficio/shared): por debajo de este tamaño de
   // celda el área ya no cabe en ella. Una constante y dos clientes, o el mismo negocio se vería
@@ -237,6 +237,17 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
       setBuscandoUbicacion(false);
     }
   }, []);
+
+  // La búsqueda no tiene nada en la zona visible pero sí en otra parte de Cuba (usarMapa ya lo
+  // averiguó): el mapa va allá solo. Mismo zoom y duración que «Cerca de mí», por la misma razón:
+  // ambos son «llévame a donde hay algo», uno por geolocalización y el otro por búsqueda.
+  useEffect(() => {
+    if (!sugerencia) return;
+    // Igual que en «Cerca de mí»: el próximo cambio de región cuenta como zoom (recarga a los
+    // 250 ms, no a los 500 del arrastre), porque este salto es tan deliberado como escribir.
+    zoomAnterior.current = null;
+    camaraRef.current?.flyTo({ center: [sugerencia.lng, sugerencia.lat], zoom: ZOOM_CERCA_DE_MI, duration: 600 });
+  }, [sugerencia]);
 
   return (
     <View style={e.contenedor}>
