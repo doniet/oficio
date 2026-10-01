@@ -43,12 +43,24 @@ export function acotarACuba(lat: number, lng: number): { lat: number; lng: numbe
   };
 }
 
+// Mismos límites que acotarBbox/acotarACuba: el rectángulo con el que se pregunta "¿existe esta
+// búsqueda en ALGÚN lado de Cuba?" cuando la zona visible no tiene nada.
+const CUBA_ENTERA: Bbox = { sur: 19, oeste: -85.5, norte: 24, este: -73.5 };
+
 export function usarMapa(params: { tab: string; q: string; category: string }) {
   const [puntos, setPuntos] = useState<PuntoMapa[]>([]);
   const [celda, setCelda] = useState(0);
   const [hayMas, setHayMas] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  // Adónde saltar cuando la búsqueda actual no tiene NINGÚN resultado en la zona visible, pero sí
+  // en algún otro punto de Cuba: quien monta el mapa de Leaflet (MapaExplorar.tsx) reacciona a
+  // este cambio con un flyTo. null = no hay salto pendiente.
+  const [sugerencia, setSugerencia] = useState<{ lat: number; lng: number } | null>(null);
+  // Para no repetir la petición de "¿existe en algún lado?" en cada arrastre/zoom mientras el
+  // texto de búsqueda no cambie: una vez que se sabe la respuesta para ESTA búsqueda (haya o no
+  // sugerencia), repetirla en cada movimiento sería gastar peticiones de sobra sin necesidad.
+  const intentadaRef = useRef(false);
 
   // La última zona visible que reportó el mapa; no hay estado de React para esto porque cambiarla
   // no debe, por sí sola, disparar un render.
@@ -64,6 +76,20 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   // render; cargar() siempre lee el valor más fresco desde aquí.
   const paramsRef = useRef(params);
   paramsRef.current = params;
+
+  // Sin resultados en la zona visible, pero con un texto de búsqueda real: puede que el negocio
+  // exista en otra parte de Cuba. Se pregunta UNA vez por búsqueda (intentadaRef), con el mismo
+  // bbox inflado de siempre pero del tamaño del país entero, así que el servidor lo trata como
+  // cualquier otro — agrupa en celdas grandes y devuelve un representante por zona con datos.
+  // Silencioso a propósito: si falla, se queda el "sin resultados" normal, no es nada crítico.
+  const buscarEnTodaCuba = useCallback(() => {
+    const { tab, q, category } = paramsRef.current;
+    mapaApi.buscar(CUBA_ENTERA, { tab: tab || undefined, q: q || undefined, category: category || undefined })
+      .then((r) => {
+        if (r.puntos.length > 0) setSugerencia({ lat: r.puntos[0].lat, lng: r.puntos[0].lng });
+      })
+      .catch(() => {});
+  }, []);
 
   const cargar = useCallback(() => {
     const bbox = bboxRef.current;
@@ -85,13 +111,17 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
         setHayMas(r.hay_mas);
         setCargando(false);
         bboxPintadoRef.current = bbox;
+        if (r.puntos.length === 0 && paramsRef.current.q && !intentadaRef.current) {
+          intentadaRef.current = true;
+          buscarEnTodaCuba();
+        }
       })
       .catch((err) => {
         if (controlador.signal.aborted) return;
         setError(apiError(err, 'No se pudo cargar el mapa. Inténtalo de nuevo.'));
         setCargando(false);
       });
-  }, []);
+  }, [buscarEnTodaCuba]);
 
   const programar = useCallback((ms: number) => {
     if (antirreboteRef.current) clearTimeout(antirreboteRef.current);
@@ -114,8 +144,12 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   const buscarZona = cargar;
 
   // Cambiar de pestaña, texto o categoría recarga sola, con su propio antirrebote — pero solo si
-  // ya hay una zona visible (el primer bbox lo trae el mapa, no este efecto).
+  // ya hay una zona visible (el primer bbox lo trae el mapa, no este efecto). La búsqueda nueva
+  // es un caso distinto del que ya se investigó: se puede volver a intentar "¿existe en algún
+  // lado?" y cualquier salto pendiente de la búsqueda anterior deja de tener sentido.
   useEffect(() => {
+    intentadaRef.current = false;
+    setSugerencia(null);
     if (!bboxRef.current) return;
     programar(ANTIRREBOTE_TEXTO_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,5 +173,5 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
       .then((r) => r.puntos);
   }, []);
 
-  return { puntos, celda, hayMas, cargando, error, alMover, buscarZona, cargarCelda };
+  return { puntos, celda, hayMas, cargando, error, sugerencia, alMover, buscarZona, cargarCelda };
 }

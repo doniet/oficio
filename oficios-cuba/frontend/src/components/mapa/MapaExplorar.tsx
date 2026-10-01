@@ -206,6 +206,14 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
     );
   }, []);
 
+  // La búsqueda no tiene nada en la zona visible pero sí en algún otro punto de Cuba (usarMapa ya
+  // lo averiguó): salta allá solo. Mismo zoom/duración que «Cerca de mí», por la misma razón —
+  // ambos son "llévame a donde hay algo", uno por geolocalización y el otro por búsqueda.
+  useEffect(() => {
+    if (!mapa.sugerencia) return;
+    mapRef.current?.flyTo([mapa.sugerencia.lat, mapa.sugerencia.lng], 13, { duration: 0.8 });
+  }, [mapa.sugerencia]);
+
   return (
     <div className="relative h-full w-full overflow-hidden">
       <MapContainer

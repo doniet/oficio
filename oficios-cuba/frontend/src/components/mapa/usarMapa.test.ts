@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Map as LeafletMap } from 'leaflet';
 import { acotarACuba, acotarBbox, usarMapa } from './usarMapa';
 import MapaExplorar from './MapaExplorar';
 import { mapaApi } from '../../services/api';
@@ -17,6 +18,12 @@ vi.mock('../../services/api', async () => {
 });
 
 const bbox: Bbox = { sur: 22, oeste: -83, norte: 23, este: -82 };
+// Mismo rectángulo que CUBA_ENTERA en usarMapa.ts (no exportado): se repite aquí a propósito,
+// para que la prueba compare contra el valor literal y no contra una importación del propio
+// módulo que estaría probando.
+const CUBA_ENTERA: Bbox = { sur: 19, oeste: -85.5, norte: 24, este: -73.5 };
+
+const puntoLejos: PuntoMapa = { id: 'lejos', tipo: 'oficio', nombre: 'Lejos', lat: 20.1, lng: -75.8, plan: 'free', aproximado: false, cy: 0, cx: 0, detras: 0, resumen: '' };
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -154,6 +161,63 @@ describe('usarMapa', () => {
     unmount();
   });
 
+  it('sin resultados en la zona pero con texto de búsqueda, pregunta por toda Cuba y guarda la sugerencia', async () => {
+    vi.mocked(mapaApi.buscar)
+      .mockResolvedValueOnce({ puntos: [], celda: 0.01, hay_mas: false }) // zona visible: nada
+      .mockResolvedValueOnce({ puntos: [puntoLejos], celda: 1, hay_mas: false }); // toda Cuba: sí hay
+
+    const { result, unmount } = renderHook(() => usarMapa({ tab: 'servicios', q: 'plomero', category: '' }));
+
+    act(() => { result.current.alMover(bbox, true); });
+    await act(async () => { await espera(290); }); // antirrebote de zoom + la carga de zona (vacía)
+
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(mapaApi.buscar).mock.calls[1][0]).toEqual(CUBA_ENTERA);
+    expect(result.current.sugerencia).toEqual({ lat: 20.1, lng: -75.8 });
+
+    unmount();
+  });
+
+  it('no repite la pregunta por toda Cuba en cada movimiento del mismo término', async () => {
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+
+    const { result, unmount } = renderHook(() => usarMapa({ tab: 'servicios', q: 'plomero', category: '' }));
+
+    act(() => { result.current.alMover(bbox, true); });
+    await act(async () => { await espera(290); });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(2); // zona + toda Cuba, ambas vacías
+
+    act(() => { result.current.alMover({ ...bbox, sur: 21 }, false); }); // arrastre, mismo término
+    await act(async () => { await espera(600); });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(3); // solo la zona nueva, no repite «toda Cuba»
+
+    unmount();
+  });
+
+  it('cambiar el texto de búsqueda limpia la sugerencia anterior y permite un nuevo intento', async () => {
+    vi.mocked(mapaApi.buscar)
+      .mockResolvedValueOnce({ puntos: [], celda: 0.01, hay_mas: false })
+      .mockResolvedValueOnce({ puntos: [puntoLejos], celda: 1, hay_mas: false });
+
+    const { result, rerender, unmount } = renderHook(
+      ({ q }) => usarMapa({ tab: 'servicios', q, category: '' }),
+      { initialProps: { q: 'plomero' } },
+    );
+
+    act(() => { result.current.alMover(bbox, true); });
+    await act(async () => { await espera(290); });
+    expect(result.current.sugerencia).toEqual({ lat: 20.1, lng: -75.8 });
+
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    rerender({ q: 'electricista' }); // la sugerencia de «plomero» ya no tiene sentido para esta búsqueda
+
+    expect(result.current.sugerencia).toBeNull(); // se limpia de inmediato, sin esperar la nueva respuesta
+    await act(async () => { await espera(330); }); // antirrebote de texto (300 ms): nueva búsqueda, también vacía
+    expect(result.current.sugerencia).toBeNull();
+
+    unmount();
+  });
+
   it('cargarCelda pide con la zona que se PINTÓ, no con la que el mapa lleva ahora', async () => {
     // Tras arrastrar, el mapa ya reportó otra zona pero los «+N» en pantalla siguen siendo los de
     // la anterior: pedir la celda con el rectángulo nuevo cambiaría el tamaño de celda que el
@@ -245,5 +309,22 @@ describe('MapaExplorar', () => {
     const boton = Array.from(container.querySelectorAll('button')).find((b) => /Cerca de mí/.test(b.textContent ?? ''))!;
     expect(boton).toBeTruthy();
     expect(boton.getAttribute('style')).toContain('--hoja-punto-alto');
+  });
+
+  it('si la búsqueda no tiene nada en la zona visible pero sí en otro punto de Cuba, el mapa salta allá', async () => {
+    vi.mocked(mapaApi.buscar)
+      .mockResolvedValueOnce({ puntos: [], celda: 0.01, hay_mas: false }) // zona visible inicial: nada
+      .mockResolvedValueOnce({ puntos: [puntoLejos], celda: 1, hay_mas: false }); // toda Cuba: sí hay
+
+    let flyToEspiado: ReturnType<typeof vi.fn> | undefined;
+    render(createElement(MapaExplorar, {
+      tab: 'servicios', q: 'plomero', category: '', onAbrir: () => {}, onAbrirLista: () => {}, onCerrarPanel: () => {},
+      alMapa: (m: LeafletMap) => { flyToEspiado = vi.fn(); m.flyTo = flyToEspiado; },
+    }));
+
+    await act(async () => { await espera(280); }); // antirrebote de zoom inicial: zona visible vacía
+    await act(async () => { await espera(10); }); // resuelve la petición de «toda Cuba»
+
+    expect(flyToEspiado).toHaveBeenCalledWith([20.1, -75.8], 13, { duration: 0.8 });
   });
 });
