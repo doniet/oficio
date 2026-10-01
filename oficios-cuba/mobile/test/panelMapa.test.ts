@@ -49,6 +49,18 @@ describe('estado del panel del mapa', () => {
     expect(vuelta.listaPrevia).toBeNull();
   });
 
+  // El otro lado de listaPrevia: si sobreviviera a un contenido nuevo, el Atrás desde un pin suelto
+  // volvería a una celda de la que ese punto nunca salió.
+  it('abrir un punto o una lista nuevos descartan la lista previa', () => {
+    const conListaPrevia = reduceElegirDeLista(
+      reduceAbrirLista(ESTADO_PANEL_VACIO, [punto('a'), punto('b')]),
+      punto('b'),
+    );
+    expect(conListaPrevia.listaPrevia?.map((p) => p.id)).toEqual(['a', 'b']);
+    expect(reduceAbrirPunto(conListaPrevia, punto('otro')).listaPrevia).toBeNull();
+    expect(reduceAbrirLista(conListaPrevia, [punto('c'), punto('d')]).listaPrevia).toBeNull();
+  });
+
   // Review Focus 4: la zona se recargó entre el toque y la elección, y el punto elegido ya no está
   // en `puntos`. El panel no puede romperse por eso: solo guarda lo que le dan.
   it('elegir un punto que el mapa ya no tiene sigue abriendo su ficha', () => {

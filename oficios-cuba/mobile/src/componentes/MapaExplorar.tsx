@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, NativeSyntheticEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,7 +114,8 @@ const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; 
 
 export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista }: {
   tab: string; q: string; category: string;
-  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota. */
+  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota.
+   *  Todavía no se lee aquí: lo consume la Tarea 8. No es código muerto, no limpiarlo. */
   seleccionadoId?: string | null;
   onAbrir(p: PuntoMapa): void;
   /** Los negocios de una celda al tocar un grupo. Si la celda falla, llega vacía con el mensaje:
@@ -154,13 +155,26 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
     alMoverMapa(bboxDeLimites(bounds), esZoom);
   }, [alMoverMapa]);
 
+  // Cuál es el toque vigente. Existe porque `cargarCelda` resuelve `[]` también cuando ABANDONA la
+  // petición (otro toque, desmontaje): sin este token, una respuesta abandonada es indistinguible de
+  // una celda vacía y abre una ficha que nadie pidió. Cubre tres casos con una sola guarda:
+  // (1) tocar un grupo y luego otro — el primero abriría su ficha y el segundo la taparía al vuelo;
+  // (2) irse a la lista mientras la celda carga — la hoja se abriría encima de la lista;
+  // (3) cambiar `q`/categoría tras el toque — ahí NADA se abandona, la petición termina bien con los
+  // resultados del filtro viejo y reabriría la hoja que el cambio acababa de cerrar. Por (3) no basta
+  // con que `cargarCelda` señalara el abandono aparte: el token es lo único que cubre los tres.
+  const tokenCelda = useRef(0);
+  useEffect(() => () => { tokenCelda.current += 1; }, [q, category]);
+
   // Un punto suelto abre su ficha; un grupo abre la lista de su celda. Es la misma interacción para
   // el «+N» y para un área: enseñar dos gestos para el mismo hecho sería pedirle al usuario que
   // aprenda dos cosas.
   const abrir = useCallback((p: PuntoMapa) => {
+    const token = (tokenCelda.current += 1);
     if (p.detras === 0) { onAbrir(p); return; }
     cargarCelda(p.cy, p.cx)
       .then((devueltos) => {
+        if (token !== tokenCelda.current) return;
         const c = contenidoDeCelda(p, devueltos);
         if (c.clase === 'ficha') onAbrir(c.punto);
         else onAbrirLista(c.puntos);
@@ -169,7 +183,10 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
       // NADA, ni hoja ni mensaje. Se abre igual, con el punto que sí se conoce, el mensaje y CÓMO
       // reintentar — quien abre la hoja no sabe pedir celdas, así que sin la clausura el botón
       // «Reintentar» existiría y no haría nada, que es peor que no tenerlo.
-      .catch(() => onAbrirLista([p], 'No pudimos cargar los negocios de esta zona.', () => abrir(p)));
+      .catch(() => {
+        if (token !== tokenCelda.current) return;
+        onAbrirLista([p], 'No pudimos cargar los negocios de esta zona.', () => abrir(p));
+      });
   }, [cargarCelda, onAbrir, onAbrirLista]);
 
   const alPresionarCercaDeMi = useCallback(async () => {
