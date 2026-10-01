@@ -1246,3 +1246,32 @@
   sin empezar. Después de eso, compilar y publicar la 0.2.5.
 - Blockers: ninguno de código. La **0.2.5 no está compilada ni publicada** — esta tarea no generó
   ningún APK.
+
+## 2026-10-01 — claude-code (vps2) — Ola de arreglos de la revisión final de `mapa-app-paridad`
+- Changes: cuatro arreglos Important y tres menores, todos de la revisión de rama completa.
+  (1) `mobile/src/lib/mapa.ts`: cambiar pestaña/texto/categoría ahora aborta la pregunta por toda
+  Cuba — su respuesta tardía fijaba `sugerencia` del término abandonado y el mapa volaba lejos de los
+  resultados que el usuario sí veía. (2) Mismo archivo: `pedirCelda` era la única petición de la app
+  sin tiempo de espera; una conexión colgada dejaba la promesa sin asentarse y tocar un «+N» no hacía
+  NADA — ahora rechaza a los 20 s (misma constante `TIEMPO_ESPERA_MS` y mismo patrón que `cargar()`)
+  y cae en el camino de error que ya abre la lista con «Reintentar»; el abandono por segundo toque
+  sigue resolviendo vacío y en silencio. (3) `MapaExplorar.tsx`: la selección se prueba DENTRO de la
+  rama no-zona, así que un punto aproximado con la ficha abierta sigue siendo área y no pasa a gota
+  anclada en coordenada exacta (el plan pedía lo contrario; manda el spec, que habla de sustituir el
+  círculo, nunca el área). (4) `HojaPunto.tsx`: la lista de error ya no se anuncia «1 negocio en esta
+  zona» sobre un fallo. Menores: `tab` en las deps del efecto del token de celda; la línea de Security
+  de la entrada anterior corregida (la app llama a `/api/mapa`, `/api/mapa/celda` y `/api/providers/:id`
+  — el estreno es `/api/mapa/celda`, no `/catalog/provider/:id`, que es de la web); y el checklist de
+  dispositivo, cuyo comando de compilación entraba en `mobile/android/` sin crearla (ahora lleva el
+  prebuild y apunta a la skill `oficio-apk-release-publicar`) y cuyo punto del control «volver a la
+  lista» sube a la sección de decisiones con el dato que lo hace decidible (la web sí lo pinta,
+  `frontend/src/components/mapa/FichaPunto.tsx:359`). Ese control NO se implementó: es decisión de Dariel.
+- Tests: pass — **81/81** en 9 suites (79 antes; las 2 nuevas cubren los arreglos 1 y 2 y se
+  comprobaron en rojo quitando cada arreglo). `tsc --noEmit` limpio. Los arreglos 3, 4 y 5 son de
+  componentes, que este proyecto no renderiza en pruebas: verificados leyendo.
+- Security: sin cambios de superficie. Ningún archivo de código fuera de `oficios-cuba/mobile/`,
+  ninguna dependencia nueva, ningún endpoint nuevo.
+- Next: el control visible «volver a la lista» y el contraste del icono de `ListaCelda` esperan
+  decisión de Dariel (sección B del checklist de dispositivo); el recorrido de 9 puntos sigue sin
+  caminarse en un Android real. Sub-proyecto 2 de la 0.2.5 sin empezar.
+- Blockers: ninguno.
