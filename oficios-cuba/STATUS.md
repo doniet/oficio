@@ -872,3 +872,17 @@
   acordeón cerrado antes de darlas por buenas sin preguntar el alcance.
 - Blockers: ninguno. Sin verificación visual en navegador real (vps2 no tiene Chromium); se
   verificó con una previsualización aislada (artifact) con el mismo HTML/clases del componente.
+
+## 2026-10-01 00:35 UTC — claude-code (vps2) — Marcadores del mapa: naranja claro/fuerte en vez de oscuro
+- Changes (`851be6a`): Dariel, ya viéndolo en producción: "el color oscuro no ha quedado bien".
+  `ink-700` fuera; los dos tipos pasan a naranja, diferenciados por intensidad —
+  `brand-400` (claro) para un servicio suelto, `brand-600` (fuerte, sin cambio) para un negocio —
+  en círculo, pin seleccionado y su insignia. Mismo archivo que las dos entradas anteriores
+  (`MapaExplorar.tsx`); sin tocar backend ni esquema.
+- Tests: pass — frontend 47/47 (el test de color actualizado a los tonos nuevos). `tsc` y
+  `vite build` limpios. Verificado en producción: el chunk `MapaExplorar-CZocD7nj.js` servido por
+  Cloudflare contiene `bg-brand-400`/`text-brand-400` y ningún rastro de `ink-700`.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno. Mismo límite de siempre: sin navegador en vps2 para una verificación visual
+  en vivo; este ajuste lo pidió Dariel tras verlo él mismo en producción.
