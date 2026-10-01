@@ -1040,3 +1040,25 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno.
+
+## 2026-10-01 02:44 UTC — claude-code (vps2) — En el mapa (móvil) el banner aparece siempre recogido
+- Changes (`c9a078c`): Dariel pidió invertir la regla anterior — hasta ahora el banner NUNCA se
+  recogía en la vista de mapa (se excluía a propósito, ver entradas previas); ahora, en móvil, se
+  queda SIEMPRE como círculo ahí, sin depender de scroll (el mapa no tiene scroll de página: está
+  fijo a pantalla completa). Le deja más alto útil al mapa, que ya trae sus propios controles
+  flotantes (`ControlesMapa.tsx`).
+  La barra inferior NO sigue esta regla nueva: se queda visible en el mapa — ahí ES la única
+  navegación disponible, decisión ya documentada en el código desde antes de esta serie de
+  cambios. Antes una sola variable (`bannerRecogido`) gobernaba el header y la barra inferior; se
+  separó en dos (`bannerRecogido` / `tabBarOculta`) para que esta regla nueva del header no
+  arrastrara a la barra inferior sin querer.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **64/64** (el test de mapa se invirtió para reflejar la regla nueva — el
+  banner arranca recogido de entrada, la barra inferior se queda visible —, y se sumó uno para
+  escritorio en el mapa, donde no aplica nada de esto). `tsc` y `vite build` limpios. Verificado en
+  producción: el hash del chunk `index-CkvX69FZ.js` servido por Cloudflare coincide exactamente
+  con el del build local que ya incluía el cambio (los nombres de variable no sobreviven la
+  minificación, así que el hash de contenido es la prueba fiable aquí).
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno.
