@@ -229,6 +229,29 @@ describe('PanelMapa — hoja móvil', () => {
     expect(providerApi.contact).toHaveBeenCalledWith('p1', 'call');
   });
 
+  it('los servicios van en un acordeón cerrado: sus fotos no se piden hasta desplegarlo', async () => {
+    const servicios = [{
+      id: 's1', title: 'Cambio de tubería', description: null, price_min: 1000, price_max: null,
+      price_type: 'fixed' as const, price_currency: 'CUP' as const, cover: '/demo/plomeria-1.webp',
+      category_name: 'Plomería', category_icon: '🔧', category_slug: 'plomeria', created_at: '2024-01-01T00:00:00.000Z',
+    }];
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock, services: servicios } } as any);
+    const { container } = montar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const toggle = await screen.findByRole('button', { name: /Servicios/ });
+
+    // Cerrado por defecto: ni el link al servicio ni su foto existen todavía en el DOM.
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('link', { name: /Cambio de tubería/ })).toBeNull();
+    expect(container.querySelectorAll('img')).toHaveLength(0);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(await screen.findByRole('link', { name: /Cambio de tubería/ })).toBeTruthy();
+    expect(container.querySelectorAll('img')).toHaveLength(1);
+  });
+
   it('si falla la carga de la ficha completa, "Reintentar" vuelve a pedirla', async () => {
     vi.mocked(providerApi.getById)
       .mockRejectedValueOnce(new Error('caída'))

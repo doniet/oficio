@@ -1,11 +1,68 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, X } from 'lucide-react';
 import { apiError, providerApi } from '../../services/api';
-import { telLink, whatsappLink } from '../../lib/format';
-import { Avatar, ErrorState, RatingInline, Spinner } from '../ui';
+import { telLink, whatsappLink, priceFrom } from '../../lib/format';
+import { useTasa } from '../../hooks/useTasa';
+import { Avatar, cn, CoverImage, ErrorState, RatingInline, Spinner } from '../ui';
 import { NegocioChip } from '../cards';
-import type { ProviderPublic, PuntoMapa } from '../../types';
+import type { ProviderPublic, ProviderServiceItem, PuntoMapa } from '../../types';
+
+/**
+ * Tarjeta compacta de un servicio dentro del panel del mapa: foto, categoría, título y precio.
+ * Vive en su propia sección colapsada — ver `SeccionServicios` — para que sus fotos (lo más
+ * pesado de la ficha) no bajen hasta que alguien pida verlas de verdad.
+ */
+function ServicioMiniCard({ service }: { service: ProviderServiceItem }) {
+  const tasa = useTasa();
+  const price = priceFrom(service, tasa);
+  return (
+    <Link
+      to={`/servicio/${service.id}`}
+      className="group flex gap-3 rounded-xl border border-sand-200 p-2 transition hover:border-brand-300 hover:shadow-card"
+    >
+      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-sand-100">
+        <CoverImage src={service.cover} seed={service.category_slug} icon={service.category_icon} alt="" />
+      </div>
+      <div className="min-w-0 flex-1 py-0.5">
+        <p className="truncate text-xs font-semibold text-ink-400"><span aria-hidden="true">{service.category_icon}</span> {service.category_name}</p>
+        <h4 className="line-clamp-1 text-sm font-bold leading-snug text-ink-900 group-hover:text-brand-700">{service.title}</h4>
+        <p className="mt-0.5 leading-none">
+          {price.prefix && <span className="mr-1 text-xs text-ink-400">{price.prefix}</span>}
+          <span className="font-display text-sm font-bold text-ink-900">{price.amount}</span>
+          {price.suffix && <span className="ml-0.5 text-xs text-ink-400">{price.suffix}</span>}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * Acordeón cerrado por defecto: nadie baja una sola foto de servicio hasta tocar "Servicios".
+ * Las tarjetas (y sus `<img>`) ni siquiera existen en el DOM mientras está cerrado — no basta con
+ * `loading="lazy"` del navegador, que igual las pide si el panel es corto y entran en pantalla.
+ */
+function SeccionServicios({ servicios, abierta, onToggle }: { servicios: ProviderServiceItem[]; abierta: boolean; onToggle: () => void }) {
+  if (servicios.length === 0) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierta}
+        className="flex w-full items-center justify-between py-1 text-sm font-bold text-ink-900"
+      >
+        <span>Servicios <span className="font-sans font-semibold text-ink-400">({servicios.length})</span></span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-ink-400 transition-transform', abierta && 'rotate-180')} aria-hidden="true" />
+      </button>
+      {abierta && (
+        <ul className="mt-2 animate-fade-in space-y-2">
+          {servicios.map((s) => <li key={s.id}><ServicioMiniCard service={s} /></li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /**
  * El CONTENIDO de la ficha de un punto del mapa. No sabe nada del envoltorio que lo contiene:
@@ -26,9 +83,19 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   onVolverALista?: () => void;
 }) {
   const [perfil, setPerfil] = useState<ProviderPublic | null>(null);
+  // Van en la MISMA respuesta que `perfil` (GET /providers/:id ya los incluye: pedirlos aparte
+  // sería una segunda vuelta por la red para datos que ya llegaron). Lo que de verdad se difiere
+  // al clic es su RENDERIZADO — y con él, la descarga de sus fotos — en `SeccionServicios`.
+  const [servicios, setServicios] = useState<ProviderServiceItem[]>([]);
+  const [serviciosAbiertos, setServiciosAbiertos] = useState(false);
   const [cargandoPerfil, setCargandoPerfil] = useState(false);
   const [errorPerfil, setErrorPerfil] = useState('');
   const [reintentos, setReintentos] = useState(0);
+
+  // Un punto nuevo empieza siempre con la sección cerrada: si no, al pasar de un negocio con
+  // servicios abiertos a otro, el acordeón seguiría desplegado mostrando (por un instante) la
+  // lista vacía o la del anterior mientras llega la respuesta.
+  useEffect(() => { setServiciosAbiertos(false); }, [punto.id]);
 
   // El id ya pedido. Antes esto se hacía con un efecto que ponía `setPerfil(null)` al cambiar de
   // punto y con `perfil` entre las dependencias del efecto de carga: el resultado era que al pasar
@@ -52,6 +119,7 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
       .then((r) => {
         if (cancelado) return;
         setPerfil(r.data.provider);
+        setServicios(r.data.services ?? []);
         setCargandoPerfil(false);
       })
       .catch((err) => {
@@ -69,6 +137,9 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   // respuesta, `perfil` todavía guarda el anterior, y pintarlo mostraría el teléfono de un
   // negocio bajo el nombre de otro.
   const perfilVigente = perfil?.id === punto.id ? perfil : null;
+  // `servicios` se guarda en el mismo `.then()` que `perfil`: si uno es del punto vigente, el otro
+  // también. Nada que comparar aparte.
+  const serviciosVigentes = perfilVigente ? servicios : [];
 
   const telefonoContacto = perfilVigente?.whatsapp ?? null;
   const mostrarWhatsapp = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'call';
@@ -143,6 +214,11 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
                   )}
                 </div>
               )}
+              <SeccionServicios
+                servicios={serviciosVigentes}
+                abierta={serviciosAbiertos}
+                onToggle={() => setServiciosAbiertos((v) => !v)}
+              />
             </div>
           )}
         </div>
