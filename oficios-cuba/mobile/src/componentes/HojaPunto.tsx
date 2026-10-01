@@ -95,7 +95,7 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
       backdropComponent={renderBackdrop}
       backgroundStyle={e.fondo}
       handleIndicatorStyle={e.asa}
-      accessibilityLabel={lista ? tituloCelda(lista.length) : punto ? `Ficha de ${punto.nombre}` : 'Ficha del punto seleccionado'}
+      accessibilityLabel={lista ? tituloCelda(errorLista ? 0 : lista.length) : punto ? `Ficha de ${punto.nombre}` : 'Ficha del punto seleccionado'}
     >
       <BottomSheetScrollView contentContainerStyle={e.contenido}>
         {lista ? (
