@@ -1225,8 +1225,9 @@
 - Tests: pass — app **79/79** en 9 suites (línea base 47/7 + 32 nuevas de este plan); `tsc --noEmit`
   limpio.
 - Security: sin cambios de superficie — ningún archivo fuera de `oficios-cuba/mobile/`, sin tocar
-  backend ni esquema; los mismos endpoints públicos de antes (`/api/mapa`, `/catalog/provider/:id`),
-  ninguno nuevo.
+  backend ni esquema. La app llama a `/api/mapa`, `/api/mapa/celda` y `/api/providers/:id`. De esos,
+  el único que no consumía antes es **`GET /api/mapa/celda`**, que ya existía, es público y usa el
+  mismo filtro de visibles que `/api/mapa`: ningún endpoint nuevo.
 - Pendiente de verificar en un teléfono real (y por qué no se hizo aquí): el recorrido completo de
   los 9 puntos del plan sigue SIN caminarse — no es un recorte, es que este host (vps2) no tiene con
   qué: falta `oficios-cuba/mobile/android/` (proyecto Expo gestionado, nunca prebuilt en vps2), falta

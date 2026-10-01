@@ -16,11 +16,22 @@ no se vio. Esta lista es para quien sí tenga un emulador o un teléfono a mano.
 Es el MISMO código de la release, compilado solo para x86_64 porque el emulador no arranca la
 release real (que es solo ARM). No se publica nada desde aquí.
 
+`oficios-cuba/mobile/android/` **no existe en el repo**: es un proyecto Expo gestionado y la carpeta
+está en `.gitignore`, así que hay que generarla con un prebuild antes de poder llamar a `gradlew`.
+
 ```bash
-cd oficios-cuba/mobile/android && F=~/.claude/.oficio-firma && OFICIO_FIRMA_ALMACEN=$F/oficios-cuba.p12 \
+cd oficios-cuba/mobile
+npx expo prebuild --platform android --no-install   # crea android/, que no viene en el repo
+cd android && F=~/.claude/.oficio-firma && OFICIO_FIRMA_ALMACEN=$F/oficios-cuba.p12 \
   OFICIO_FIRMA_CLAVE="$(cat $F/clave.txt)" OFICIO_FIRMA_ALIAS=oficios \
   ./gradlew assembleRelease -q -PreactNativeArchitectures=x86_64
 ```
+
+La llave de firma (`~/.claude/.oficio-firma`) tampoco está en el repo. Y si de paso se va a PUBLICAR
+una versión, no se usa este atajo: el flujo entero —subir `versionCode`, release ARM firmada,
+verificación de la huella, variante x86_64 y emulador— lo tiene la skill
+**`oficio-apk-release-publicar`**, y allí el orden importa (primero `./scripts/apk-release.sh`, cuyo
+prebuild es el que fija la versión; la variante x86_64 después).
 
 ## A. El recorrido de 9 puntos (Explorar → Mapa)
 
@@ -49,10 +60,10 @@ orden, mirando la pantalla en cada paso — no basta con que la app no truene.
    cuando se corrija. No vale dejarlo pasar porque «parece ir bien»: es precisamente el valor que
    este plan quería comprobar y no pudo.
 
-## B. Dos decisiones visuales que necesitan a Dariel (accesibilidad)
+## B. Decisiones que necesitan a Dariel
 
-Ambas surgieron en revisión, ambas son reales, y ninguna de las dos tiene una respuesta de código
-correcta sin que alguien mire la pantalla y decida.
+Todas surgieron en revisión, todas son reales, y ninguna tiene una respuesta de código correcta sin
+que alguien mire la pantalla y decida.
 
 10. **Icono de tipo en la lista de una celda, bajo contraste.** En `ListaCelda.tsx`, cada fila usa
     `PIN_POR_TIPO[tipo].fondo` como color de un icono `location` suelto sobre fondo claro. Esa tabla
@@ -63,12 +74,19 @@ correcta sin que alguien mire la pantalla y decida.
     de tipo se pierde para baja visión. **Decidir uno:** un mini-pin con el mismo par relleno+glifo
     que ya se usa en el mapa; un tono más oscuro del mismo color solo para este icono; o quitar el
     color de tipo de la lista y dejar que lo diga el texto.
-11. **La lista de error de un solo negocio se anuncia mal.** Cuando una celda resuelve en un único
-    negocio y ese negocio falla al abrir, la app reutiliza `ListaCelda` con un solo elemento para
-    mostrar el error — y la etiqueta de accesibilidad de esa lista anuncia «1 negocio aquí» mientras
-    el cuerpo visible muestra un mensaje de fallo. Quien use lector de pantalla oye un conteo de
-    éxito sobre un fallo. **Decidir:** si el camino de error necesita su propia etiqueta de
-    accesibilidad en vez de heredar la de la lista normal.
+11. ~~**La lista de error de un solo negocio se anuncia mal.**~~ **RESUELTO** (ola de arreglos del
+    2026-10-01, no necesitó decisión): la etiqueta de accesibilidad de `HojaPunto` anunciaba
+    «1 negocio en esta zona» mientras el cuerpo mostraba el fallo. Ahora usa la misma regla que ya
+    aplicaba `ListaCelda` a su título visible — en caso de error, el neutro `tituloCelda(0)`.
+15. **No hay control visible para «volver a la lista».** Cuando la ficha se abrió desde la lista de
+    una celda, el único control visible es la X («Cerrar la ficha»), que cierra la hoja entera y
+    pierde la celda. Volver a la lista existe —el estado y el manejador están puestos
+    (`onVolverALista` en `HojaPunto.tsx`)— pero solo se alcanza con el gesto/botón Atrás de Android:
+    quien no lo pruebe no sabe que está. **El dato que lo hace decidible:** la web SÍ pinta ese
+    control, un «← Volver a la lista» en `frontend/src/components/mapa/FichaPunto.tsx:359`. O sea
+    que no es una divergencia pensada, es que en la app falta. **Decidir:** se añade la flecha (y la
+    app iguala a la web), o se deja el comportamiento solo en Atrás y se anota como divergencia
+    deliberada. Deliberadamente NO se implementó en la ola de arreglos: es decisión de producto.
 
 ## C. Dos detalles cosméticos de la gota (menores, preexistentes al dibujo)
 
@@ -86,15 +104,9 @@ No bloquean nada y son del orden de unos pocos píxeles — pero solo se ven mir
     `Views` en vez de un path SVG. Ver si se nota a simple vista a densidades 2x/3x; si no se nota,
     no amerita tocarlo.
 
-## D. Dos hallazgos menores que no son de este checklist pero vale saber si se vuelve a este código
+## D. Un hallazgo menor que no es de este checklist pero vale saber si se vuelve a este código
 
 14. **Comentario roto y preexistente en `HojaPunto.tsx:9-12`** (de antes de este plan): le falta la
     línea de apertura, sus dos primeras líneas se contradicen entre sí, y nombra una variable
     (`altoReservadoMapa`) que ya no existe (hoy es `altoReservado`). Arreglo de una línea si alguien
     pasa por ahí; fuera de alcance de este plan.
-15. **La X, no una flecha, es el único control visible para volver cuando la ficha se abrió desde
-    una lista.** El efecto real de Atrás (Android, botón o gesto) sí vuelve a la lista — pero la
-    ficha solo muestra una X con etiqueta «Cerrar la ficha», que además, en ese caso, pierde la
-    celda si se toca en vez de usar Atrás. Es una decisión de producto, no un defecto: la X hace
-    exactamente lo que dice. Si alguna vez molesta en uso real, la solución es una flecha visible
-    cuando venga de una lista.
