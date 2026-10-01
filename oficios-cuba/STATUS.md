@@ -1102,3 +1102,38 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno.
+
+## 2026-10-01 03:10 UTC — claude-code (vps2) — Catálogo demo para seis proveedores que se quedaron sin productos
+- Changes (`0bcb91c`): Dariel pidió poblar más datos demo para poder buscar productos. Causa de
+  que `catalog_items` estuviera en 0 en producción pese a que `seedDemo()` ya sembraba catálogo
+  (ElectroHogar y Dulces La Abuela, entrega del 26-sep): ese código se agregó DESPUÉS de que la
+  base de producción ya existiera, y el guardián de `seedDemo()` (mira solo si `cliente@demo.com`
+  ya está) nunca lo deja correr de nuevo sobre una base ya sembrada.
+  `seedCatalogoDemo()` (`backend/src/db/seed-catalogo-demo.ts`) complementa a `seedDemo()` para
+  bases ya sembradas: busca cada proveedor demo por email, se salta el que ya tenga algún artículo
+  (idempotente — no toca ElectroHogar ni Dulces), y le agrega catálogo a los otros seis que
+  tenían plan con cupo (básico o pro) pero ningún producto: Carpintería Hermanos Díaz (6),
+  Clima Frío Express (5), Estudio de Belleza Yami (5), Mecánica El Tinajón (6), Pinturas Colonial
+  Trinidad (5), Mudanzas Vueltabajo (5) — 32 artículos nuevos, con fotos reusando las que ya
+  existen en `frontend/public/demo/`. Mismo centinela que `seedMapa()`: exige `DEMO_MODE=true`.
+  CLI nuevo `npm run seed:catalogo` (`seed-catalogo-demo-cli.ts`), mismo patrón que
+  `seed-mapa-cli.ts`. Sin cambios de esquema.
+- Tests: pass — backend **271/271** (4 nuevos para `seedCatalogoDemo`: se salta sin fallar si
+  `seedDemo()` no corrió antes; se niega sin `DEMO_MODE`; crea los seis catálogos sin duplicar los
+  dos ya existentes; idempotente en una segunda corrida), corridos contra una base Postgres
+  temporal y aislada, no la de producción. Probado también contra una COPIA restaurada del backup
+  de producción antes de tocar la real: 32 creados, conteos de usuarios/perfiles intactos
+  (319/312), sin filas huérfanas, segunda corrida 0 creados.
+- Security: sin cambios de red, auth ni esquema — solo datos, y con el mismo guardián de
+  `DEMO_MODE=true` que ya protege `seedMapa()`. Backup (`data/oficios-2026-10-01-0309-pre-seed-
+  catalogo.dump`) antes de tocar la base real.
+- Completado en producción: `docker compose up -d --build oficio_api` (y recreado
+  `oficio_notifier`, misma imagen, para que ambos corran el mismo código) →
+  `docker exec oficio_api node dist/db/seed-catalogo-demo-cli.js` → 32 creados, mismo resultado que
+  la copia de prueba, conteos de usuarios/perfiles intactos, sin filas huérfanas. Verificado de
+  punta a punta: `GET /api/catalog/search?q=pintura` y `?q=batería` devuelven los artículos
+  nuevos con su proveedor correcto; la foto `/demo/pintura-1.webp` sirve 200; `GET /api/mapa?
+  tab=productos` pasó de 0 a 7 puntos.
+- Next: ninguno.
+- Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
+  serie de esta sesión.
