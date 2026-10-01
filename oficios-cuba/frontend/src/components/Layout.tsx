@@ -91,7 +91,7 @@ function UserMenu() {
   );
 }
 
-function MobileTabBar() {
+function MobileTabBar({ oculta }: { oculta: boolean }) {
   const { user, unread } = useAuth();
   const tabs = [
     { to: '/', label: 'Inicio', icon: Home, end: true },
@@ -107,7 +107,17 @@ function MobileTabBar() {
       : [{ to: '/login', label: 'Entrar', icon: UserIcon }]),
   ];
   return (
-    <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-sand-200 bg-white/95 backdrop-blur md:hidden" aria-label="Navegación principal">
+    <nav
+      className={cn(
+        'pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-sand-200 bg-white/95 backdrop-blur transition-transform duration-300 ease-out md:hidden',
+        oculta && 'translate-y-full',
+      )}
+      aria-label="Navegación principal"
+      aria-hidden={oculta}
+      // Mismo motivo que el resto del banner superior (Layout.tsx): sin esto, deslizada fuera de
+      // la pantalla sigue siendo alcanzable con Tab pese a aria-hidden.
+      {...({ inert: oculta ? '' : undefined } as Record<string, string | undefined>)}
+    >
       <ul className="flex">
         {tabs.map((t) => (
           <li key={t.to} className="flex-1">
@@ -259,7 +269,7 @@ export default function Layout() {
       )}
 
       {/* En el chat la barra inferior tapaba la caja de texto: la conversación ocupa toda la pantalla. */}
-      {!inChat && <MobileTabBar />}
+      {!inChat && <MobileTabBar oculta={bannerRecogido} />}
     </div>
   );
 }

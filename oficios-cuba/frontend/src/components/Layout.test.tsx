@@ -59,6 +59,18 @@ describe('Layout — banner móvil que se recoge al bajar', () => {
     expect(cabecera.getByText('uno', { exact: false })).toBeTruthy();
   });
 
+  it('al recogerse el banner, la barra inferior traslúcida también se oculta', async () => {
+    montar();
+    const tabBar = screen.getByRole('navigation', { name: 'Navegación principal' });
+    expect(tabBar.getAttribute('aria-hidden')).toBe('false');
+
+    await act(async () => { await scrollearA(300); });
+    expect(tabBar.getAttribute('aria-hidden')).toBe('true');
+
+    await act(async () => { await scrollearA(100); });
+    expect(tabBar.getAttribute('aria-hidden')).toBe('false');
+  });
+
   it('cerca del tope de la página se queda desplegado aunque el delta diera "bajando"', async () => {
     montar();
     await act(async () => { await scrollearA(20); }); // por debajo del umbral de inicio
