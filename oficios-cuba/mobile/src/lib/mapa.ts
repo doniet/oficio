@@ -38,14 +38,23 @@ const ANTIRREBOTE_TEXTO_MS = 300;
 // temporizador una conexión cubana lenta que se cuelga deja `cargando: true` para siempre.
 const TIEMPO_ESPERA_MS = 20000;
 
+// Compartida entre pedirMapa y pedirCelda a propósito: el backend comparte este mismo filtro entre
+// GET /mapa y GET /mapa/celda (filtroDeVisibles en backend/src/routes/mapa.ts) precisamente para
+// que, si cada endpoint escribiera el suyo, la lista de una celda no acabe sin coincidir con el
+// «+N» que la anuncia. Duplicarlo aquí reintroduciría esa misma divergencia del lado del cliente.
+function qsDeMapa(bbox: Bbox, params: { tab: string; q?: string; category?: string }): URLSearchParams {
+  const qs = new URLSearchParams({ bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, tab: params.tab });
+  if (params.q) qs.set('q', params.q);
+  if (params.category) qs.set('category', params.category);
+  return qs;
+}
+
 async function pedirMapa(
   bbox: Bbox,
   params: { tab: string; q?: string; category?: string },
   signal: AbortSignal,
 ): Promise<MapaRespuesta> {
-  const qs = new URLSearchParams({ bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, tab: params.tab });
-  if (params.q) qs.set('q', params.q);
-  if (params.category) qs.set('category', params.category);
+  const qs = qsDeMapa(bbox, params);
   const res = await fetch(`${configApi.baseUrl}/mapa?${qs.toString()}`, { signal });
   if (!res.ok) throw new Error('No se pudo cargar el mapa');
   return (await res.json()) as MapaRespuesta;
@@ -58,14 +67,9 @@ async function pedirCelda(
   params: { tab: string; q?: string; category?: string },
   signal: AbortSignal,
 ): Promise<MapaRespuesta> {
-  const qs = new URLSearchParams({
-    bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`,
-    cy: String(cy),
-    cx: String(cx),
-    tab: params.tab,
-  });
-  if (params.q) qs.set('q', params.q);
-  if (params.category) qs.set('category', params.category);
+  const qs = qsDeMapa(bbox, params);
+  qs.set('cy', String(cy));
+  qs.set('cx', String(cx));
   const res = await fetch(`${configApi.baseUrl}/mapa/celda?${qs.toString()}`, { signal });
   if (!res.ok) throw new Error('No se pudo cargar la celda');
   return (await res.json()) as MapaRespuesta;

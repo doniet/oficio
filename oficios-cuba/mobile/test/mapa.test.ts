@@ -338,6 +338,26 @@ describe('usarMapa', () => {
     expect(celda.signal.aborted).toBe(true);
   });
 
+  it('un fallo de red real en la celda SÍ se propaga (no es un abort)', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    let promesa!: Promise<PuntoMapa[]>;
+    act(() => { promesa = h.estado.cargarCelda(0, 0); });
+    const celda = llamadas.find((l) => l.url.includes('/mapa/celda'))!;
+    act(() => { celda.rechazar(new Error('red')); });
+
+    await expect(promesa).rejects.toThrow('red');
+
+    h.desmontar();
+  });
+
   it('un rectángulo sin área no gasta petición ni se queda como bbox pintado', async () => {
     const { fetchMock } = fetchControlable();
     global.fetch = fetchMock as unknown as typeof fetch;
