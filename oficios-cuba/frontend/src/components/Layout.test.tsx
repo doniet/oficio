@@ -40,7 +40,13 @@ async function scrollearA(y: number) {
 const contenedorResto = () => screen.getByTestId('banner-resto');
 
 describe('Layout — banner móvil que se recoge al bajar', () => {
-  beforeEach(() => { fijarAncho(390); });
+  beforeEach(() => {
+    fijarAncho(390);
+    // window.scrollY es global y no se resetea solo entre pruebas: sin esto, un test que deja la
+    // página "scrolleada" contaminaba el `ultimoY` inicial del siguiente — con el MISMO valor de
+    // scroll que el anterior, el delta daba 0 y nunca se consideraba "bajando".
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+  });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it('al bajar la página se recoge a un círculo con el logo, y al subir vuelve a ser barra', async () => {
@@ -57,6 +63,18 @@ describe('Layout — banner móvil que se recoge al bajar', () => {
     await act(async () => { await scrollearA(100); });
     expect(contenedorResto().getAttribute('aria-hidden')).toBe('false');
     expect(cabecera.getByText('uno', { exact: false })).toBeTruthy();
+  });
+
+  // El fondo transparente no basta: backdrop-blur-md sigue difuminando lo que pasa por debajo
+  // aunque no tenga color, así que es un rastro de "barra" tan visible como el fondo mismo.
+  it('recogido, el header no deja ni el desenfoque como rastro de la barra', async () => {
+    montar();
+    const header = screen.getByRole('banner');
+    expect(header.className).toContain('backdrop-blur-md');
+
+    await act(async () => { await scrollearA(300); });
+    expect(header.className).not.toContain('backdrop-blur-md');
+    expect(header.className).toContain('backdrop-blur-none');
   });
 
   it('al recogerse el banner, la barra inferior traslúcida también se oculta', async () => {

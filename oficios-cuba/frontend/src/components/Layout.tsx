@@ -166,8 +166,11 @@ export default function Layout() {
         Saltar al contenido
       </a>
       <header className={cn(
-        'sticky top-0 z-40 backdrop-blur-md transition-[background-color,border-color] duration-300',
-        bannerRecogido ? 'border-b border-transparent bg-transparent' : 'border-b border-sand-200/80 bg-paper/90',
+        'sticky top-0 z-40 border-b transition-[background-color,border-color,backdrop-filter] duration-300',
+        // backdrop-blur-md solo con la barra puesta: recogida no puede dejar ni el desenfoque como
+        // rastro — sin fondo encima, ese blur igual se nota como una franja borrosa sobre lo que
+        // se está leyendo, que es justo lo que se pidió que no quedara.
+        bannerRecogido ? 'border-transparent bg-transparent backdrop-blur-none' : 'border-sand-200/80 bg-paper/90 backdrop-blur-md',
       )}>
         <div className="container-page flex h-16 items-center gap-4">
           {/* shrink-0: el logo nunca se achica al recogerse el resto — ES el banner recogido. */}
