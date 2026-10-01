@@ -11,6 +11,7 @@
     "test": "vitest run",
     "pagos": "tsx src/scripts/pagos.ts",
     "seed:mapa": "tsx src/db/seed-mapa-cli.ts",
+    "seed:catalogo": "tsx src/db/seed-catalogo-demo-cli.ts",
     "push:prueba": "tsx src/scripts/push-prueba.ts",
     "admin": "tsx src/scripts/admin.ts"
   },
