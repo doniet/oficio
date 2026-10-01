@@ -914,3 +914,37 @@
 - Next: ninguno.
 - Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
   previsualización aislada (artifact) con el mismo HTML/clases que el componente real.
+
+## 2026-10-01 01:41 UTC — claude-code (vps2) — Hoja móvil del mapa: sube más, carga desde el toque, iconos de contacto e indicador de scroll
+- Changes (`a07f57a`): Dariel reportó que en móvil la ficha "no se ve tan enriquecida" como en
+  escritorio. Causa raíz: `HojaPunto.tsx` solo pedía el perfil (`expandida=true`) cuando el usuario
+  desplegaba la hoja a pantalla casi completa ('abierta'); al tocar un punto, la hoja solo subía un
+  30% de la pantalla ('asomada') sin pedir nada, mostrando apenas el nombre. Cuatro cambios:
+  1. **`ALTO_ASOMADA_VH` 30→55**: cabe ya la portada y la cabecera sin arrastrar primero, dejando
+     igual casi la mitad de la pantalla con el mapa visible.
+  2. **`expandida` pasa a ser siempre `true`** mientras la hoja esté abierta (ya no depende de la
+     posición 'asomada'/'abierta'): el perfil se pide desde que se toca el punto, como ya hacía el
+     panel de escritorio — "asomada" es una vista real, no un simple avance.
+  3. **Iconos de Llamar, WhatsApp y "Pedir cita"** (nuevo en el mapa, vía `BookingModal`,
+     condicionado a `has_agenda`) junto a "Compartir", cada uno solo si el perfil lo ofrece de
+     verdad; se quitan los botones grandes de WhatsApp/Llamar que quedaban más abajo (ahora
+     duplicarían el acceso). `WhatsAppIcon` se exporta desde `ContactActions.tsx` para reusar el
+     SVG sin copiarlo.
+  4. **Indicador de "hay más abajo"**: degradado + flecha en el borde inferior de la hoja, que
+     compara el alto REAL visible en pantalla (no el alto interno fijo del contenedor con
+     scroll, que es siempre el de 'abierta' aunque esté 'asomada') contra el `scrollHeight` del
+     contenido — aparece solo si de verdad hay algo oculto, y desaparece al llegar al final.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **56/56** (6 nuevos/actualizados: el perfil se pide sin desplegar del
+  todo; los iconos de contacto aparecen condicionados a lo que ofrezca el perfil, o solo
+  "Compartir" si no ofrece nada; el indicador de scroll aparece y desaparece simulando
+  scrollHeight/scrollTop a mano — jsdom no hace layout real; los tests de la hoja ganaron
+  `AuthProvider` porque `BookingModal` usa `useAuth`, con `configApi.get` mockeado igual que ya
+  hace `Search.test.tsx` por la misma razón; guard de `ResizeObserver` añadido, mismo patrón que
+  `MapaExplorar.tsx`, porque jsdom no lo implementa). `tsc` y `vite build` limpios. Verificado en
+  producción: el chunk `Search-DPOW6nuv.js` contiene `hoja-contenido`, `hoja-indicador-mas` y
+  "Pedir cita"; `ContactActions-ivvquobV.js` (nuevo chunk, code-splitting de Vite) sirve 200.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno. Mismo límite de siempre (sin navegador en vps2); verificado antes con una
+  previsualización aislada (artifact) comparando la vista "asomada" antes/después.
