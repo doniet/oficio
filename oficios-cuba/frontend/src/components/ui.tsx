@@ -11,7 +11,7 @@ export function cn(...parts: (string | false | null | undefined)[]) {
 /** El mismo pin de `mobile/assets/marca/glifo.svg`, que es de donde salen los iconos de la app:
  *  mismas coordenadas y mismos colores, para que cualquier desvío entre los dos salte a la vista.
  *  Aquí va sin sombra (a 36 px solo ensucia) y con el viewBox ceñido al dibujo. */
-export function Logo({ light = false, className = '' }: { light?: boolean; className?: string }) {
+export function Logo({ light = false, soloIcono = false, className = '' }: { light?: boolean; soloIcono?: boolean; className?: string }) {
   // Dos Logo en la misma página (cabecera y pie) no pueden repetir el id del degradado.
   // useId() los devuelve con dos puntos («:r0:»), que en un url(#…) no todos los navegadores resuelven.
   const gradiente = `marca${useId().replace(/:/g, '')}`;
@@ -30,9 +30,13 @@ export function Logo({ light = false, className = '' }: { light?: boolean; class
         <circle cx="49" cy="47" r="19" fill="#FFFFFF" />
         <path d="M44 41 L50.5 37 V57.5" fill="none" stroke="#F26A00" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <span className={cn('font-display text-[1.2rem] font-bold leading-none tracking-tight', light ? 'text-white' : 'text-ink-900')}>
-        Encuentra<span className="text-brand-500">uno</span>
-      </span>
+      {/* soloIcono: para el banner móvil, que al colapsarse (ver useDireccionScroll en Layout.tsx)
+          se queda solo con el glifo dentro de un círculo — ahí el nombre completo no cabe. */}
+      {!soloIcono && (
+        <span className={cn('font-display text-[1.2rem] font-bold leading-none tracking-tight', light ? 'text-white' : 'text-ink-900')}>
+          Encuentra<span className="text-brand-500">uno</span>
+        </span>
+      )}
     </span>
   );
 }

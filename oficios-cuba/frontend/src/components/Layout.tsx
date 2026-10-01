@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { EnlaceApp } from './DescargarApp';
 import { useAuth } from '../hooks/useAuth';
+import { useDireccionScroll } from '../hooks/useDireccionScroll';
+import { useEsMovil } from '../hooks/useEsMovil';
 import { Avatar, Logo, cn } from './ui';
 
 function UnreadDot({ count, className = '' }: { count: number; className?: string }) {
@@ -141,15 +143,45 @@ export default function Layout() {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
+  // Solo en móvil, y nunca en el mapa: ahí la página no hace scroll (está fija a pantalla
+  // completa, ver el comentario de `enMapa` más abajo), así que `useDireccionScroll` nunca
+  // despegaría del "arriba" inicial — da igual, pero de paso queda explícito que no aplica ahí.
+  const esMovil = useEsMovil();
+  const vieneBajando = useDireccionScroll();
+  const bannerRecogido = esMovil && vieneBajando && !enMapa;
+
   return (
     <div className={cn('flex flex-col', enMapa ? 'alto-app overflow-hidden' : 'min-h-screen')}>
       <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[1030] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lift">
         Saltar al contenido
       </a>
-      <header className="sticky top-0 z-40 border-b border-sand-200/80 bg-paper/90 backdrop-blur-md">
-        <div className="container-page flex h-16 items-center justify-between gap-4">
-          <div className="flex items-center gap-8">
-            <Link to="/" aria-label="Encuentrauno, inicio"><Logo /></Link>
+      <header className={cn(
+        'sticky top-0 z-40 backdrop-blur-md transition-[background-color,border-color] duration-300',
+        bannerRecogido ? 'border-b border-transparent bg-transparent' : 'border-b border-sand-200/80 bg-paper/90',
+      )}>
+        <div className="container-page flex h-16 items-center gap-4">
+          {/* shrink-0: el logo nunca se achica al recogerse el resto — ES el banner recogido. */}
+          <Link to="/" aria-label="Encuentrauno, inicio" className="shrink-0">
+            <Logo
+              soloIcono={bannerRecogido}
+              className={cn(
+                'transition-all duration-300 ease-out',
+                bannerRecogido && 'rounded-full border border-sand-200 bg-paper p-1.5 shadow-card',
+              )}
+            />
+          </Link>
+          {/* El resto del banner no cambia de ancho (layout estable, sin saltos): se desvanece y
+              deja de recibir toques/lectores de pantalla, pero el círculo de arriba sigue siendo
+              lo único visible — así es como "la barra se recoge hacia el círculo". */}
+          <div
+            data-testid="banner-resto"
+            className={cn('flex min-w-0 flex-1 items-center justify-between gap-4 transition-opacity duration-200', bannerRecogido && 'pointer-events-none opacity-0')}
+            aria-hidden={bannerRecogido}
+            // `inert` todavía no está en los tipos de @types/react 18: sin él, aria-hidden por su
+            // cuenta dejaría el nav y los botones de ahí dentro alcanzables con Tab aunque estén
+            // invisibles — el anti-patrón de accesibilidad que WCAG marca justo para este caso.
+            {...({ inert: bannerRecogido ? '' : undefined } as Record<string, string | undefined>)}
+          >
             <nav className="hidden items-center gap-1 md:flex" aria-label="Secciones">
               <NavLink to="/explorar" className={({ isActive }) => cn('rounded-lg px-3 py-2 text-sm font-semibold transition', isActive ? 'text-ink-900' : 'text-ink-500 hover:text-ink-900')}>
                 Explorar
@@ -158,25 +190,25 @@ export default function Layout() {
                 Planes
               </NavLink>
             </nav>
-          </div>
-          <div className="flex items-center gap-2">
-            {isLoading ? (
-              <div className="skeleton h-9 w-24 rounded-full" />
-            ) : user ? (
-              <>
-                {user.user_type === 'provider' && (
-                  <Link to="/dashboard/servicios/nuevo" className="btn-primary hidden sm:inline-flex">
-                    <Plus className="h-4 w-4" /> Publicar servicio
-                  </Link>
-                )}
-                <UserMenu />
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="btn-ghost">Entrar</Link>
-                <Link to="/registro" className="btn-dark hidden sm:inline-flex">Crear cuenta</Link>
-              </>
-            )}
+            <div className="flex items-center gap-2">
+              {isLoading ? (
+                <div className="skeleton h-9 w-24 rounded-full" />
+              ) : user ? (
+                <>
+                  {user.user_type === 'provider' && (
+                    <Link to="/dashboard/servicios/nuevo" className="btn-primary hidden sm:inline-flex">
+                      <Plus className="h-4 w-4" /> Publicar servicio
+                    </Link>
+                  )}
+                  <UserMenu />
+                </>
+              ) : (
+                <>
+                  <Link to="/login" className="btn-ghost">Entrar</Link>
+                  <Link to="/registro" className="btn-dark hidden sm:inline-flex">Crear cuenta</Link>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>
