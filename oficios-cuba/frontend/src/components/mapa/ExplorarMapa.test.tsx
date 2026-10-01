@@ -178,8 +178,8 @@ describe('ExplorarMapa', () => {
   });
 
   // El color dice el TIPO de perfil (negocio o servicio suelto), no el plan: un oficio Profesional
-  // sigue en ink-700, y un negocio Gratis ya sale en brand-600.
-  it('el color del marcador es por tipo (negocio en naranja, oficio en oscuro), no por plan', async () => {
+  // sigue en naranja claro (brand-400), y un negocio Gratis ya sale en naranja fuerte (brand-600).
+  it('el color del marcador es por tipo (negocio en naranja fuerte, oficio en naranja claro), no por plan', async () => {
     const negocio = { ...punto('n', -76), tipo: 'negocio' as const, plan: 'free' as const };
     const oficio = { ...punto('o', -75), tipo: 'oficio' as const, plan: 'pro' as const };
     const { container } = montar([negocio, oficio]);
@@ -187,7 +187,7 @@ describe('ExplorarMapa', () => {
     const pines = () => container.querySelectorAll('.leaflet-marker-icon');
 
     expect(pines()[0].innerHTML).toContain('bg-brand-600');
-    expect(pines()[1].innerHTML).toContain('bg-ink-700');
+    expect(pines()[1].innerHTML).toContain('bg-brand-400');
 
     // Seleccionado (pin en forma de gota) sigue el mismo criterio.
     await act(async () => { (pines()[0] as HTMLElement).click(); await espera(30); });

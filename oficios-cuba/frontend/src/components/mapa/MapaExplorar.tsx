@@ -14,16 +14,16 @@ function aBbox(b: LatLngBounds): Bbox {
   return acotarBbox({ sur: b.getSouth(), oeste: b.getWest(), norte: b.getNorth(), este: b.getEast() });
 }
 
-// El color dice el TIPO de perfil (negocio o servicio/oficio suelto), no el plan: brand-600 para
-// negocio, ink-700 para oficio. Las clases van completas y literales en cada sitio (nunca
-// `bg-${...}`, que Tailwind no puede extraer de una interpolación): JIT escanea el código fuente
-// buscando el texto exacto de la clase. brand-500 queda fuera porque no lleva texto ni sirve de
-// indicador sobre fondo claro (2,43:1, por debajo del 3:1 que pide WCAG 1.4.11).
+// El color dice el TIPO de perfil (negocio o servicio/oficio suelto), no el plan: los dos tonos
+// son naranja —ink-700 "no quedó bien", a ojo de Dariel—, diferenciados por intensidad: brand-600
+// (fuerte) para negocio, brand-400 (claro) para oficio. Las clases van completas y literales en
+// cada sitio (nunca `bg-${...}`, que Tailwind no puede extraer de una interpolación): JIT escanea
+// el código fuente buscando el texto exacto de la clase.
 
 // divIcon en vez del icono por defecto de Leaflet, igual que PlaceMap/MapPointPicker: el default
 // carga PNGs por URL relativa que Vite no empaqueta.
 function pinIcon(tipo: PuntoMapa['tipo'], detras: number, aproximado: boolean) {
-  const color = tipo === 'negocio' ? 'bg-brand-600' : 'bg-ink-700';
+  const color = tipo === 'negocio' ? 'bg-brand-600' : 'bg-brand-400';
   const insignia = detras > 0
     ? `<span class="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-950 px-1 text-[10px] font-bold leading-none text-white">+${detras}</span>`
     : '';
@@ -54,7 +54,7 @@ const GOTA_PATH = 'M28 0C43.5 0 56 12.5 56 28C56 41 47 51 37 63L28 75L19 63C9 51
 // El pin del seleccionado: el ancla va en la PUNTA (abajo), no en el centro como el círculo — es
 // la punta la que tiene que caer sobre la coordenada real, o el punto "se movería" al seleccionarlo.
 function pinSeleccionadoIcon(tipo: PuntoMapa['tipo'], detras: number) {
-  const color = tipo === 'negocio' ? 'text-brand-600' : 'text-ink-700';
+  const color = tipo === 'negocio' ? 'text-brand-600' : 'text-brand-400';
   const insignia = detras > 0
     ? '<span class="absolute -right-1.5 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-950 px-1 text-[10px] font-bold leading-none text-white">+' + detras + '</span>'
     : '';
