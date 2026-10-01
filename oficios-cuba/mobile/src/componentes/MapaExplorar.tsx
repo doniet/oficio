@@ -15,6 +15,7 @@ import {
 import { ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '@oficio/shared';
 import { acotarACuba, acotarBbox, CUBA, usarMapa } from '../lib/mapa';
 import { contenidoDeCelda } from '../lib/panelMapa';
+import { PIN_POR_TIPO } from '../lib/pines';
 import { brand, fuentes, ink, radios, sand, sombra } from '../lib/tema';
 
 // Solo OpenStreetMap: mismas teselas que Leaflet en la web, sin clave de API. `attribution` en
@@ -56,27 +57,20 @@ function bboxDeLimites([oeste, sur, este, norte]: LngLatBounds): Bbox {
   return acotarBbox({ sur, oeste, norte, este });
 }
 
-const COLOR_PIN: Record<PuntoMapa['plan'], string> = {
-  // brand-500 nunca lleva texto/ícono blanco encima (no pasa contraste WCAG en fondo claro):
-  // el plan Profesional usa brand-600, que sí lo soporta.
-  pro: brand[600],
-  basic: ink[700],
-  free: ink[500],
-};
-
 // Memoizado: sin esto, cada cambio de `cargando` o `buscandoUbicacion` en el padre (que no toca
 // `puntos`) volvería a renderizar los hasta 200 marcadores en pantalla por nada. `onAbrir` se pasa
 // tal cual (no envuelto en una clausura nueva por marcador) para que la identidad de las props no
 // cambie entre renders y el memo funcione de verdad.
 const Pin = memo(function Pin({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p: PuntoMapa): void }) {
+  const { fondo, glifo } = PIN_POR_TIPO[punto.tipo];
   return (
     <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} onPress={() => onAbrir(punto)}>
       <View style={e.pinEnvoltorio}>
         {/* Aro de tamaño FIJO en píxeles para lo aproximado: no crece con el zoom, así que nunca
             se solapa con el del vecino. Dice «esto es aproximado» sin afirmar cuánto. */}
         {punto.aproximado ? <View style={e.aroAprox} /> : null}
-        <View style={[e.pin, { backgroundColor: COLOR_PIN[punto.plan] }]}>
-          <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={16} color="#ffffff" />
+        <View style={[e.pin, { backgroundColor: fondo }]}>
+          <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={16} color={glifo} />
         </View>
         {punto.detras > 0 ? (
           <View style={e.insignia}>
