@@ -4,8 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PanelMapa from './PanelMapa';
 import { AuthProvider } from '../../hooks/useAuth';
-import { configApi, providerApi } from '../../services/api';
-import type { ProviderPublic, PuntoMapa } from '../../types';
+import { catalogApi, configApi, providerApi } from '../../services/api';
+import type { CatalogItem, ProviderPublic, PuntoMapa } from '../../types';
 import { fijarAncho } from './probarAncho';
 
 // Igual que en usarMapa.test.ts: solo se sustituyen las funciones de providerApi que usa la
@@ -19,6 +19,7 @@ vi.mock('../../services/api', async () => {
     ...real,
     configApi: { ...real.configApi, get: vi.fn() },
     providerApi: { ...real.providerApi, getById: vi.fn(), contact: vi.fn(() => Promise.resolve()) },
+    catalogApi: { ...real.catalogApi, ofProvider: vi.fn() },
   };
 });
 
@@ -70,10 +71,12 @@ beforeAll(() => {
   });
 });
 
-function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?: PuntoMapa[] | null } = {}) {
+function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?: PuntoMapa[] | null; tab?: string; q?: string } = {}) {
   return createElement(PanelMapa, {
     punto: props.punto === undefined ? punto : props.punto,
     lista: props.lista ?? null,
+    tab: props.tab,
+    q: props.q,
     onElegirDeLista: vi.fn(),
     onCerrar: props.onCerrar ?? vi.fn(),
   });
@@ -86,7 +89,7 @@ function envolver(nodo: ReturnType<typeof createElement>) {
   return createElement(MemoryRouter, null, createElement(AuthProvider, null, nodo));
 }
 
-function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null } = {}) {
+function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null; tab?: string; q?: string } = {}) {
   const onCerrar = props.onCerrar ?? vi.fn();
   // Imperativo y no en un beforeEach: los `afterEach(() => vi.restoreAllMocks())` de este archivo
   // borrarían cualquier mockResolvedValue puesto fuera de aquí antes de que el siguiente test
@@ -388,6 +391,125 @@ describe('PanelMapa — hoja móvil', () => {
   });
 });
 
+function catalogItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
+  return {
+    id: 'c1', name: 'Tornillos surtidos', description: null, price: 50, price_type: 'fixed',
+    price_currency: 'CUP', image: null, section: null, available: true, created_at: '2024-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+// El punto solo aparece en el mapa de la pestaña Productos porque ALGÚN artículo suyo coincidió
+// con la búsqueda (el servidor ya filtró en /api/mapa): lo que va bajo "Ver perfil completo" deja
+// de ser sus servicios y pasa a ser ESE catálogo, con el mismo criterio de búsqueda.
+describe('PanelMapa — catálogo filtrado en la pestaña Productos', () => {
+  beforeEach(() => {
+    vi.mocked(providerApi.getById).mockReset();
+    vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as any);
+    vi.mocked(catalogApi.ofProvider).mockReset();
+    window.history.replaceState(null, '');
+    fijarAncho(390);
+  });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('en Productos se ve el catálogo filtrado en vez de Servicios', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem()], sections: [], total: 1, total_all: 4, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tornillos' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+
+    expect(await screen.findByText('Tornillos surtidos')).toBeTruthy();
+    expect(screen.queryByText(/^Servicios/)).toBeNull();
+    expect(catalogApi.ofProvider).toHaveBeenCalledWith('p1', { q: 'tornillos' });
+  });
+
+  it('sin q, pide el catálogo completo del proveedor (sin filtrar)', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem()], sections: [], total: 1, total_all: 1, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: '' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    await screen.findByText('Tornillos surtidos');
+
+    expect(catalogApi.ofProvider).toHaveBeenCalledWith('p1', { q: undefined });
+  });
+
+  it('sin coincidencias, lo dice en vez de dejar la sección vacía en silencio', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [], sections: [], total: 0, total_all: 4, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'algo-que-no-vende' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    expect(await screen.findByText(/No encontramos productos/)).toBeTruthy();
+  });
+
+  it('si falla la carga del catálogo, «Reintentar» vuelve a pedirlo', async () => {
+    vi.mocked(catalogApi.ofProvider)
+      .mockRejectedValueOnce(new Error('caída'))
+      .mockResolvedValueOnce({ data: { items: [catalogItem()], sections: [], total: 1, total_all: 1, page: 1, pages: 1 } } as any);
+    montar({ tab: 'productos', q: 'tornillos' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const reintentar = await screen.findByRole('button', { name: 'Reintentar' });
+
+    fireEvent.click(reintentar);
+    expect(await screen.findByText('Tornillos surtidos')).toBeTruthy();
+    expect(catalogApi.ofProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it('más de los que caben: enlaza al catálogo completo del perfil', async () => {
+    const siete = Array.from({ length: 7 }, (_, i) => catalogItem({ id: `c${i}`, name: `Artículo ${i}` }));
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: siete, sections: [], total: 7, total_all: 7, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: '' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    await screen.findByText('Artículo 0');
+
+    // Solo los primeros 6: el 7.º queda detrás del enlace al catálogo completo.
+    expect(screen.queryByText('Artículo 6')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Ver los 7 productos' }).getAttribute('href')).toBe('/proveedor/p1#catalogo');
+  });
+
+  it('tocar un producto abre su detalle, con cómo contactar al negocio', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem({ name: 'Tornillos surtidos', price: 120 })], sections: [], total: 1, total_all: 1, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tornillos' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    fireEvent.click(await screen.findByText('Tornillos surtidos'));
+
+    // El modal de detalle (CatalogItemModal) repite el nombre en su título y ofrece WhatsApp,
+    // el único contacto que trae `perfilMock`.
+    expect(await screen.findAllByText('Tornillos surtidos')).not.toHaveLength(0);
+    expect(screen.getByRole('link', { name: /WhatsApp/ })).toBeTruthy();
+  });
+
+  it('escribir mientras la ficha está abierta no pide el catálogo en cada tecla', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem()], sections: [], total: 1, total_all: 1, page: 1, pages: 1 },
+    } as any);
+    const { rerender } = montar({ tab: 'productos', q: 'torn' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    await screen.findByText('Tornillos surtidos');
+    expect(catalogApi.ofProvider).toHaveBeenCalledTimes(1);
+
+    rerender(envolver(panel({ tab: 'productos', q: 'tornil' })));
+    rerender(envolver(panel({ tab: 'productos', q: 'tornill' })));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(catalogApi.ofProvider).toHaveBeenCalledTimes(1); // aún dentro del antirrebote de 300 ms
+
+    await waitFor(() => expect(catalogApi.ofProvider).toHaveBeenCalledTimes(2));
+    expect(catalogApi.ofProvider).toHaveBeenLastCalledWith('p1', { q: 'tornill' });
+  });
+});
+
 describe('PanelMapa — elección de envoltorio', () => {
   beforeEach(() => { vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as never); });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -443,6 +565,7 @@ describe('PanelMapa — lista de celda', () => {
 
   beforeEach(() => {
     vi.mocked(providerApi.getById).mockResolvedValue({ data: { provider: perfilMock } } as never);
+    vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
     window.history.replaceState(null, '');
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -462,7 +585,7 @@ describe('PanelMapa — lista de celda', () => {
         onCerrar: vi.fn(),
       });
     }
-    render(createElement(MemoryRouter, null, createElement(Anfitrion)));
+    render(envolver(createElement(Anfitrion)));
     fireEvent.click(screen.getByText('Otro Negocio'));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Otro Negocio' })).toBeTruthy());
     fireEvent.click(screen.getByText(/Volver a la lista/));

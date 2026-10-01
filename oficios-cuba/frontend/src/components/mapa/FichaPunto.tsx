@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, CalendarPlus, ChevronDown, Phone, Share2, X } from 'lucide-react';
-import { apiError, providerApi } from '../../services/api';
+import { apiError, catalogApi, providerApi } from '../../services/api';
 import { telLink, whatsappLink, priceFrom } from '../../lib/format';
 import { useTasa } from '../../hooks/useTasa';
 import { useToast } from '../../hooks/useToast';
@@ -10,7 +10,9 @@ import { NegocioChip } from '../cards';
 import { ReviewItem } from '../ReviewList';
 import { WhatsAppIcon } from '../ContactActions';
 import BookingModal from '../BookingModal';
-import type { ProviderPublic, ProviderServiceItem, PuntoMapa, Review } from '../../types';
+import { CatalogImage, PrecioArticulo } from '../catalog/CatalogCard';
+import CatalogItemModal, { type VendedorCatalogo } from '../catalog/CatalogItemModal';
+import type { CatalogItem, ProviderPublic, ProviderServiceItem, PuntoMapa, Review } from '../../types';
 
 /**
  * Tarjeta compacta de un servicio dentro del panel del mapa: foto, categoría, título y precio.
@@ -68,6 +70,85 @@ function SeccionServicios({ servicios, abierta, onToggle }: { servicios: Provide
   );
 }
 
+/**
+ * Tarjeta compacta de un artículo del catálogo: foto, nombre y precio. A diferencia de
+ * `ServicioMiniCard` no enlaza a una página propia —los artículos no tienen una—, abre el mismo
+ * modal de detalle que ya usa la búsqueda general (`CatalogItemModal`), con su botón de contacto.
+ */
+function ProductoMiniCard({ item, onAbrir }: { item: CatalogItem; onAbrir: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onAbrir}
+      className={cn(
+        'group flex w-full gap-3 rounded-xl border border-sand-200 p-2 text-left transition hover:border-brand-300 hover:shadow-card',
+        !item.available && 'opacity-60',
+      )}
+    >
+      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-sand-100">
+        <CatalogImage item={item} />
+      </div>
+      <div className="min-w-0 flex-1 py-0.5">
+        <h4 className="line-clamp-2 text-sm font-bold leading-snug text-ink-900 group-hover:text-brand-700">{item.name}</h4>
+        <div className="mt-0.5"><PrecioArticulo item={item} /></div>
+      </div>
+    </button>
+  );
+}
+
+const MAX_PRODUCTOS_ADELANTO = 6;
+
+/**
+ * Lo que reemplaza a «Servicios» cuando se busca en la pestaña Productos: el punto solo aparece
+ * en el mapa porque ALGÚN artículo suyo coincidió con la búsqueda (el filtro ya lo aplicó el
+ * servidor en `/api/mapa`), así que aquí se enseña de una vez, sin acordeón de por medio — es
+ * justo lo que se tocó el punto para ver. Las fotos siguen cargando perezosas (`CatalogImage`
+ * usa `loading="lazy"`), que es lo que de verdad pesa en una conexión lenta.
+ */
+function SeccionProductos({ productos, total, cargando, error, providerId, onReintentar, onAbrirProducto }: {
+  productos: CatalogItem[];
+  total: number;
+  cargando: boolean;
+  error: string;
+  providerId: string;
+  onReintentar: () => void;
+  onAbrirProducto: (item: CatalogItem) => void;
+}) {
+  if (error) return <ErrorState message={error} onRetry={onReintentar} />;
+  if (cargando) {
+    return (
+      <div className="space-y-2" role="status" aria-label="Buscando productos">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex gap-3 rounded-xl border border-sand-200 p-2">
+            <div className="skeleton h-16 w-16 shrink-0 rounded-lg" />
+            <div className="flex-1 space-y-2 py-1">
+              <div className="skeleton h-4 w-4/5 rounded" />
+              <div className="skeleton h-4 w-1/3 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (productos.length === 0) {
+    return <p className="text-sm text-ink-500">No encontramos productos de este negocio que coincidan con la búsqueda.</p>;
+  }
+  const adelanto = productos.slice(0, MAX_PRODUCTOS_ADELANTO);
+  return (
+    <div>
+      <p className="mb-2 text-sm font-bold text-ink-900">Productos <span className="font-sans font-semibold text-ink-400">({total})</span></p>
+      <ul className="space-y-2">
+        {adelanto.map((p) => <li key={p.id}><ProductoMiniCard item={p} onAbrir={() => onAbrirProducto(p)} /></li>)}
+      </ul>
+      {total > adelanto.length && (
+        <Link to={`/proveedor/${providerId}#catalogo`} className="link mt-2 inline-block text-sm">
+          Ver los {total} productos
+        </Link>
+      )}
+    </div>
+  );
+}
+
 const MAX_RESENAS_ADELANTO = 3;
 
 /** Mismo acordeón cerrado que `SeccionServicios`, con las reseñas más recientes (el backend ya
@@ -110,10 +191,15 @@ function SeccionResenas({ resenas, providerId, abierta, onToggle }: { resenas: R
  * cuando el usuario la despliega — en la conexión que esta app apunta a servir, no se pide lo que
  * no se está mirando —; el panel lateral, donde sobra sitio y no hay dos alturas, lo pone siempre.
  */
-export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAntesDeNavegar, onVolverALista }: {
+export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicios', q = '', onCerrar, onAntesDeNavegar, onVolverALista }: {
   punto: PuntoMapa;
   tituloId: string;
   expandida: boolean;
+  /** Pestaña activa en /explorar. Con 'productos', lo de abajo de "Ver perfil completo" cambia de
+   *  Servicios al catálogo filtrado — ver `SeccionProductos`. */
+  tab?: string;
+  /** El texto de búsqueda activo, para filtrar ESE catálogo con el mismo criterio. */
+  q?: string;
   onCerrar(): void;
   /** Se llama justo antes de navegar a /proveedor/:id, para soltar la entrada de historial. */
   onAntesDeNavegar(): void;
@@ -132,12 +218,52 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   const [errorPerfil, setErrorPerfil] = useState('');
   const [reintentos, setReintentos] = useState(0);
   const [reservando, setReservando] = useState(false);
+  // El catálogo, aparte: a diferencia de servicios/reseñas no viene en GET /providers/:id, y hace
+  // falta volver a pedirlo cada vez que `q` cambia (el usuario puede seguir escribiendo con la
+  // ficha ya abierta) — nada que ver con el ciclo de vida del perfil de arriba.
+  const [productos, setProductos] = useState<CatalogItem[]>([]);
+  const [totalProductos, setTotalProductos] = useState(0);
+  const [cargandoProductos, setCargandoProductos] = useState(false);
+  const [errorProductos, setErrorProductos] = useState('');
+  const [reintentosProductos, setReintentosProductos] = useState(0);
+  const [productoAbierto, setProductoAbierto] = useState<CatalogItem | null>(null);
   const toast = useToast();
 
   // Un punto nuevo empieza siempre con las secciones cerradas: si no, al pasar de un negocio con
   // algo desplegado a otro, el acordeón seguiría abierto mostrando (por un instante) lo del
   // anterior mientras llega la respuesta.
-  useEffect(() => { setServiciosAbiertos(false); setResenasAbiertas(false); }, [punto.id]);
+  useEffect(() => {
+    setServiciosAbiertos(false);
+    setResenasAbiertas(false);
+    setProductos([]);
+    setTotalProductos(0);
+    setErrorProductos('');
+  }, [punto.id]);
+
+  useEffect(() => {
+    if (tab !== 'productos' || !expandida) return;
+    let cancelado = false;
+    setCargandoProductos(true);
+    setErrorProductos('');
+    // Antirrebote propio: `q` cambia con cada tecla mientras esta ficha sigue abierta (el usuario
+    // sigue escribiendo en el buscador del mapa), y sin esto cada tecla dispararía su petición.
+    // Mismo valor que usa `usarMapa` para el mismo gesto (ANTIRREBOTE_TEXTO_MS).
+    const temporizador = setTimeout(() => {
+      catalogApi.ofProvider(punto.id, { q: q || undefined })
+        .then((r) => {
+          if (cancelado) return;
+          setProductos(r.data.items);
+          setTotalProductos(r.data.total);
+          setCargandoProductos(false);
+        })
+        .catch((err) => {
+          if (cancelado) return;
+          setErrorProductos(apiError(err, 'No pudimos cargar el catálogo.'));
+          setCargandoProductos(false);
+        });
+    }, 300);
+    return () => { cancelado = true; clearTimeout(temporizador); };
+  }, [punto.id, tab, q, expandida, reintentosProductos]);
 
   // El id ya pedido. Antes esto se hacía con un efecto que ponía `setPerfil(null)` al cambiar de
   // punto y con `perfil` entre las dependencias del efecto de carga: el resultado era que al pasar
@@ -189,6 +315,16 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
   const mostrarWhatsapp = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'call';
   const mostrarLlamar = Boolean(telefonoContacto) && perfilVigente?.contact_mode !== 'whatsapp';
   const lugar = [perfilVigente?.municipality_name, perfilVigente?.province_name].filter(Boolean).join(', ');
+
+  // Para el modal de detalle de un artículo (CatalogItemModal, el mismo que ya usa la búsqueda
+  // general): necesita saber CÓMO contactar al dueño, no solo su nombre.
+  const vendedorCatalogo: VendedorCatalogo | null = perfilVigente ? {
+    id: punto.id,
+    name: punto.nombre,
+    whatsapp: perfilVigente.whatsapp,
+    contactMode: perfilVigente.contact_mode,
+    hasChat: perfilVigente.has_chat,
+  } : null;
 
   const compartir = async () => {
     const url = `${window.location.origin}/proveedor/${punto.id}`;
@@ -307,11 +443,23 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
                   {perfilVigente.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
                 </ul>
               )}
-              <SeccionServicios
-                servicios={serviciosVigentes}
-                abierta={serviciosAbiertos}
-                onToggle={() => setServiciosAbiertos((v) => !v)}
-              />
+              {tab === 'productos' ? (
+                <SeccionProductos
+                  productos={productos}
+                  total={totalProductos}
+                  cargando={cargandoProductos}
+                  error={errorProductos}
+                  providerId={punto.id}
+                  onReintentar={() => setReintentosProductos((n) => n + 1)}
+                  onAbrirProducto={setProductoAbierto}
+                />
+              ) : (
+                <SeccionServicios
+                  servicios={serviciosVigentes}
+                  abierta={serviciosAbiertos}
+                  onToggle={() => setServiciosAbiertos((v) => !v)}
+                />
+              )}
               {/* La calificación va PEGADA a las reseñas, no arriba con el resto de los datos: es
                   el mismo dato que "lo que dicen los demás" — y ambos, al final del todo. Antes el
                   resumen de estrellas abría la ficha, lo que dejaba la ficha leyéndose como
@@ -331,6 +479,8 @@ export default function FichaPunto({ punto, tituloId, expandida, onCerrar, onAnt
       {perfilVigente?.has_agenda && (
         <BookingModal open={reservando} onClose={() => setReservando(false)} providerId={punto.id} providerName={punto.nombre} />
       )}
+
+      <CatalogItemModal item={productoAbierto} vendedor={vendedorCatalogo} onClose={() => setProductoAbierto(null)} profileLink />
     </div>
   );
 }

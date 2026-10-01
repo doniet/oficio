@@ -5,13 +5,18 @@ import L from 'leaflet';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import ExplorarMapa, { ANCHO_PANEL_PX } from './ExplorarMapa';
 import { darTamanoAlMapa, fijarAncho } from './probarAncho';
-import { mapaApi, providerApi } from '../../services/api';
+import { configApi, mapaApi, providerApi } from '../../services/api';
+import { AuthProvider } from '../../hooks/useAuth';
 import type { PuntoMapa } from '../../types';
 
+// configApi.get: AuthProvider la llama sola al montar. providerApi.contact/getById: mockeadas
+// para no pegarle a la red de verdad. Necesario desde que FichaPunto puede montar BookingModal
+// y CatalogItemModal, los dos con useAuth() incondicional — ver PanelMapa.test.tsx.
 vi.mock('../../services/api', async () => {
   const real = await vi.importActual<typeof import('../../services/api')>('../../services/api');
   return {
     ...real,
+    configApi: { ...real.configApi, get: vi.fn() },
     mapaApi: { buscar: vi.fn(), celda: vi.fn() },
     providerApi: { ...real.providerApi, getById: vi.fn(), contact: vi.fn(() => Promise.resolve()) },
   };
@@ -33,14 +38,15 @@ beforeAll(() => {
 function montar(puntos: PuntoMapa[], get: (k: string) => string = () => '') {
   const update = vi.fn();
   vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos, celda: 0.01, hay_mas: false });
-  const utils = render(createElement(MemoryRouter, null,
-    createElement(ExplorarMapa, { get, update, categorias: [] })));
+  const utils = render(createElement(MemoryRouter, null, createElement(AuthProvider, null,
+    createElement(ExplorarMapa, { get, update, categorias: [] }))));
   return { update, ...utils };
 }
 
 describe('ExplorarMapa', () => {
   beforeEach(() => {
     vi.mocked(mapaApi.buscar).mockReset();
+    vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
     // Devuelve un perfil con el id pedido: con `provider: null` el efecto de carga no vuelve a
     // dispararse y la duplicidad que esta suite busca quedaría escondida.
     vi.mocked(providerApi.getById).mockImplementation((id: string) => Promise.resolve({
@@ -227,7 +233,7 @@ describe('ExplorarMapa', () => {
       });
     }
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [punto('x', -76)], celda: 0.01, hay_mas: false });
-    const { container } = render(createElement(MemoryRouter, null, createElement(Anfitrion)));
+    const { container } = render(createElement(MemoryRouter, null, createElement(AuthProvider, null, createElement(Anfitrion))));
     await act(async () => { await espera(320); });
     const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
     await act(async () => { pin.click(); await espera(20); });

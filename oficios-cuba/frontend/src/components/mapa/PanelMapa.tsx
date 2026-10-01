@@ -12,10 +12,14 @@ import type { PuntoMapa } from '../../types';
  * sabe qué muestra ni el contenido sabe dónde está.
  */
 export default function PanelMapa({
-  punto, lista, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, onCerrar, focoOrigen,
+  punto, lista, tab, q, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, onCerrar, focoOrigen,
 }: {
   punto: PuntoMapa | null;
   lista: PuntoMapa[] | null;
+  /** Se reenvían tal cual a FichaPunto: con 'productos', cambia lo que se ve bajo «Ver perfil
+   *  completo» (ver el comentario en FichaPunto.tsx). */
+  tab?: string;
+  q?: string;
   errorLista?: string;
   onReintentarLista?: () => void;
   onElegirDeLista(p: PuntoMapa): void;
@@ -44,6 +48,8 @@ export default function PanelMapa({
           punto={punto}
           tituloId={tituloId}
           expandida={expandida}
+          tab={tab}
+          q={q}
           onCerrar={cerrar}
           onAntesDeNavegar={onAntesDeNavegar}
           onVolverALista={onVolverALista}

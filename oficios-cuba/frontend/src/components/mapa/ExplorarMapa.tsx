@@ -131,6 +131,8 @@ export default function ExplorarMapa({ get, update, categorias }: {
       <PanelMapa
         punto={punto}
         lista={lista}
+        tab={tab}
+        q={get('q')}
         errorLista={errorLista || undefined}
         onReintentarLista={reintentarLista ? () => { setErrorLista(''); reintentarLista(); } : undefined}
         onElegirDeLista={elegirDeLista}
