@@ -1020,3 +1020,23 @@
 - Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
 - Next: ninguno.
 - Blockers: ninguno.
+
+## 2026-10-01 02:28 UTC — claude-code (vps2) — Sin rastro de desenfoque en la barra superior recogida
+- Changes (`e5d6f81`): Dariel pidió que la barra superior "igualmente desaparezca" tras ver el
+  resultado — aclarado con él que el círculo del logo se queda (eso no cambia), pero no debía
+  quedar ningún resto visual de la barra alrededor. Bug encontrado: `backdrop-blur-md` estaba fuera
+  del condicional en `Layout.tsx`, aplicado siempre — con fondo transparente pero el desenfoque
+  puesto, la franja de 64 px donde flota el círculo seguía difuminando el contenido que pasaba por
+  debajo al hacer scroll, un rastro de "barra" tan visible como el color de fondo. Ahora pasa a
+  `backdrop-blur-none` junto con `bg-transparent` cuando el banner está recogido.
+  Sin cambios de backend ni de esquema.
+- Tests: pass — frontend **63/63** (1 nuevo: el header pierde `backdrop-blur-md` y gana
+  `backdrop-blur-none` al recogerse). Al escribirlo salió un bug de aislamiento en
+  `Layout.test.tsx` ya existente desde la entrega anterior: `window.scrollY` es una propiedad
+  global que no se resetea sola entre pruebas, así que un test que dejaba la página en cierto
+  scroll contaminaba el `ultimoY` inicial del siguiente cuando ambos usaban el mismo número —
+  corregido con un reset a 0 en el `beforeEach`. `tsc` y `vite build` limpios. Verificado en
+  producción: el chunk `index-CQu58XdW.js` servido por Cloudflare contiene `backdrop-blur-none`.
+- Security: N/A — solo frontend. Desplegado con `docker compose up -d --build oficio_web`.
+- Next: ninguno.
+- Blockers: ninguno.
