@@ -208,4 +208,150 @@ describe('usarMapa', () => {
 
     h.desmontar();
   });
+
+  it('la celda se pide con el bbox PINTADO, no con el que el mapa tiene ahora', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    // Se pinta con BBOX_A...
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    // ...y el usuario sigue arrastrando a BBOX_B, que AÚN no ha pintado nada.
+    act(() => { h.estado.alMoverMapa(BBOX_B, false); });
+
+    let devuelto: PuntoMapa[] | undefined;
+    act(() => { void h.estado.cargarCelda(3, 7).then((r) => { devuelto = r; }); });
+
+    const celda = llamadas.find((l) => l.url.includes('/mapa/celda'));
+    expect(celda).toBeDefined();
+    const sp = new URL(celda!.url).searchParams;
+    // El servidor deduce el tamaño de celda del bbox: con BBOX_B los índices 3/7 significarían
+    // otra zona y la lista no coincidiría con el «+N» que la anunció.
+    expect(sp.get('bbox')).toBe('20,-80,21,-79');
+    expect(sp.get('cy')).toBe('3');
+    expect(sp.get('cx')).toBe('7');
+
+    act(() => { celda!.resolver(respuestaFalsa([puntoFalso('p1'), puntoFalso('p2')])); });
+    await avanzarYVaciar(0);
+    expect(devuelto?.map((p) => p.id)).toEqual(['p1', 'p2']);
+
+    h.desmontar();
+  });
+
+  it('sin nada pintado todavía, la celda resuelve vacía y no pide nada', async () => {
+    const { fetchMock } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    let devuelto: PuntoMapa[] | undefined;
+    await act(async () => { devuelto = await h.estado.cargarCelda(0, 0); });
+    expect(devuelto).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    h.desmontar();
+  });
+
+  it('la celda reenvía pestaña, texto y categoría de la búsqueda actual', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'negocios', q: 'pintura', category: 'hogar' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    act(() => { void h.estado.cargarCelda(1, 2); });
+    const sp = new URL(llamadas.find((l) => l.url.includes('/mapa/celda'))!.url).searchParams;
+    expect(sp.get('tab')).toBe('negocios');
+    expect(sp.get('q')).toBe('pintura');
+    expect(sp.get('category')).toBe('hogar');
+
+    h.desmontar();
+  });
+
+  it('recargar el área NO aborta una celda en vuelo', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    act(() => { void h.estado.cargarCelda(0, 0); });
+    const celda = llamadas.find((l) => l.url.includes('/mapa/celda'))!;
+
+    // El usuario arrastra: el área se recarga y aborta SU petición, no la de la celda — si la
+    // abortara, la hoja se quedaría abierta y sin contenido.
+    act(() => { h.estado.alMoverMapa(BBOX_B, false); });
+    await avanzarYVaciar(500);
+    expect(celda.signal.aborted).toBe(false);
+
+    h.desmontar();
+  });
+
+  it('dos toques rápidos en el mismo grupo: la primera celda se abandona y gana la última', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    const vistos: string[][] = [];
+    act(() => { void h.estado.cargarCelda(0, 0).then((r) => vistos.push(r.map((p) => p.id))); });
+    act(() => { void h.estado.cargarCelda(0, 0).then((r) => vistos.push(r.map((p) => p.id))); });
+    const celdas = llamadas.filter((l) => l.url.includes('/mapa/celda'));
+    expect(celdas).toHaveLength(2);
+    expect(celdas[0].signal.aborted).toBe(true);
+
+    act(() => { celdas[1].resolver(respuestaFalsa([puntoFalso('nuevo')])); });
+    await avanzarYVaciar(0);
+    // La primera resuelve vacía (abandonada), la segunda con su contenido: la vieja no puede
+    // pintarse encima de la nueva.
+    expect(vistos).toEqual([[], ['nuevo']]);
+
+    h.desmontar();
+  });
+
+  it('desmontar con una celda en vuelo la aborta', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    await avanzarYVaciar(250);
+    act(() => { llamadas[0].resolver(respuestaFalsa([puntoFalso('p1')])); });
+    await avanzarYVaciar(0);
+
+    act(() => { void h.estado.cargarCelda(0, 0); });
+    const celda = llamadas.find((l) => l.url.includes('/mapa/celda'))!;
+    h.desmontar();
+    expect(celda.signal.aborted).toBe(true);
+  });
+
+  it('un rectángulo sin área no gasta petición ni se queda como bbox pintado', async () => {
+    const { fetchMock } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const h = montarHook({ tab: 'servicios', q: '', category: '' });
+
+    // MapLibre entrega bounds colapsados antes de que el contenedor tenga altura.
+    act(() => { h.estado.alMoverMapa({ sur: 21, oeste: -79, norte: 21, este: -79 }, true); });
+    await avanzarYVaciar(500);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    let devuelto: PuntoMapa[] | undefined;
+    await act(async () => { devuelto = await h.estado.cargarCelda(0, 0); });
+    expect(devuelto).toEqual([]);
+
+    h.desmontar();
+  });
 });

@@ -51,6 +51,26 @@ async function pedirMapa(
   return (await res.json()) as MapaRespuesta;
 }
 
+async function pedirCelda(
+  bbox: Bbox,
+  cy: number,
+  cx: number,
+  params: { tab: string; q?: string; category?: string },
+  signal: AbortSignal,
+): Promise<MapaRespuesta> {
+  const qs = new URLSearchParams({
+    bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`,
+    cy: String(cy),
+    cx: String(cx),
+    tab: params.tab,
+  });
+  if (params.q) qs.set('q', params.q);
+  if (params.category) qs.set('category', params.category);
+  const res = await fetch(`${configApi.baseUrl}/mapa/celda?${qs.toString()}`, { signal });
+  if (!res.ok) throw new Error('No se pudo cargar la celda');
+  return (await res.json()) as MapaRespuesta;
+}
+
 export type EstadoMapa = {
   puntos: PuntoMapa[];
   cargando: boolean;
@@ -73,6 +93,13 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
   const controlador = useRef<AbortController | null>(null);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tiempoEspera = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // La zona con la que se pidió lo que está pintado AHORA. Distinta de `bboxVisible` durante el
+  // antirrebote y mientras una petición vuela: el servidor deduce el tamaño de celda del bbox, así
+  // que los cy/cx de los puntos en pantalla solo significan algo respecto a ESTE rectángulo.
+  const bboxPintado = useRef<Bbox | null>(null);
+  // Controlador propio de la celda: NO es el del área. Abortar la celda porque el mapa se movió
+  // dejaría la hoja abierta y sin contenido.
+  const controladorCelda = useRef<AbortController | null>(null);
 
   function limpiarTiempoEspera() {
     if (tiempoEspera.current) { clearTimeout(tiempoEspera.current); tiempoEspera.current = null; }
@@ -94,6 +121,7 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
       .then((r) => {
         limpiarTiempoEspera();
         if (propio.signal.aborted) return;
+        bboxPintado.current = bbox;
         setEstado({ puntos: r.puntos, cargando: false, error: false, hayMas: r.hay_mas, celda: r.celda });
       })
       .catch(() => {
@@ -119,10 +147,19 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, q, category]);
 
-  useEffect(() => () => { controlador.current?.abort(); limpiarTemporizador(); limpiarTiempoEspera(); }, []);
+  useEffect(() => () => {
+    controlador.current?.abort();
+    controladorCelda.current?.abort();
+    limpiarTemporizador();
+    limpiarTiempoEspera();
+  }, []);
 
   /** El mapa llama a esto en cada cambio de región (onRegionDidChange). */
   const alMoverMapa = useCallback((bbox: Bbox, esZoom: boolean) => {
+    // MapLibre devuelve bounds colapsados a un punto si el contenedor todavía no tiene altura.
+    // Pedirlos gasta una petición que no puede devolver nada y, peor, dejaría `bboxPintado`
+    // apuntando a un rectángulo degenerado del que luego se deduciría una celda absurda.
+    if (bbox.norte <= bbox.sur || bbox.este <= bbox.oeste) return;
     bboxVisible.current = bbox;
     // Reglas 1 y 2: zoom y paneo recargan solos; el zoom antes, porque es un gesto deliberado.
     limpiarTemporizador();
@@ -138,5 +175,22 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
     cargar(objetivo);
   }, [cargar]);
 
-  return { ...estado, alMoverMapa, buscarZonaVisible };
+  const cargarCelda = useCallback((cy: number, cx: number): Promise<PuntoMapa[]> => {
+    const bbox = bboxPintado.current;
+    if (!bbox) return Promise.resolve([]);
+    // Un segundo toque abandona el primero: la respuesta vieja no puede pintarse encima.
+    controladorCelda.current?.abort();
+    const propio = new AbortController();
+    controladorCelda.current = propio;
+    return pedirCelda(bbox, cy, cx, { tab, q: q || undefined, category: category || undefined }, propio.signal)
+      .then((r) => (propio.signal.aborted ? [] : r.puntos))
+      // Abandonada (otro toque o desmontaje): no es un error que mostrar, resuelve vacía y quien
+      // llama lo trata como «la celda no trajo nada». Cualquier otro fallo sí se propaga.
+      .catch((e: unknown) => {
+        if (propio.signal.aborted) return [];
+        throw e;
+      });
+  }, [tab, q, category]);
+
+  return { ...estado, alMoverMapa, buscarZonaVisible, cargarCelda };
 }
