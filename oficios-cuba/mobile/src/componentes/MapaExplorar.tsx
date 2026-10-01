@@ -122,8 +122,9 @@ const PinSeleccionado = memo(function PinSeleccionado({ punto, onAbrir }: { punt
   return (
     <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} anchor="bottom" onPress={() => onAbrir(punto)}>
       <View style={e.gotaEnvoltorio}>
-        {/* La cola: un cuadrado rotado 45° con tres esquinas redondeadas, debajo del círculo y
-            tapado a medias por él. Sin react-native-svg a propósito (ver el spec, decisión 4). */}
+        {/* La cola: un cuadrado rotado 45° con tres esquinas redondeadas, debajo del círculo y tapado
+            por él en todo su ancho salvo la punta. Sin react-native-svg a propósito (ver el spec,
+            decisión 4). */}
         <View style={[e.gotaCola, { backgroundColor: fondo }]} />
         <View style={[e.gotaCirculo, { backgroundColor: fondo }]}>
           <Ionicons name={punto.tipo === 'negocio' ? 'storefront-outline' : 'construct-outline'} size={18} color={glifo} />
@@ -343,8 +344,10 @@ const e = StyleSheet.create({
     position: 'absolute', top: 22, width: 20, height: 20,
     borderBottomLeftRadius: 3, borderBottomRightRadius: 3, borderTopRightRadius: 3,
     transform: [{ rotate: '45deg' }],
-    // La cola en top: 22 hace que su centro (y=32) sea más ancho que el círculo en esa altura (y quede
-    // hidden), emergiendo como punta sólo abajo. Con top más bajo los costados sobresalen: rompe la silueta.
+    // `top: 22` deja el centro de la cola en y=32, donde su semiancho (14,14) es MENOR que el del
+    // círculo (16): queda tapada justo donde más ancha es, y solo emerge por debajo como punta. Con un
+    // `top` MAYOR la cola baja hasta donde el círculo ya se estrecha, sus costados asoman como dos
+    // esquinas de rombo y la silueta deja de leerse como gota.
   },
   insigniaGota: {
     position: 'absolute', top: -4, right: 0, minWidth: 20, height: 20, borderRadius: 10,
