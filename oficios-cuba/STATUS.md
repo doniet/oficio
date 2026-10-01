@@ -1178,3 +1178,30 @@
 - Next: ninguno.
 - Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
   serie de esta sesión.
+
+## 2026-10-01 03:47 — claude-code (vps2) — En Productos, la ficha del mapa muestra el catálogo filtrado
+- Changes: al tocar un punto con la pestaña Productos activa, debajo de «Ver perfil completo» se
+  ve el catálogo de ESE proveedor filtrado por el mismo texto de búsqueda (`GET /catalog/provider/
+  :id?q=`), en vez de la sección Servicios — el punto solo está en el mapa porque algún artículo
+  suyo ya coincidió, filtrado por el servidor en `/api/mapa`. Sin acordeón: se enseña de una vez
+  (es justo lo que se tocó el punto para ver), con las fotos en carga perezosa igual que el resto
+  de la ficha. Tocar un artículo abre `CatalogItemModal`, el mismo detalle-con-contacto que ya usa
+  la búsqueda general. Antirrebote propio de 300 ms en `FichaPunto.tsx`: si seguís escribiendo con
+  la ficha abierta, no pide el catálogo en cada tecla. `tab`/`q` se enhebran `ExplorarMapa` →
+  `PanelMapa` → `FichaPunto` (nuevos en los dos intermedios, opcionales con valor por defecto para
+  no romper los montajes de prueba existentes).
+- Tests: pass — frontend **76/76** (8 nuevos en `PanelMapa.test.tsx`: el catálogo filtrado
+  reemplaza a Servicios; sin `q` pide el catálogo completo; mensaje si no hay coincidencias;
+  «Reintentar» tras un fallo; enlace «Ver los N productos» cuando hay más de 6; tocar un artículo
+  abre su detalle con el contacto correcto; escribir no dispara una petición por tecla. 2 archivos
+  de test existentes (`ExplorarMapa.test.tsx`, el caso «lista de celda» de `PanelMapa.test.tsx`)
+  necesitaron `AuthProvider` + mock de `configApi.get`, igual que ya hacía el resto del archivo:
+  `CatalogItemModal` llama a `useAuth()` sin condición al montar, igual que `BookingModal`).
+  `tsc --noEmit` y `vite build` limpios.
+- Security: sin cambios de superficie — mismo endpoint `/catalog/provider/:id` ya público, pedido
+  desde un sitio nuevo del frontend.
+- Completado en producción: `docker compose up -d --build oficio_web` → verificado por hash de
+  contenido: `index-DdnOj9_U.js` (con este cambio) es el que sirve `oficio.dardoit.com`.
+- Next: ninguno.
+- Blockers: ninguno. Commits sin pushear a `github.com/doniet/oficio` junto con el resto de la
+  serie de esta sesión.
