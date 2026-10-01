@@ -190,7 +190,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
   // resultados del filtro viejo y reabriría la hoja que el cambio acababa de cerrar. Por (3) no basta
   // con que `cargarCelda` señalara el abandono aparte: el token es lo único que cubre los tres.
   const tokenCelda = useRef(0);
-  useEffect(() => () => { tokenCelda.current += 1; }, [q, category]);
+  useEffect(() => () => { tokenCelda.current += 1; }, [tab, q, category]);
 
   // Un punto suelto abre su ficha; un grupo abre la lista de su celda. Es la misma interacción para
   // el «+N» y para un área: enseñar dos gestos para el mismo hecho sería pedirle al usuario que
@@ -269,10 +269,14 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
       >
         <Camera ref={camaraRef} initialViewState={{ center: CENTRO_INICIAL, zoom: ZOOM_INICIAL }} maxBounds={LIMITES_CUBA} />
         {puntos.map((p) => {
-          if (p.id === seleccionadoId) return <PinSeleccionado key={p.id} punto={p} onAbrir={abrir} />;
-          // Los exactos siguen siendo pin: su punto sí es cierto y mezclarlos mentiría sobre los dos.
-          return modoZona && p.aproximado
-            ? <AreaZona key={p.id} punto={p} onAbrir={abrir} />
+          // El área gana a la selección, igual que en la web: una gota se ancla en una coordenada
+          // exacta, así que dibujarla sobre un punto aproximado afirmaría una precisión que el dato
+          // no tiene — y justo en el punto que el usuario está mirando. El área sigue siendo área
+          // con su ficha abierta. Los exactos siguen siendo pin: su punto sí es cierto y mezclarlos
+          // mentiría sobre los dos.
+          if (modoZona && p.aproximado) return <AreaZona key={p.id} punto={p} onAbrir={abrir} />;
+          return p.id === seleccionadoId
+            ? <PinSeleccionado key={p.id} punto={p} onAbrir={abrir} />
             : <Pin key={p.id} punto={p} onAbrir={abrir} />;
         })}
       </MapaLibre>
