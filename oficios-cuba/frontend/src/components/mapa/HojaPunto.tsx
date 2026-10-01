@@ -4,7 +4,7 @@ import { usarTrampaFoco, type PropsEnvoltorio } from './usarPanel';
 
 // Nombre de la variable CSS que expone cuánto de la parte de abajo del viewport ocupa la
 // hoja ahora mismo (en px; "0px" cuando está cerrada). El mapa la lee para recolocar el botón
-// «Cerca de mí» por encima — ver el comentario al final del archivo.
+// «Yo» por encima — ver el comentario al final del archivo.
 const VAR_ALTO_HOJA = '--hoja-punto-alto';
 
 const ALTO_ABIERTA_VH = 85;
@@ -122,7 +122,7 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
       contenedores de controles (.leaflet-top/.leaflet-bottom, donde viven el zoom y la atribución)
       son z-index 1000. Por eso nada del mapa puede quedarse en 400 o 500 y esperar estar encima:
       el control de zoom se pintaba sobre el panel y recortaba el título de la lista.
-       Por encima también de la barra flotante (1010) y del botón «Cerca de mí»: la variable CSS
+       Por encima también de la barra flotante (1010) y del botón «Yo»: la variable CSS
        --hoja-punto-alto no sirve de nada si el botón, aun recolocado, se pinta sobre la hoja. */
     <div className="pointer-events-none fixed inset-0 z-[1020]">
       <div
@@ -173,5 +173,5 @@ export default function HojaPunto({ abierta, tituloId, cerrar, onAntesDeNavegar,
 // Contrato con quien monte esta hoja junto al mapa: mientras está abierta, mantiene la variable
 // CSS `--hoja-punto-alto` en `document.documentElement` con la altura (en px, p. ej. "320px") que
 // ocupa desde abajo del viewport en cada instante — "0px" cuando está cerrada, y cambia en vivo
-// mientras se arrastra. El botón «Cerca de mí» de `MapaExplorar.tsx` la lee en su `bottom` para no
+// mientras se arrastra. El botón «Yo» de `MapaExplorar.tsx` la lee en su `bottom` para no
 // quedar debajo.

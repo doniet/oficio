@@ -207,7 +207,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
   }, []);
 
   // La búsqueda no tiene nada en la zona visible pero sí en algún otro punto de Cuba (usarMapa ya
-  // lo averiguó): salta allá solo. Mismo zoom/duración que «Cerca de mí», por la misma razón —
+  // lo averiguó): salta allá solo. Mismo zoom/duración que «Yo», por la misma razón —
   // ambos son "llévame a donde hay algo", uno por geolocalización y el otro por búsqueda.
   useEffect(() => {
     if (!mapa.sugerencia) return;
@@ -225,7 +225,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
         className="h-full w-full"
         // El zoom por defecto va arriba a la izquierda, justo donde ahora vive la barra flotante:
         // encima tapaba los controles y debajo quedaba inservible. Abajo a la izquierda no estorba
-        // a nada — «Cerca de mí» está abajo a la derecha — y sube con la hoja (ver index.css).
+        // a nada — «Yo» está abajo a la derecha — y sube con la hoja (ver index.css).
         zoomControl={false}
         scrollWheelZoom
         attributionControl
@@ -312,7 +312,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
         // sin leerla, este botón queda debajo de ella en cuanto se abre una ficha.
         style={{ bottom: 'calc(var(--hoja-punto-alto, 0px) + 12px)' }}
       >
-        {localizando ? <Spinner className="h-3.5 w-3.5" /> : <LocateFixed className="h-3.5 w-3.5" />} Cerca de mí
+        {localizando ? <Spinner className="h-3.5 w-3.5" /> : <LocateFixed className="h-3.5 w-3.5" />} Yo
       </button>
     </div>
   );

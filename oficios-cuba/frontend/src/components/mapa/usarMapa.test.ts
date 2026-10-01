@@ -299,14 +299,14 @@ describe('MapaExplorar', () => {
 
   // El contrato que HojaPunto dejó escrito y que nunca llegó a cumplirse: con la hoja abierta,
   // este botón quedaba debajo de ella.
-  it('«Cerca de mí» se coloca leyendo --hoja-punto-alto, para no quedar bajo la hoja', async () => {
+  it('«Yo» se coloca leyendo --hoja-punto-alto, para no quedar bajo la hoja', async () => {
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
     // Acotado a su propio contenedor: este fichero no limpia el DOM entre pruebas, así que una
     // búsqueda global encontraría también los mapas de las pruebas anteriores.
     const { container } = render(createElement(MapaExplorar, { tab: 'servicios', q: '', category: '', onAbrir: () => {}, onAbrirLista: () => {}, onCerrarPanel: () => {} }));
     await act(async () => { await espera(280); });
 
-    const boton = Array.from(container.querySelectorAll('button')).find((b) => /Cerca de mí/.test(b.textContent ?? ''))!;
+    const boton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Yo')!;
     expect(boton).toBeTruthy();
     expect(boton.getAttribute('style')).toContain('--hoja-punto-alto');
   });
