@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -206,7 +206,14 @@ export default function Servicio() {
           <View style={{ flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
             <Avatar src={service.avatar_url} nombre={nombre} tamano={64} cuadrado />
             <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-              <Text style={e.nombreProfesional}>{nombre}</Text>
+              <Pressable
+                onPress={() => router.push(`/proveedor/${service.provider_id}`)}
+                accessibilityRole="link"
+                accessibilityLabel={`Ver el perfil de ${nombre}`}
+                hitSlop={6}
+              >
+                <Text style={e.nombreProfesional}>{nombre}</Text>
+              </Pressable>
               {service.subscription_plan === 'pro' || service.kind === 'negocio' ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {service.kind === 'negocio' ? <Insignia tipo="negocio" /> : null}
@@ -233,6 +240,14 @@ export default function Servicio() {
           {service.provider_description ? (
             <Text style={[u.texto, { fontSize: 14, color: ink[600], marginTop: 16 }]} numberOfLines={4}>{service.provider_description}</Text>
           ) : null}
+          <Pressable
+            onPress={() => router.push(`/proveedor/${service.provider_id}`)}
+            accessibilityRole="link"
+            hitSlop={6}
+            style={{ marginTop: 16 }}
+          >
+            <Text style={u.enlace}>Ver perfil completo</Text>
+          </Pressable>
         </Tarjeta>
 
         <Tarjeta estilo={{ padding: 20 }}>
