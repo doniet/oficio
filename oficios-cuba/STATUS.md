@@ -1312,3 +1312,20 @@
   limpio) y empujar. Siguen pendientes de decisión visual de Dariel, del sub-proyecto 1: el control
   visible «volver a la lista» y el contraste del icono de `ListaCelda`.
 - Blockers: el permiso para publicar. Nada de código.
+
+## 2026-10-02 03:00 — claude-code (vps2) — 0.2.5 publicada y rama fusionada
+- Changes: con el OK de Dariel se cerró lo que la entrada anterior dejó pendiente. `publicar-apk.sh`
+  subió `oficios-cuba-0.2.5.apk` a `~/docker/oficio/oficios-cuba/descargas` y escribió `android.json`;
+  el script retiró la 0.2.4, como hace siempre. `app-ficha-proveedor` entró en `master` por avance
+  limpio (`8be23c3..cdf3b62`, 24 commits, árbol idéntico al de la rama) y se empujó.
+- Tests: pass — verificado desde Internet por Cloudflare: `android.json` anuncia 0.2.5,
+  `HTTP/2 200` y `content-type: application/vnd.android.package-archive` en el APK,
+  `oficios-cuba-0.2.4.apk` ya da 404, y `GET /api/app/descargar` redirige 302. El APK descargado
+  desde la URL pública tiene sha256 `c6867d18…`, idéntico al del artefacto compilado: lo que sirve
+  Cloudflare es byte a byte lo que se probó en el emulador.
+- Security: sin cambios de superficie. No se tocó `.env`, ni el túnel, ni Traefik, ni `DEMO_MODE`.
+- Next: el arreglo de la galería se verificó en un emulador, que dibuja por software — conviene una
+  mirada en un teléfono real, aunque sea un cambio de reparto de cajas y no de pintado por GPU.
+  Siguen pendientes de decisión visual de Dariel, del sub-proyecto 1: el control visible «volver a
+  la lista» y el contraste del icono de `ListaCelda`.
+- Blockers: ninguno.
