@@ -465,8 +465,10 @@ export default function Proveedor() {
             <Text style={u.h3}>Fotos {provider.kind === 'negocio' ? 'del negocio' : 'de mis trabajos'}</Text>
             <View style={e.galeria}>
               {provider.gallery.map((src, i) => (
-                <View key={`${src}-${i}`} style={e.galeriaFoto} accessibilityLabel={`${nombre} — foto ${i + 1}`}>
-                  <Portada src={src} semilla={nombre} icono="📷" tamanoIcono={28} />
+                <View key={`${src}-${i}`} style={e.galeriaItem} accessibilityLabel={`${nombre} — foto ${i + 1}`}>
+                  <View style={e.galeriaFoto}>
+                    <Portada src={src} semilla={nombre} icono="📷" tamanoIcono={28} />
+                  </View>
                 </View>
               ))}
             </View>
@@ -593,7 +595,13 @@ const e = StyleSheet.create({
   contactoExtra: { gap: 10, borderTopWidth: 1, borderTopColor: sand[200], paddingTop: 16, marginTop: 4 },
   cuenta: { fontFamily: fuentes.textoFuerte, fontSize: 16, color: ink[400] },
   galeria: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  galeriaFoto: { width: '31.5%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: panel },
+  // 🚨 El ancho en porcentaje va en el hijo de la fila y el `aspectRatio` en una caja interna al
+  // 100%, nunca los dos en el mismo nodo: juntos en un hijo de `flexDirection:'row'` la caja se
+  // mide bien (ocupa su hueco) pero no pinta nada — ni la foto ni su propio fondo. Es el mismo
+  // reparto en dos nodos que ya usa la rejilla del catálogo (`rejilla`/`articulo`/`articuloFoto`),
+  // y el patrón de los otros cinco `aspectRatio` de la app, todos sobre `width:'100%'`.
+  galeriaItem: { width: '31.5%' },
+  galeriaFoto: { width: '100%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: panel },
   filaServicio: { flexDirection: 'row', overflow: 'hidden' },
   filaServicioFoto: { width: 112, backgroundColor: sand[100] },
   filaServicioCuerpo: { flex: 1, minWidth: 0, padding: 14 },
