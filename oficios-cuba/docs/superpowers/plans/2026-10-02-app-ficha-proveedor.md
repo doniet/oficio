@@ -17,8 +17,10 @@ decisión está allá y no se repite aquí.
 4. **La lógica probable vive en `src/lib/`, no dentro del componente.** Es la convención del repo.
 5. Comentarios solo para el PORQUÉ no obvio. Nada que explique qué hace la línea de al lado.
 6. Un commit por tarea, mensaje en español, descriptivo, sin `--no-verify`.
-7. **Verificar de verdad antes de decir que está hecho:** `npx tsc --noEmit` y `npx vitest run` en el
-   paquete que se tocó. Pegar la salida real. Si falla, decirlo.
+7. **Verificar de verdad antes de decir que está hecho**, con el runner que el paquete usa de verdad:
+   `shared/` corre **vitest** (`npx vitest run`); `mobile/` corre **Jest** (`npx jest`) — `vitest` ni
+   siquiera está instalado ahí. Más `npx tsc --noEmit` en el paquete que se tocó. Pegar la salida real.
+   Si falla, decirlo.
 
 ---
 
@@ -136,7 +138,7 @@ tarea). No cambiar los colores de la tabla: se reusa lo que hay.
 Comprobar que la etiqueta de accesibilidad de la fila sigue diciendo el tipo en texto — el color
 nunca puede ser el único canal.
 
-**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx vitest run` pasa (las suites existentes de
+**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx jest` pasa (las suites existentes de
 `listaCelda` siguen verdes).
 
 ---
@@ -170,7 +172,7 @@ del filtro aplicado — el backend las calcula aparte a propósito (`routes/cata
 `total_all > 0` con `total === 0` (filtro sin resultados) **sí** monta y enseña vacío; el encadenado
 de páginas corta en la última; agotados presentes en la lista.
 
-**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx vitest run` pasa con las pruebas nuevas.
+**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx jest` pasa con las pruebas nuevas.
 
 ## T4 — `lib/resenas.ts` + pruebas
 
@@ -240,7 +242,7 @@ dónde (dirección, **sin mapa**), servicios en lista plana, catálogo, reseñas
   y con `has_chat` falso porque el backend ya lo resolvió. La app reacciona a lo que viene; no
   replica la tabla de planes.
 
-**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx vitest run` pasa.
+**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx jest` pasa.
 
 ## T7 — la ficha del mapa: cliente compartido, acordeón, compartir y volver
 
@@ -265,7 +267,7 @@ Además, «Ver perfil completo» deja de abrir el navegador: `router.push('/prov
 🚨 Esta ficha vive dentro de una hoja con anclajes y carga diferida al desplegar. No cambiar esa
 conducta: está probada en `mobile/test/hojaPunto.test.ts` y es de lo que el sub-proyecto 1 estabilizó.
 
-**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx vitest run` pasa — las 81 pruebas que ya
+**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx jest` pasa — las 81 pruebas que ya
 había siguen verdes.
 
 ## T9 — enlazar las tarjetas al perfil
@@ -279,7 +281,7 @@ perfil «todavía no existe en la app (sigue en la web)». Ya existe: envolverla
 **Borrar ese comentario**, que deja de ser cierto. Dejar la tarjeta accesible: rol de botón y
 etiqueta con el nombre del negocio.
 
-**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx vitest run` pasa.
+**Hecho cuando:** `cd mobile && npx tsc --noEmit && npx jest` pasa.
 
 ---
 
@@ -288,7 +290,7 @@ etiqueta con el nombre del negocio.
 ## T10 — verificación integral
 
 1. `cd shared && npx tsc --noEmit && npx vitest run`
-2. `cd mobile && npx tsc --noEmit && npx vitest run` — **las 81 anteriores siguen verdes** más las
+2. `cd mobile && npx tsc --noEmit && npx jest` — **las 81 anteriores siguen verdes** más las
    nuevas; decir el número exacto.
 3. `grep` de que nadie tocó `backend/`, `frontend/` ni `docker-compose.yml`: `git diff --stat master`.
 4. Compilar la variante x86_64 y caminarla en el emulador (ver el apartado «Cómo compilar» de
