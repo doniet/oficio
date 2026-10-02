@@ -6,26 +6,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   CatalogItem, ErrorApi, esquemaMensaje, nombreVisible, precioCatalogo, priceFrom,
-  ProviderServiceItem, relativeTime, Review, telLink, whatsappLink,
+  ProviderServiceItem, relativeTime, Review,
 } from '@oficio/shared';
 import { Boton } from '../../src/componentes/Boton';
 import { Campo } from '../../src/componentes/Campo';
+import { ModalArticulo, VendedorCatalogo } from '../../src/componentes/ModalArticulo';
 import {
   Aviso, Avatar, BotonCompartir, Chip, Esqueleto, EstadoError, EstadoVacio, Estrellas, Insignia, Portada,
   Tarjeta, u, Valoracion,
 } from '../../src/componentes/ui';
 import { ANTIRREBOTE_BUSQUEDA_MS, articulosDeCatalogo, montarCatalogo, siguientePagina } from '../../src/lib/catalogo';
 import { RESENAS_POR_PAGINA, resumenEstrellas, siguientePaginaResenas, tituloServicioResena } from '../../src/lib/resenas';
+import {
+  contactoPerfil, etiquetaBarraResenas, etiquetaConteoCatalogo, MENSAJE_INICIAL, plural, zonasPorProvincia,
+} from '../../src/lib/perfil';
 import { urlPerfil } from '../../src/lib/compartir';
 import { requiereSesion, useSesion } from '../../src/lib/contexto';
 import { useTasa } from '../../src/lib/tasa';
 import { ambar, fuentes, ink, paper, panel, sand } from '../../src/lib/tema';
-
-// El texto con el que la web abre la conversación cuando se escribe al PERFIL y no a un servicio
-// concreto — el mismo para WhatsApp y para el chat (ContactActions.tsx: `waText` y `openMessage`
-// sin `serviceTitle`). No se reusa `opcionesContacto` de `lib/contacto.ts` justamente por esto:
-// esa función arma el mensaje con «vi tu servicio «X»», que aquí sería falso.
-const MENSAJE_INICIAL = 'Hola, vi tu perfil en Encuentrauno y me gustaría consultarte un trabajo.';
 
 /** Cifra de un artículo del catálogo: «A consultar», o la cifra con «desde» cuando el precio es un mínimo. */
 function FilaServicio({ s }: { s: ProviderServiceItem }) {
@@ -54,12 +52,20 @@ function FilaServicio({ s }: { s: ProviderServiceItem }) {
   );
 }
 
-function TarjetaArticulo({ item }: { item: CatalogItem }) {
+function TarjetaArticulo({ item, alAbrir }: { item: CatalogItem; alAbrir: () => void }) {
   const tasa = useTasa();
   const precio = precioCatalogo(item, tasa);
   return (
     // Agotado no se esconde: se atenúa y lleva su insignia, igual que la web (CatalogCard.tsx:47,51).
-    <View style={[u.tarjeta, e.articulo, !item.available && { opacity: 0.6 }]}>
+    // Se toca para ver el detalle: la `description` del artículo no cabe en la tarjeta y sin esto no
+    // se alcanza desde ningún sitio de la app.
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={item.name}
+      accessibilityHint="Ver el detalle del artículo"
+      onPress={alAbrir}
+      style={({ pressed }) => [u.tarjeta, e.articulo, !item.available && { opacity: 0.6 }, pressed && { opacity: 0.92 }]}
+    >
       <View style={e.articuloFoto}>
         {/* Sin foto cae a la inicial del nombre sobre el panel de categoría, como la web. */}
         <Portada src={item.image} semilla={item.name} icono={item.name.trim().charAt(0).toUpperCase() || '·'} tamanoIcono={44} />
@@ -79,23 +85,7 @@ function TarjetaArticulo({ item }: { item: CatalogItem }) {
           {precio.alt ? <Text style={[e.menor, { marginTop: 2 }]}>{precio.alt}</Text> : null}
         </View>
       </View>
-    </View>
-  );
-}
-
-function RejillaEsqueleto({ filas = 2 }: { filas?: number }) {
-  return (
-    <View style={e.rejilla}>
-      {Array.from({ length: filas * 2 }).map((_, i) => (
-        <View key={i} style={[u.tarjeta, e.articulo, { overflow: 'hidden' }]}>
-          <Esqueleto estilo={[e.articuloFoto, { borderRadius: 0 }]} />
-          <View style={{ padding: 12, gap: 8 }}>
-            <Esqueleto estilo={{ height: 14, width: '85%' }} />
-            <Esqueleto estilo={{ height: 14, width: '45%' }} />
-          </View>
-        </View>
-      ))}
-    </View>
+    </Pressable>
   );
 }
 
@@ -103,11 +93,13 @@ function RejillaEsqueleto({ filas = 2 }: { filas?: number }) {
  * Catálogo del perfil: consulta propia, independiente de la del perfil. Si falla, esta sección
  * enseña su error y reintenta sola — la pantalla sigue en pie.
  */
-function SeccionCatalogo({ id }: { id: string }) {
+function SeccionCatalogo({ vendedor }: { vendedor: VendedorCatalogo }) {
   const { api } = useSesion();
+  const id = vendedor.id;
   const [texto, setTexto] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [seccion, setSeccion] = useState('');
+  const [abierto, setAbierto] = useState<CatalogItem | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setBusqueda(texto.trim()), ANTIRREBOTE_BUSQUEDA_MS);
@@ -128,16 +120,11 @@ function SeccionCatalogo({ id }: { id: string }) {
   const primera = consulta.data?.pages[0];
   const articulos = articulosDeCatalogo(consulta.data?.pages);
 
-  // Mientras la primera página viene, se reserva altura: los datos llegan de tres consultas y sin
-  // esto el orden de la pantalla salta al terminar de cargar.
-  if (consulta.isPending) {
-    return (
-      <View style={{ gap: 16 }}>
-        <Esqueleto estilo={{ height: 25, width: 160 }} />
-        <RejillaEsqueleto />
-      </View>
-    );
-  }
+  // Mientras la primera página viene NO se reserva altura, al contrario que las reseñas: aquí
+  // todavía no se sabe si hay catálogo, y la mayoría de perfiles no tiene (Gratis no tiene nunca).
+  // Un esqueleto de título + cuatro tarjetas que luego desaparece al llegar `total_all === 0` sube
+  // ~300 px todo lo de abajo: provocaba el salto que pretendía evitar. La web lo razona igual
+  // (ProviderCatalog.tsx:69-71). Las reseñas sí lo reservan porque esa sección se monta siempre.
 
   // El error se mira ANTES de decidir si la sección se monta: sin primera página no se sabe si el
   // perfil tiene catálogo, y callarse dejaría la sección en blanco sin que nadie pueda reintentar.
@@ -159,6 +146,9 @@ function SeccionCatalogo({ id }: { id: string }) {
   const filtrando = Boolean(busqueda || seccion);
   const restantes = pagina.total - articulos.length;
   const atenuado = consulta.isFetching && !consulta.isFetchingNextPage;
+  // `pagina` es la página de la clave ANTERIOR mientras `isPlaceholderData` esté puesto, así que su
+  // `total` no es el del filtro que se está aplicando: la etiqueta no canta cifra hasta que lo sea.
+  const etiquetaConteo = etiquetaConteoCatalogo({ filtrando, cargando: consulta.isPlaceholderData, total: pagina.total });
 
   return (
     <View style={{ gap: 12 }}>
@@ -187,10 +177,8 @@ function SeccionCatalogo({ id }: { id: string }) {
         </ScrollView>
       ) : null}
 
-      {filtrando ? (
-        <Text style={u.suave} accessibilityLiveRegion="polite">
-          {pagina.total === 1 ? '1 artículo' : `${pagina.total} artículos`}
-        </Text>
+      {etiquetaConteo ? (
+        <Text style={u.suave} accessibilityLiveRegion="polite">{etiquetaConteo}</Text>
       ) : null}
 
       {/* Fallar con páginas ya en pantalla no borra lo que se ve: se avisa y el botón sigue ahí. */}
@@ -207,7 +195,7 @@ function SeccionCatalogo({ id }: { id: string }) {
       ) : (
         <>
           <View style={[e.rejilla, atenuado && { opacity: 0.5 }]} aria-busy={atenuado}>
-            {articulos.map((it) => <TarjetaArticulo key={it.id} item={it} />)}
+            {articulos.map((it) => <TarjetaArticulo key={it.id} item={it} alAbrir={() => setAbierto(it)} />)}
           </View>
           {consulta.hasNextPage ? (
             // Fallar aquí deja la lista como está y el botón en su sitio: volver a tocarlo reintenta.
@@ -220,6 +208,9 @@ function SeccionCatalogo({ id }: { id: string }) {
           ) : null}
         </>
       )}
+
+      {/* Solo se monta con un artículo abierto: así el formulario de dentro nace limpio cada vez. */}
+      {abierto ? <ModalArticulo item={abierto} vendedor={vendedor} alCerrar={() => setAbierto(null)} /> : null}
     </View>
   );
 }
@@ -248,16 +239,18 @@ function ResumenEstrellas({ rating, count, distribution }: { rating: number; cou
       <View style={{ alignItems: 'center' }}>
         <Text style={e.resumenNota}>{rating.toFixed(1)}</Text>
         <View style={{ marginTop: 8 }}><Estrellas valor={rating} tamano={16} /></View>
-        <Text style={[u.tenue, { fontSize: 12, marginTop: 4 }]}>{count === 1 ? '1 reseña' : `${count} reseñas`}</Text>
+        <Text style={[u.tenue, { fontSize: 12, marginTop: 4 }]}>{plural(count, 'reseña', 'reseñas')}</Text>
       </View>
-      <View style={{ flex: 1, gap: 6 }} accessibilityLabel="Distribución de puntuaciones">
+      <View style={{ flex: 1, gap: 6 }}>
         {resumenEstrellas(distribution).map((fila) => (
-          <View key={fila.rating} style={e.barraFila}>
+          // La fila entera es UN elemento accesible con su etiqueta: así el «5» y el «40 %» que se
+          // ven quedan plegados dentro en vez de leerse como dos números sueltos sin contexto.
+          <View key={fila.rating} style={e.barraFila} accessible accessibilityLabel={etiquetaBarraResenas(fila)}>
             <Text style={e.barraValor}>{fila.rating}</Text>
             <View style={e.barra}>
               <View style={[e.barraRelleno, { width: `${fila.porcentaje}%` }]} />
             </View>
-            <Text style={e.barraPct} accessibilityLabel={`${fila.count} reseñas de ${fila.rating} estrellas`}>{fila.porcentaje}%</Text>
+            <Text style={e.barraPct}>{fila.porcentaje}%</Text>
           </View>
         ))}
       </View>
@@ -287,6 +280,13 @@ function SeccionResenas({ id, rating, count, distribution }: { id: string; ratin
     <Tarjeta estilo={{ padding: 20, gap: 20 }}>
       <Text style={u.h3}>Reseñas</Text>
       {count > 0 ? <ResumenEstrellas rating={rating} count={count} distribution={distribution} /> : null}
+
+      {/* Fallar con reseñas ya en pantalla no las borra: se avisa y el botón «Ver más» sigue ahí
+          para reintentar — el mismo trato que el catálogo. Sin esto, tocar «Ver más reseñas» y que
+          fallara dejaba de cargar el botón y no decía nada. */}
+      {consulta.isError && hayDatos ? (
+        <Aviso tono="error">{consulta.error instanceof ErrorApi ? consulta.error.message : 'No pudimos cargar más reseñas.'}</Aviso>
+      ) : null}
 
       {consulta.isPending ? (
         // Igual que el catálogo: altura reservada para que la pantalla no salte al llegar los datos.
@@ -333,6 +333,9 @@ export default function Proveedor() {
   const [abierto, setAbierto] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState<string>();
+  // Aparte de `error`: ese alimenta el error del Campo del formulario, y un fallo al abrir Telegram
+  // no es un error de lo que el usuario escribió.
+  const [errorEnlace, setErrorEnlace] = useState<string>();
   const [enviando, setEnviando] = useState(false);
 
   if (consulta.isLoading) {
@@ -360,17 +363,21 @@ export default function Proveedor() {
     );
   }
 
-  const { provider, services, distribution } = consulta.data;
+  const { provider, services, serviceAreas, distribution } = consulta.data;
   const nombre = nombreVisible(provider);
   const lugar = [provider.municipality_name, provider.province_name].filter(Boolean).join(', ');
+  const zonas = zonasPorProvincia(serviceAreas);
 
   // Ninguna regla de plan vive aquí: el backend ya decidió si hay portada, catálogo o chat. La
   // pantalla solo reacciona a lo que viene.
-  const tel = provider.whatsapp?.trim() || null;
-  const whatsapp = tel && provider.contact_mode !== 'call' ? whatsappLink(tel, MENSAJE_INICIAL) : null;
-  const llamar = tel && provider.contact_mode !== 'whatsapp' ? telLink(tel) : null;
-  const chat = provider.has_chat && usuario?.user_type !== 'provider';
-  const sinContacto = !chat && !whatsapp && !llamar;
+  const { chat, whatsapp, llamar, telegram, correo, sinTelefono, sinContacto } = contactoPerfil(provider, usuario);
+  const vendedor: VendedorCatalogo = {
+    id: provider.id, nombre, whatsapp: provider.whatsapp, contactMode: provider.contact_mode, hasChat: provider.has_chat,
+  };
+
+  function abrirEnlace(url: string, que: 'Telegram' | 'el correo') {
+    Linking.openURL(url).catch(() => setErrorEnlace(`No se pudo abrir ${que}.`));
+  }
 
   function abrirExterno(url: string, via: 'whatsapp' | 'call') {
     // Constancia del contacto (sirve para poder reseñar). Si falla, no importa: lo que importa es contactar.
@@ -481,7 +488,13 @@ export default function Proveedor() {
         <View style={{ gap: 12 }}>
           <Text style={u.h3}>Servicios <Text style={e.cuenta}>({services.length})</Text></Text>
           {services.length === 0 ? (
-            <EstadoVacio icono="construct-outline" titulo="Sin servicios publicados" texto="Puedes escribirle igualmente para consultar un trabajo." />
+            // Invitar a escribirle solo si hay por dónde: sin ninguna vía de contacto, esta frase y
+            // el «aún no ha puesto un teléfono» de dos secciones más abajo se contradecían.
+            <EstadoVacio
+              icono="construct-outline"
+              titulo="Sin servicios publicados"
+              texto={sinContacto ? undefined : 'Puedes escribirle igualmente para consultar un trabajo.'}
+            />
           ) : (
             <View style={{ gap: 12 }}>
               {services.map((s) => <FilaServicio key={s.id} s={s} />)}
@@ -489,15 +502,30 @@ export default function Proveedor() {
           )}
         </View>
 
-        <SeccionCatalogo id={provider.id} />
+        <SeccionCatalogo vendedor={vendedor} />
+
+        {/* «¿Trabaja en mi municipio?» es lo que decide a quién escribir, y hasta ahora el dato
+            llegaba en `serviceAreas` y no se pintaba en ninguna pantalla de la app. La web lo
+            enseña igual, agrupado por provincia (ProviderProfile.tsx:316-321). */}
+        {zonas.length > 0 ? (
+          <View style={{ gap: 12 }}>
+            <Text style={u.h3}>Zonas donde trabaja</Text>
+            {zonas.map((z) => (
+              <View key={z.provincia} style={{ gap: 6 }}>
+                <Text style={e.zonaProvincia}>{z.provincia.toUpperCase()}</Text>
+                <View style={e.chips}>
+                  {z.municipios.map((m) => <Chip key={m} texto={m} pequeno />)}
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <SeccionResenas id={provider.id} rating={provider.rating} count={provider.review_count} distribution={distribution} />
 
         <Tarjeta estilo={{ padding: 20, gap: 12 }}>
           <Text style={u.h3}>Contactar</Text>
-          {sinContacto ? (
-            <Text style={u.suave}>Este profesional aún no ha puesto un teléfono de contacto.</Text>
-          ) : abierto ? (
+          {abierto ? (
             <View style={{ gap: 12 }}>
               <Campo etiqueta="Tu mensaje" value={mensaje} onChangeText={setMensaje} multiline numberOfLines={4} error={error}
                 ayuda="Dile qué necesitas, dónde y cuándo. La respuesta llega a tus Mensajes." />
@@ -509,9 +537,43 @@ export default function Proveedor() {
               {chat ? <Boton titulo="Enviar mensaje" icono="chatbubble-ellipses-outline" onPress={escribir} /> : null}
               {whatsapp ? <Boton titulo="WhatsApp" variante="whatsapp" icono="logo-whatsapp" onPress={() => abrirExterno(whatsapp, 'whatsapp')} /> : null}
               {llamar ? <Boton titulo="Llamar" variante="secundario" icono="call-outline" onPress={() => abrirExterno(llamar, 'call')} /> : null}
+              {/* Sigue diciéndose cuando solo hay Telegram o correo: es cierto, no hay teléfono. Lo
+                  que ya no pasa es que un perfil localizable por Telegram se quede sin ninguna vía
+                  pintada (ver `sinTelefono` vs `sinContacto` en lib/perfil.ts). */}
+              {sinTelefono ? <Text style={u.suave}>Este profesional aún no ha puesto un teléfono de contacto.</Text> : null}
               {error ? <Text style={[u.suave, { color: '#b42318' }]}>{error}</Text> : null}
             </View>
           )}
+
+          {/* Telegram y correo, como la web (ProviderProfile.tsx:188-205). */}
+          {telegram || correo ? (
+            <View style={e.contactoExtra}>
+              {telegram ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Telegram: ${provider.telegram}`}
+                  onPress={() => abrirEnlace(telegram, 'Telegram')}
+                  style={({ pressed }) => [u.fila, { gap: 8 }, pressed && { opacity: 0.6 }]}
+                >
+                  <Ionicons name="paper-plane-outline" size={16} color="#0ea5e9" />
+                  <Text style={u.texto}>Telegram</Text>
+                  <Text style={[u.tenue, { flexShrink: 1 }]} numberOfLines={1}>{provider.telegram}</Text>
+                </Pressable>
+              ) : null}
+              {correo ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Correo: ${provider.email_contact}`}
+                  onPress={() => abrirEnlace(correo, 'el correo')}
+                  style={({ pressed }) => [u.fila, { gap: 8 }, pressed && { opacity: 0.6 }]}
+                >
+                  <Ionicons name="mail-outline" size={16} color={ink[400]} />
+                  <Text style={[u.texto, { flexShrink: 1 }]} numberOfLines={1}>{provider.email_contact}</Text>
+                </Pressable>
+              ) : null}
+              {errorEnlace ? <Text style={[u.suave, { color: '#b42318' }]}>{errorEnlace}</Text> : null}
+            </View>
+          ) : null}
         </Tarjeta>
       </ScrollView>
     </SafeAreaView>
@@ -527,6 +589,8 @@ const e = StyleSheet.create({
   filaNombre: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   meta: { gap: 8, marginTop: 2 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  zonaProvincia: { fontFamily: fuentes.textoNegrita, fontSize: 12, letterSpacing: 1.2, color: ink[400] },
+  contactoExtra: { gap: 10, borderTopWidth: 1, borderTopColor: sand[200], paddingTop: 16, marginTop: 4 },
   cuenta: { fontFamily: fuentes.textoFuerte, fontSize: 16, color: ink[400] },
   galeria: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   galeriaFoto: { width: '31.5%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: panel },
