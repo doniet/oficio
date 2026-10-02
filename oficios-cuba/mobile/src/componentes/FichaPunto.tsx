@@ -3,7 +3,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { CatalogItem, CatalogPage, ProviderPublic, ProviderServiceItem, PuntoMapa } from '@oficio/shared';
-import { precioRenglon, priceFrom, telLink, whatsappLink } from '@oficio/shared';
+import { precioCatalogo, priceFrom, telLink, whatsappLink } from '@oficio/shared';
 import { Boton } from './Boton';
 import { Acordeon, Avatar, BotonCompartir, EstadoError, Insignia, Portada, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
@@ -42,22 +42,10 @@ function FilaServicio({ servicio }: { servicio: ProviderServiceItem }) {
   );
 }
 
-/**
- * Lo mismo que `catalogPrice` de la web (frontend/src/lib/format.ts:146-150): el precio de un
- * artículo no es el de un servicio — `price_type` es `'fixed' | 'from' | 'ask'`, otra unión — así
- * que `priceFrom` no sirve aquí. `shared/` no tiene todavía un helper de catálogo y este archivo
- * no es dueño de ese paquete: se arma con `precioRenglon`, que es exactamente lo que usa la web.
- */
-function precioArticulo(item: CatalogItem, tasa: number) {
-  if (item.price_type === 'ask' || item.price == null) return { prefix: '', amount: 'A consultar' };
-  const p = precioRenglon(item.price, item.price_currency, tasa);
-  return { prefix: item.price_type === 'from' ? 'desde' : '', amount: p.principal };
-}
-
 /** Fila de un artículo del catálogo. Sin foto cae a su inicial, igual que `CatalogImage` en la web. */
 function FilaArticulo({ item }: { item: CatalogItem }) {
   const tasa = useTasa();
-  const precio = precioArticulo(item, tasa);
+  const precio = precioCatalogo(item, tasa);
   return (
     // Los agotados NO se filtran (ver lib/catalogo.ts): se pintan atenuados con su insignia.
     <View style={[e.fila, !item.available && { opacity: 0.6 }]}>
@@ -67,9 +55,10 @@ function FilaArticulo({ item }: { item: CatalogItem }) {
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text style={e.filaTitulo} numberOfLines={2}>{item.name}</Text>
         <Text numberOfLines={1}>
-          {precio.prefix ? <Text style={e.menor}>{precio.prefix} </Text> : null}
-          <Text style={e.precio}>{precio.amount}</Text>
+          {precio.prefijo ? <Text style={e.menor}>{precio.prefijo} </Text> : null}
+          <Text style={e.precio}>{precio.cifra}</Text>
         </Text>
+        {precio.alt ? <Text style={e.menor} numberOfLines={1}>{precio.alt}</Text> : null}
         {!item.available ? <Insignia tipo="suave" texto="Agotado" /> : null}
       </View>
     </View>

@@ -1,4 +1,4 @@
-import type { Currency, PriceType } from './tipos';
+import type { CatalogPriceType, Currency, PriceType } from './tipos';
 
 type ConPrecio = { price_min?: number | null; price_max?: number | null; price_type: PriceType; price_currency?: Currency | null };
 
@@ -61,6 +61,24 @@ export function precioDetalle(s: ConPrecio, tasa: number = TASA_RESPALDO) {
 export function precioRenglon(price: number, moneda: Currency, tasa: number = TASA_RESPALDO) {
   const p = partes({ price_min: price, price_type: 'fixed', price_currency: moneda }, tasa);
   return { principal: p?.principal ?? '', alt: (p?.alt ?? null) as string | null };
+}
+
+/**
+ * El precio de un artículo de catálogo: gemelo de `catalogPrice` de la web
+ * (`frontend/src/lib/format.ts`). Vive aquí y no en cada pantalla porque la ficha del mapa y la
+ * pantalla del perfil lo necesitan igual, y al escribirlo cada una por su lado salieron dos
+ * versiones con formas distintas — una de ellas perdiendo la conversión de moneda.
+ *
+ * Ojo: `price_type` de catálogo NO es el `PriceType` de los oficios. Son dos uniones distintas que
+ * comparten el miembro 'fixed'.
+ */
+export function precioCatalogo(
+  item: { price: number | null; price_type: CatalogPriceType; price_currency: Currency },
+  tasa: number = TASA_RESPALDO,
+) {
+  if (item.price_type === 'ask' || item.price == null) return { prefijo: '', cifra: 'A consultar', alt: null as string | null };
+  const p = precioRenglon(item.price, item.price_currency, tasa);
+  return { prefijo: item.price_type === 'from' ? 'desde' : '', cifra: p.principal, alt: p.alt };
 }
 
 export const ETIQUETA_TIPO_PRECIO: Record<PriceType, string> = {

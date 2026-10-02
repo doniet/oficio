@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ETIQUETA_TIPO_PRECIO, formatPrice, initials, precioDetalle, textoNumServicios, nombreVisible, parseDate, priceFrom, relativeTime, TASA_RESPALDO, telLink, whatsappLink } from '../src/formato';
+import { ETIQUETA_TIPO_PRECIO, formatPrice, initials, precioDetalle, textoNumServicios, nombreVisible, parseDate, priceFrom, relativeTime, TASA_RESPALDO, telLink, whatsappLink, precioCatalogo } from '../src/formato';
 
 describe('formato', () => {
   it('parseDate acepta el formato de SQLite (UTC sin zona) y el ISO', () => {
@@ -68,5 +68,18 @@ describe('formato', () => {
 
   it('whatsappLink limpia el número', () => {
     expect(whatsappLink('+53 5 123-4567', 'hola')).toBe('https://wa.me/5351234567?text=hola');
+  });
+
+  it('precioCatalogo: «A consultar», el prefijo «desde» y la conversión aparte', () => {
+    expect(precioCatalogo({ price: null, price_type: 'ask', price_currency: 'CUP' }))
+      .toEqual({ prefijo: '', cifra: 'A consultar', alt: null });
+    // price_type 'fixed' con price nulo también es a consultar: el backend lo permite.
+    expect(precioCatalogo({ price: null, price_type: 'fixed', price_currency: 'CUP' }).cifra).toBe('A consultar');
+    const desde = precioCatalogo({ price: 500, price_type: 'from', price_currency: 'CUP' }, 500);
+    expect(desde.prefijo).toBe('desde');
+    expect(desde.cifra).toContain('500');
+    // La conversión NO se pierde: es lo que una de las dos copias duplicadas se dejaba fuera.
+    expect(desde.alt).not.toBeNull();
+    expect(precioCatalogo({ price: 500, price_type: 'fixed', price_currency: 'CUP' }, 500).prefijo).toBe('');
   });
 });
