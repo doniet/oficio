@@ -2,18 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import type { CatalogItem, CatalogPage, ProviderPublic, ProviderServiceItem, PuntoMapa } from '@oficio/shared';
-import { precioCatalogo, priceFrom, telLink, whatsappLink } from '@oficio/shared';
+import type { ProviderPublic, ProviderServiceItem, PuntoMapa } from '@oficio/shared';
+import { priceFrom, telLink, whatsappLink } from '@oficio/shared';
 import { Boton } from './Boton';
 import { Acordeon, Avatar, BotonCompartir, EstadoError, Insignia, Portada, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
-import { articulosDeCatalogo, montarCatalogo } from '../lib/catalogo';
 import { urlPerfil } from '../lib/compartir';
 import { useTasa } from '../lib/tasa';
 import { brand, fuentes, ink, sand } from '../lib/tema';
 
-/** Mismo tope que la web (MAX_PRODUCTOS_ADELANTO en frontend/src/components/mapa/FichaPunto.tsx:99). */
-const MAX_PRODUCTOS_ADELANTO = 6;
 
 /** Fila compacta de un servicio dentro del acordeón: foto, categoría, título y precio. */
 function FilaServicio({ servicio }: { servicio: ProviderServiceItem }) {
@@ -39,71 +36,6 @@ function FilaServicio({ servicio }: { servicio: ProviderServiceItem }) {
         </Text>
       </View>
     </Pressable>
-  );
-}
-
-/** Fila de un artículo del catálogo. Sin foto cae a su inicial, igual que `CatalogImage` en la web. */
-function FilaArticulo({ item }: { item: CatalogItem }) {
-  const tasa = useTasa();
-  const precio = precioCatalogo(item, tasa);
-  return (
-    // Los agotados NO se filtran (ver lib/catalogo.ts): se pintan atenuados con su insignia.
-    <View style={[e.fila, !item.available && { opacity: 0.6 }]}>
-      <View style={e.filaFoto}>
-        <Portada src={item.image} semilla={item.name} icono={item.name.trim().charAt(0).toUpperCase() || '·'} tamanoIcono={22} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text style={e.filaTitulo} numberOfLines={2}>{item.name}</Text>
-        <Text numberOfLines={1}>
-          {precio.prefijo ? <Text style={e.menor}>{precio.prefijo} </Text> : null}
-          <Text style={e.precio}>{precio.cifra}</Text>
-        </Text>
-        {precio.alt ? <Text style={e.menor} numberOfLines={1}>{precio.alt}</Text> : null}
-        {!item.available ? <Insignia tipo="suave" texto="Agotado" /> : null}
-      </View>
-    </View>
-  );
-}
-
-/**
- * Adelanto del catálogo: unos pocos artículos y un enlace al perfil. NO es el catálogo: el
- * buscador, los chips de sección y la paginación son de la pantalla completa (`proveedor/[id]`).
- *
- * Si el perfil no tiene catálogo (`total_all === 0`) no se monta nada — ni un hueco vacío, igual
- * que la web (ProviderCatalog.tsx:69-72). Esa decisión vive en `montarCatalogo`.
- */
-function AdelantoCatalogo({ puntoId }: { puntoId: string }) {
-  const { api } = useSesion();
-  const [pagina, setPagina] = useState<CatalogPage | undefined>(undefined);
-
-  useEffect(() => {
-    let cancelado = false;
-    setPagina(undefined);
-    api.catalogo.deProveedor(puntoId)
-      .then((p) => { if (!cancelado) setPagina(p); })
-      // El adelanto es un extra sobre la ficha: si falla, la ficha se queda entera y el catálogo
-      // de verdad (con su propio reintento) está a un toque en «Ver perfil completo». Un recuadro
-      // de error por algo que el usuario no pidió sería ruido, no información.
-      .catch(() => {});
-    return () => { cancelado = true; };
-  }, [puntoId]);
-
-  if (!pagina || !montarCatalogo(pagina)) return null;
-  const adelanto = articulosDeCatalogo([pagina]).slice(0, MAX_PRODUCTOS_ADELANTO);
-  if (adelanto.length === 0) return null;
-
-  return (
-    <View>
-      <Text style={u.acordeonTitulo}>Productos <Text style={e.conteo}>({pagina.total_all})</Text></Text>
-      <View style={{ gap: 8, marginTop: 8 }}>
-        {adelanto.map((a) => <FilaArticulo key={a.id} item={a} />)}
-      </View>
-      {pagina.total_all > adelanto.length ? (
-        <Pressable onPress={() => router.push(`/proveedor/${puntoId}`)} accessibilityRole="link" hitSlop={6} style={{ marginTop: 8 }}>
-          <Text style={u.enlace}>Ver los {pagina.total_all} productos</Text>
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -183,7 +115,6 @@ function FichaCompleta({ punto }: { punto: PuntoMapa }) {
           </View>
         </Acordeon>
       ) : null}
-      <AdelantoCatalogo puntoId={punto.id} />
       {mostrarWhatsapp || mostrarLlamar ? (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           {mostrarWhatsapp ? <Boton variante="whatsapp" icono="logo-whatsapp" titulo="WhatsApp" onPress={() => contactar('whatsapp')} estilo={{ flex: 1 }} /> : null}
