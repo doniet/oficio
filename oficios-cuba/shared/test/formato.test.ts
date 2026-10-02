@@ -9,8 +9,8 @@ describe('formato', () => {
   });
 
   it('formatPrice: moneda del profesional + conversión aproximada (CUP por defecto)', () => {
-    expect(formatPrice({ price_type: 'negotiable', price_min: 10 })).toBe('A convenir');
-    expect(formatPrice({ price_type: 'fixed', price_min: null, price_max: null })).toBe('A convenir');
+    expect(formatPrice({ price_type: 'negotiable', price_min: 10 })).toBe('Precio acordado');
+    expect(formatPrice({ price_type: 'fixed', price_min: null, price_max: null })).toBe('Precio acordado');
     // Sin moneda = CUP (así nacen los servicios nuevos). 730 CUP/USD por defecto.
     expect(formatPrice({ price_type: 'fixed', price_min: 5000 })).toBe('5\u00a0000 CUP (≈ $7 USD)');
     expect(formatPrice({ price_type: 'hourly', price_min: 15000, price_max: 60000, price_currency: 'CUP' }))
@@ -26,7 +26,7 @@ describe('formato', () => {
     expect(priceFrom({ price_type: 'fixed', price_min: 10, price_max: 25, price_currency: 'USD' }, 730))
       .toEqual({ prefix: 'desde', amount: '$10 USD', suffix: '', alt: '≈ 7\u00a0300 CUP' });
     expect(priceFrom({ price_type: 'daily', price_min: 3000 }, 730)).toEqual({ prefix: '', amount: '3\u00a0000 CUP', suffix: '/ día', alt: '≈ $4 USD' });
-    expect(priceFrom({ price_type: 'negotiable' })).toEqual({ prefix: '', amount: 'A convenir', suffix: '', alt: null });
+    expect(priceFrom({ price_type: 'negotiable' })).toEqual({ prefix: '', amount: 'Precio acordado', suffix: '', alt: null });
   });
 
   it('precioDetalle separa cifra, unidad y conversión (ficha del servicio)', () => {
@@ -34,7 +34,7 @@ describe('formato', () => {
       .toEqual({ principal: '5\u00a0000 – 40\u00a0000 CUP', sufijo: '', alt: '≈ $7 – $55 USD' });
     expect(precioDetalle({ price_type: 'hourly', price_min: 10, price_currency: 'USD' }, 730))
       .toEqual({ principal: '$10 USD', sufijo: '/ hora', alt: '≈ 7\u00a0300 CUP' });
-    expect(precioDetalle({ price_type: 'negotiable', price_min: 5 })).toEqual({ principal: 'A convenir', sufijo: '', alt: null });
+    expect(precioDetalle({ price_type: 'negotiable', price_min: 5 })).toEqual({ principal: 'Precio acordado', sufijo: '', alt: null });
     expect(ETIQUETA_TIPO_PRECIO.fixed).toBe('Precio fijo');
   });
 
