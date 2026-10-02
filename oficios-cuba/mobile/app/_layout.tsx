@@ -105,6 +105,8 @@ export default function Raiz() {
           <Stack.Screen name="(auth)/entrar" options={{ presentation: 'modal', title: '' }} />
           <Stack.Screen name="(auth)/registro" options={{ presentation: 'modal', title: '' }} />
           <Stack.Screen name="servicio/[id]" options={{ title: '' }} />
+          {/* La pantalla pone su propio `headerRight` (Compartir) desde dentro con <Stack.Screen>. */}
+          <Stack.Screen name="proveedor/[id]" options={{ title: '' }} />
           <Stack.Screen name="conversacion/[id]" options={{ title: 'Conversación' }} />
         </Stack>
       </ProveedorSesion>
