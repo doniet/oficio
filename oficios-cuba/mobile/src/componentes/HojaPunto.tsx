@@ -107,7 +107,7 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
             onCerrar={() => sheetRef.current?.close()}
           />
         ) : punto ? (
-          <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()} />
+          <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()} onVolverALista={onVolverALista} />
         ) : null}
       </BottomSheetScrollView>
     </BottomSheet>
