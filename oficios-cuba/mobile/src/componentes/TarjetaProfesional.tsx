@@ -1,18 +1,17 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ProviderCard } from '@oficio/shared';
 import { fuentes, ink, sand } from '../lib/tema';
 import { Avatar, Esqueleto, Insignia, Portada, u, Valoracion } from './ui';
 
-/**
- * ProviderCard de la web. Sin enlace: el perfil del profesional todavía no existe en la app
- * (sigue en la web), así que la tarjeta es informativa.
- */
+/** ProviderCard de la web. */
 export function TarjetaProfesional({ p }: { p: ProviderCard }) {
   const nombre = p.business_name || p.owner_name;
   const lugar = [p.municipality_name, p.province_name].filter(Boolean).join(', ');
   return (
-    <View style={[u.tarjeta, { overflow: 'hidden' }]}>
+    <Pressable accessibilityRole="link" accessibilityLabel={nombre} onPress={() => router.push(`/proveedor/${p.id}`)}
+      style={({ pressed }) => [u.tarjeta, { overflow: 'hidden' }, pressed && { opacity: 0.92 }]}>
       <View style={e.portada}>
         <Portada src={p.cover} semilla={p.categories[0] ?? nombre} />
         <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(to top, rgba(14,21,41,0.4), transparent)' }]} />
@@ -37,7 +36,7 @@ export function TarjetaProfesional({ p }: { p: ProviderCard }) {
           {!!p.years_experience && <Text style={[u.suave, { color: ink[400] }]}>{p.years_experience} años de trabajo</Text>}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
