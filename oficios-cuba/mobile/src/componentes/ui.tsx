@@ -1,5 +1,5 @@
 import { ReactNode, useState } from 'react';
-import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Pressable, Share, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { initials } from '@oficio/shared';
@@ -115,8 +115,65 @@ export function PortadaCategoria({ icono, tamanoIcono = 48 }: { semilla: string;
 
 /** CoverImage: la foto si la hay; si no, la portada de la categoría. Ocupa todo su contenedor. */
 export function Portada({ src, semilla, icono, tamanoIcono }: { src?: string | null; semilla: string; icono?: string | null; tamanoIcono?: number }) {
-  if (!src) return <PortadaCategoria semilla={semilla} icono={icono} tamanoIcono={tamanoIcono} />;
-  return <Image source={urlImagen(src)} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="disk" transition={150} />;
+  // Mismo paracaídas que Avatar (línea 91): si la foto no carga, el emoji de categoría en vez de
+  // un hueco. Es la foto más grande de la app — la que más se nota cuando falla.
+  const [fallo, setFallo] = useState(false);
+  if (!src || fallo) return <PortadaCategoria semilla={semilla} icono={icono} tamanoIcono={tamanoIcono} />;
+  return <Image source={urlImagen(src)} onError={() => setFallo(true)} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="disk" transition={150} />;
+}
+
+/**
+ * Acordeon de la casa (paridad con SeccionServicios de la web,
+ * frontend/src/components/mapa/FichaPunto.tsx:46-71): cabecera pulsable con título y un chevron
+ * que rota al abrir. Estado interno; `defaultAbierto` decide el arranque porque cada contexto lo
+ * quiere distinto (la hoja del mapa cerrado, otros sitios podrían quererlo abierto).
+ *
+ * 🚨 Plegado, los hijos NO se montan — `{abierto && children}`, y nada más: ni `display: 'none'`,
+ * ni `opacity: 0`, ni una altura animada a 0. Si se montan igual, las `<Image>` de dentro se bajan
+ * aunque no se vean (React Native no tiene "ocúltalo pero no lo pidas") — justo lo que la web evita
+ * no metiendo esas tarjetas en el DOM mientras está cerrado (ver el comentario citado arriba). Que
+ * nadie lo "mejore" después con una animación de altura: eso vuelve a montar los hijos.
+ */
+export function Acordeon({ titulo, defaultAbierto = false, children }: { titulo: string; defaultAbierto?: boolean; children: ReactNode }) {
+  const [abierto, setAbierto] = useState(defaultAbierto);
+  return (
+    <View>
+      <Pressable
+        onPress={() => setAbierto((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: abierto }}
+        accessibilityLabel={titulo}
+        style={u.acordeonCabecera}
+      >
+        <Text style={u.acordeonTitulo} numberOfLines={1}>{titulo}</Text>
+        <Ionicons name="chevron-down" size={18} color={ink[400]} style={{ transform: [{ rotate: abierto ? '180deg' : '0deg' }] }} />
+      </Pressable>
+      {/* Plegado, los hijos NO se montan: ver el comentario de arriba. */}
+      {abierto && children}
+    </View>
+  );
+}
+
+/**
+ * Icono de compartir para cabeceras (la ficha del mapa y la pantalla del perfil), mismo patrón que
+ * el botón de cerrar de al lado: `Pressable` + icono, sin fondo. `Share` viene del núcleo de React
+ * Native — no se añade `expo-sharing`, que es para compartir archivos y aquí solo va una URL.
+ * Mismo contrato que la web (`frontend/src/components/mapa/FichaPunto.tsx:329-341`): título y url.
+ *
+ * 🚨 Cancelar no es un error: `Share.share` resuelve con `action: 'dismissedAction'` en iOS cuando
+ * el usuario cierra la hoja del sistema, y en Android puede rechazar la promesa al cerrarla. Los
+ * dos casos se tragan en silencio — nada de `Aviso`, nada de log; ni siquiera un fallo real se
+ * anuncia aquí, porque compartir no es una acción crítica.
+ */
+export function BotonCompartir({ titulo, url, tamano = 22 }: { titulo: string; url: string; tamano?: number }) {
+  const compartir = () => {
+    Share.share({ title: titulo, url }).catch(() => {});
+  };
+  return (
+    <Pressable onPress={compartir} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Compartir ${titulo}`}>
+      <Ionicons name="share-social-outline" size={tamano} color={ink[500]} />
+    </Pressable>
+  );
 }
 
 /** .skeleton */
@@ -181,4 +238,6 @@ export const u = StyleSheet.create({
   vacioTexto: { marginTop: 6, fontFamily: fuentes.texto, fontSize: 14, color: ink[500], textAlign: 'center', lineHeight: 20 },
   error: { borderRadius: radios.tarjeta, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', paddingHorizontal: 20, paddingVertical: 16 },
   errorTexto: { fontFamily: fuentes.texto, fontSize: 14, color: '#991b1b' },
+  acordeonCabecera: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  acordeonTitulo: { fontFamily: fuentes.textoNegrita, fontSize: 15, color: ink[900], flexShrink: 1 },
 });
