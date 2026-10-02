@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import type { PuntoMapa } from '@oficio/shared';
 import FichaPunto from './FichaPunto';
@@ -8,10 +9,10 @@ import { accionAtras } from '../lib/hojaPunto';
 import { tituloCelda } from '../lib/listaCelda';
 import { radios, sand } from '../lib/tema';
 
-// espacio del mapa y que sus controles flotantes (Cerca de mí, Reintentar) no queden tapados — ver el comentario
-// espacio del mapa y que su botón «Buscar en esta zona» no quede tapado — ver el comentario
-// junto a `altoReservadoMapa` en explorar.tsx. En la web ese acoplamiento lo resolvía una
-// variable CSS que el mapa leía en vivo; en React Native no hay nada parecido a una variable
+// Los dos anclajes de la hoja, exportados porque explorar.tsx los necesita para reservarle
+// espacio al mapa y que sus controles flotantes (Cerca de mí, Reintentar) no queden tapados — ver
+// el comentario junto a `altoReservado` en explorar.tsx. En la web ese acoplamiento lo resolvía
+// una variable CSS que el mapa leía en vivo; en React Native no hay nada parecido a una variable
 // global de layout, así que aquí se resuelve con dos números compartidos entre ambos archivos.
 export const ANCLA_ASOMADA = 0.3;
 export const ANCLA_ABIERTA = 0.85;
@@ -61,7 +62,13 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
     else sheetRef.current?.close();
   }, [punto?.id, lista]);
 
-  useEffect(() => {
+  // 🚨 El listener solo existe mientras la pantalla que monta la hoja está EN FOCO, y por eso va en
+  // `useFocusEffect` y no en `useEffect`. Con un `useEffect` el listener vive siempre que la pestaña
+  // esté montada y devuelve `true` con solo haber un punto abierto, sin saber qué hay encima: desde
+  // que la ficha empuja pantallas dentro de la app (`/proveedor/[id]`), el Atrás estando en el
+  // perfil se lo comía la hoja —cerrándola por detrás— y al usuario le parecía que el Atrás no
+  // hacía nada. Lo mismo valía estando en otra pestaña con un punto abierto.
+  useFocusEffect(useCallback(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       const accion = accionAtras({ punto: puntoRef.current, lista: listaRef.current ?? null, hayListaPrevia: hayPreviaRef.current });
       if (accion === 'nada') return false;
@@ -74,7 +81,7 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
       return true;
     });
     return () => sub.remove();
-  }, []);
+  }, []));
 
   const renderBackdrop = useCallback((props: BottomSheetBackdropProps) => (
     <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" opacity={0.3} />
