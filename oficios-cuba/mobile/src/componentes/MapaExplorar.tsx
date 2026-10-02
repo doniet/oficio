@@ -48,9 +48,16 @@ const ZOOM_INICIAL = 6.3;
 // Zoom al que se acerca «Cerca de mí»: nivel de ciudad, suficiente para distinguir profesionales cercanos.
 const ZOOM_CERCA_DE_MI = 13;
 // Diferencia de zoom mínima para tratar un cambio de región como "hizo zoom" y no como paneo.
-// Valor empírico sin verificar en hardware real (no hay emulador en este host): al probar en un
-// teléfono, comprobar que un pinch-zoom real siempre cruza este umbral y que la inercia de un
-// paneo nunca lo cruza por sí sola — si no, ajustar aquí.
+// Medido en emulador x86_64 el 2026-10-02, instrumentando este mismo handler:
+//   - Paneo (8 arrastres: lentos, rápidos, diagonales y dos «fling» violentos, esperando hasta 6 s
+//     por inercia tardía) → delta 0 EXACTO siempre, ni un residuo de coma flotante. La mitad
+//     «la inercia nunca cruza el umbral» queda confirmada con margen infinito.
+//   - Doble toque → delta 1.0, veinte veces por encima del umbral.
+// Lo que sigue SIN medir es un pinch pequeño y lento: ningún gesto sintético logró que MapLibre lo
+// tomara como pellizco (colapsa en paneo), así que hace falta un dedo humano con
+// `adb logcat` delante. Mientras tanto no hay dato que pida mover este valor.
+// Ojo: `onRegionDidChange` dispara UNA vez al asentarse la cámara, no por fotograma — el delta que
+// se mide aquí ya incluye la inercia posterior a soltar.
 const UMBRAL_ZOOM = 0.05;
 
 function bboxDeLimites([oeste, sur, este, norte]: LngLatBounds): Bbox {
