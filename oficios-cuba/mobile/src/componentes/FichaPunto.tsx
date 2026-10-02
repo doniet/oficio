@@ -2,15 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import type { ProviderPublic, ProviderServiceItem, PuntoMapa } from '@oficio/shared';
-import { priceFrom, telLink, whatsappLink } from '@oficio/shared';
+import type { ProviderPublic, ProviderServiceItem, PuntoMapa, Review } from '@oficio/shared';
+import { priceFrom, relativeTime, telLink, whatsappLink } from '@oficio/shared';
 import { Boton } from './Boton';
-import { Acordeon, Avatar, BotonCompartir, EstadoError, Insignia, Portada, Valoracion, u } from './ui';
+import { Acordeon, Avatar, BotonCompartir, Estrellas, EstadoError, Insignia, Portada, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
 import { urlPerfil } from '../lib/compartir';
+import { RESENAS_POR_PAGINA, tituloServicioResena } from '../lib/resenas';
 import { useTasa } from '../lib/tasa';
 import { brand, fuentes, ink, sand } from '../lib/tema';
-
 
 /** Fila compacta de un servicio dentro del acordeón: foto, categoría, título y precio. */
 function FilaServicio({ servicio }: { servicio: ProviderServiceItem }) {
@@ -36,6 +36,83 @@ function FilaServicio({ servicio }: { servicio: ProviderServiceItem }) {
         </Text>
       </View>
     </Pressable>
+  );
+}
+
+/** Cuántas reseñas se adelantan en la hoja. Mismo tope que la web (`SeccionResenas`,
+ *  frontend/src/components/mapa/FichaPunto.tsx:152): el resto se ven en el perfil. */
+const MAX_RESENAS_ADELANTO = 3;
+
+/** Una reseña del adelanto: quién, cuándo, cuántas estrellas, sobre qué servicio y qué dijo. */
+function FilaResena({ resena }: { resena: Review }) {
+  const servicio = tituloServicioResena(resena);
+  return (
+    <View style={e.resena}>
+      <Avatar src={resena.client_avatar} nombre={resena.client_name} tamano={36} />
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+        <View style={e.resenaCabecera}>
+          <Text style={e.resenaNombre} numberOfLines={1}>{resena.client_name}</Text>
+          <Text style={u.tenue}>{relativeTime(resena.created_at)}</Text>
+        </View>
+        <Estrellas valor={resena.rating} tamano={13} />
+        {servicio ? <Text style={e.resenaServicio} numberOfLines={1}>{servicio}</Text> : null}
+        {resena.comment ? <Text style={u.texto}>{resena.comment}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Las últimas reseñas del proveedor (el backend las manda por `created_at DESC`), con el enlace a
+ * verlas todas en el perfil.
+ *
+ * 🚨 La petición vive en el efecto de MONTAJE de este componente, y este componente es hijo del
+ * `Acordeon`, que plegado no monta sus hijos. Por eso desplegar una hoja no pide ninguna reseña:
+ * hasta que alguien toca «Reseñas», esta función no se ejecuta. Si la petición se subiera a
+ * `FichaCompleta` (o al propio `FichaPunto`), cada hoja que alguien despliegue costaría una vuelta
+ * de red por unas reseñas que no pidió ver — y el acordeón dejaría de servir para nada.
+ */
+function ListaResenas({ proveedorId }: { proveedorId: string }) {
+  const { api } = useSesion();
+  const [resenas, setResenas] = useState<Review[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState(false);
+  const [intento, setIntento] = useState(0);
+
+  useEffect(() => {
+    let cancelado = false;
+    setError(false);
+    // La primera página basta: de las 10 que trae se pintan 3, y el resto están en el perfil. Las
+    // 20 que viajan en `GET /providers/:id` se ignoran a propósito (ver lib/resenas.ts).
+    api.resenas.deProveedor(proveedorId, { page: 1, limit: RESENAS_POR_PAGINA })
+      .then((d) => {
+        if (cancelado) return;
+        setResenas(d.reviews);
+        setTotal(d.pagination.total);
+      })
+      .catch(() => {
+        if (cancelado) return;
+        setError(true);
+      });
+    return () => { cancelado = true; };
+  }, [proveedorId, intento]);
+
+  // Un fallo aquí NO tumba la ficha: el contacto y los servicios siguen arriba, intactos. Lo que se
+  // ofrece es reintentar solo esta sección.
+  if (error) return <View style={{ marginTop: 8 }}><EstadoError mensaje="No pudimos cargar las reseñas." alReintentar={() => setIntento((n) => n + 1)} /></View>;
+  if (!resenas) return <Text style={[u.suave, { marginTop: 8 }]}>Cargando…</Text>;
+  if (resenas.length === 0) return <Text style={[u.suave, { marginTop: 8 }]}>Todavía no tiene reseñas.</Text>;
+
+  const adelanto = resenas.slice(0, MAX_RESENAS_ADELANTO);
+  return (
+    <View style={{ marginTop: 4, gap: 12 }}>
+      {adelanto.map((r) => <FilaResena key={r.id} resena={r} />)}
+      {total > adelanto.length ? (
+        <Pressable onPress={() => router.push(`/proveedor/${proveedorId}`)} accessibilityRole="link" hitSlop={6}>
+          <Text style={u.enlace}>Ver las {total} reseñas</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -113,6 +190,15 @@ function FichaCompleta({ punto }: { punto: PuntoMapa }) {
           <View style={{ gap: 8, marginTop: 4 }}>
             {servicios.map((s) => <FilaServicio key={s.id} servicio={s} />)}
           </View>
+        </Acordeon>
+      ) : null}
+      {perfil.review_count > 0 ? (
+        // El número del título sale de `review_count` (ya vino con el perfil), no de contar las
+        // reseñas: pedirlas para poner el número obligaría a pedirlas plegado, que es justo lo que
+        // este acordeón evita. `key` por punto por lo mismo que el de arriba: al cambiar de negocio
+        // vuelve a nacer plegado, y con él se desmonta `ListaResenas` y su petición.
+        <Acordeon key={`resenas-${punto.id}`} titulo={`Reseñas (${perfil.review_count})`} defaultAbierto={false}>
+          <ListaResenas proveedorId={punto.id} />
         </Acordeon>
       ) : null}
       {mostrarWhatsapp || mostrarLlamar ? (
@@ -206,5 +292,8 @@ const e = StyleSheet.create({
   filaTitulo: { fontFamily: fuentes.textoNegrita, fontSize: 14, lineHeight: 19, color: ink[900] },
   precio: { fontFamily: fuentes.titulo, fontSize: 14, color: ink[900] },
   menor: { fontFamily: fuentes.texto, fontSize: 12, color: ink[400] },
-  conteo: { fontFamily: fuentes.textoFuerte, fontSize: 14, color: ink[400] },
+  resena: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  resenaCabecera: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  resenaNombre: { fontFamily: fuentes.textoNegrita, fontSize: 14, color: ink[900], flexShrink: 1 },
+  resenaServicio: { fontFamily: fuentes.textoFuerte, fontSize: 12, color: ink[500] },
 });

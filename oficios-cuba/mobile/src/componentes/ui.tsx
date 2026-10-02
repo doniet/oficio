@@ -88,8 +88,11 @@ function hash(seed: string, mult: number) {
 export function Avatar({ src, nombre, tamano = 44, cuadrado, estilo }: { src?: string | null; nombre?: string | null; tamano?: number; cuadrado?: boolean; estilo?: StyleProp<ViewStyle> }) {
   const radio = cuadrado ? 16 : tamano / 2;
   // Si la foto no carga (sin red, o un servidor que no sirve /demo), iniciales en vez de un hueco.
-  const [fallo, setFallo] = useState(false);
-  if (src && !fallo) return <Image source={urlImagen(src)} onError={() => setFallo(true)} style={[{ width: tamano, height: tamano, borderRadius: radio }, estilo as never]} contentFit="cover" cachePolicy="disk" />;
+  // Se guarda QUÉ `src` falló, no un booleano: así una `src` nueva vuelve a intentarse sola. Con un
+  // booleano, reusar la instancia con otra foto (misma posición de lista, `key` estable) dejaría las
+  // iniciales pegadas para siempre.
+  const [falloDe, setFalloDe] = useState<string | null>(null);
+  if (src && falloDe !== src) return <Image source={urlImagen(src)} onError={() => setFalloDe(src)} style={[{ width: tamano, height: tamano, borderRadius: radio }, estilo as never]} contentFit="cover" cachePolicy="disk" />;
   const [fondo, texto] = TONOS_AVATAR[hash(nombre ?? '?', 31) % TONOS_AVATAR.length];
   return (
     <View style={[{ width: tamano, height: tamano, borderRadius: radio, backgroundColor: fondo, alignItems: 'center', justifyContent: 'center' }, estilo]}>
@@ -116,11 +119,12 @@ export function PortadaCategoria({ icono, tamanoIcono = 48 }: { semilla: string;
 
 /** CoverImage: la foto si la hay; si no, la portada de la categoría. Ocupa todo su contenedor. */
 export function Portada({ src, semilla, icono, tamanoIcono }: { src?: string | null; semilla: string; icono?: string | null; tamanoIcono?: number }) {
-  // Mismo paracaídas que Avatar (línea 91): si la foto no carga, el emoji de categoría en vez de
-  // un hueco. Es la foto más grande de la app — la que más se nota cuando falla.
-  const [fallo, setFallo] = useState(false);
-  if (!src || fallo) return <PortadaCategoria semilla={semilla} icono={icono} tamanoIcono={tamanoIcono} />;
-  return <Image source={urlImagen(src)} onError={() => setFallo(true)} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="disk" transition={150} />;
+  // Mismo paracaídas que Avatar: si la foto no carga, el emoji de categoría en vez de un hueco. Es
+  // la foto más grande de la app — la que más se nota cuando falla. Y, como allí, lo que se guarda
+  // es la `src` que falló: al cambiar de foto se intenta la nueva en vez de quedarse con el emoji.
+  const [falloDe, setFalloDe] = useState<string | null>(null);
+  if (!src || falloDe === src) return <PortadaCategoria semilla={semilla} icono={icono} tamanoIcono={tamanoIcono} />;
+  return <Image source={urlImagen(src)} onError={() => setFalloDe(src)} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="disk" transition={150} />;
 }
 
 /**
