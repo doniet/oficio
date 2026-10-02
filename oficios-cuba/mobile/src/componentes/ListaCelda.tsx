@@ -44,26 +44,37 @@ export default function ListaCelda({ puntos, onElegir, onCerrar, error, onReinte
         </View>
       ) : null}
 
-      {puntos.map((p) => (
-        <Pressable
-          key={p.id}
-          onPress={() => onElegir(p)}
-          accessibilityRole="button"
-          accessibilityLabel={p.nombre}
-          style={({ pressed }) => [e.fila, pressed && { backgroundColor: sand[100] }]}
-        >
-          <Ionicons name="location" size={18} color={PIN_POR_TIPO[p.tipo].fondo} style={{ marginTop: 2 }} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={e.nombre} numberOfLines={1}>{p.nombre}</Text>
-            {p.resumen ? <Text style={[u.suave, { fontSize: 13 }]} numberOfLines={1}>{p.resumen}</Text> : null}
-          </View>
-          {/* Que se sepa cuál es aproximado ANTES de entrar: si no, se leen todos como direcciones
-              exactas y solo se descubre al abrir uno. */}
-          {p.aproximado ? (
-            <View style={e.zona}><Text style={e.zonaTexto}>Zona</Text></View>
-          ) : null}
-        </Pressable>
-      ))}
+      {puntos.map((p) => {
+        // Mismo par relleno+glifo que el pin del mapa (PIN_POR_TIPO), no el icono suelto de antes:
+        // ese icono coloreado sobre fondo claro daba ≈2,2:1, bajo el 3:1 que WCAG pide para un
+        // elemento gráfico. Puesto en un círculo relleno, el contraste pasa a ser glifo-contra-fondo,
+        // que es el par que esa tabla sí tiene validado (ver el comentario de pines.ts).
+        const { fondo, glifo } = PIN_POR_TIPO[p.tipo];
+        // El color nunca puede ser el único canal: el tipo también se dice en texto aquí.
+        const tipoTexto = p.tipo === 'negocio' ? 'Negocio' : 'Oficio';
+        return (
+          <Pressable
+            key={p.id}
+            onPress={() => onElegir(p)}
+            accessibilityRole="button"
+            accessibilityLabel={`${p.nombre}, ${tipoTexto}`}
+            style={({ pressed }) => [e.fila, pressed && { backgroundColor: sand[100] }]}
+          >
+            <View style={[e.miniPin, { backgroundColor: fondo }]}>
+              <Ionicons name="location" size={12} color={glifo} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={e.nombre} numberOfLines={1}>{p.nombre}</Text>
+              {p.resumen ? <Text style={[u.suave, { fontSize: 13 }]} numberOfLines={1}>{p.resumen}</Text> : null}
+            </View>
+            {/* Que se sepa cuál es aproximado ANTES de entrar: si no, se leen todos como direcciones
+                exactas y solo se descubre al abrir uno. */}
+            {p.aproximado ? (
+              <View style={e.zona}><Text style={e.zonaTexto}>Zona</Text></View>
+            ) : null}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -76,6 +87,9 @@ const e = StyleSheet.create({
   titulo: { fontFamily: fuentes.textoNegrita, fontSize: 16, color: ink[900], flexShrink: 1 },
   fila: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: sand[200] },
   nombre: { fontFamily: fuentes.textoFuerte, fontSize: 15, color: ink[900] },
+  // Círculo pequeño, misma lógica que el pin del mapa a otra escala: un marcador de fila, no uno
+  // sobre teselas, así que no lleva el borde blanco ni la sombra de aquel.
+  miniPin: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   zona: {
     alignSelf: 'center', borderRadius: radios.chip, borderWidth: 1, borderStyle: 'dashed',
     borderColor: ink[300], paddingHorizontal: 8, paddingVertical: 2,
