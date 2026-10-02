@@ -29,6 +29,35 @@ describe('crearCliente', () => {
     expect(fetchImpl.mock.calls.map((c) => c[0])).toEqual(['https://x/api/providers/featured?limit=4', 'https://x/api/stats/categories']);
   });
 
+  it('proveedores.detalle, catalogo.deProveedor y resenas.deProveedor pegan en la ruta correcta con el id escapado', async () => {
+    const fetchImpl = vi.fn((_url: string, _init?: RequestInit) => respuesta(200, {}));
+    const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl });
+    await api.proveedores.detalle('a b');
+    await api.catalogo.deProveedor('a b', { q: 'taladro', section: 'herramientas', page: 2 });
+    await api.resenas.deProveedor('a b', { page: 2, limit: 10 });
+    expect(fetchImpl.mock.calls.map((c) => c[0])).toEqual([
+      'https://x/api/providers/a%20b',
+      'https://x/api/catalog/provider/a%20b?q=taladro&section=herramientas&page=2',
+      'https://x/api/reviews/provider/a%20b?page=2&limit=10',
+    ]);
+  });
+
+  it('catalogo.deProveedor y resenas.deProveedor omiten parámetros vacíos o undefined', async () => {
+    const fetchImpl = vi.fn((_url: string, _init?: RequestInit) => respuesta(200, {}));
+    const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl });
+    await api.catalogo.deProveedor('p1', { q: '', section: undefined, page: 1 });
+    await api.resenas.deProveedor('p1');
+    expect(fetchImpl.mock.calls.map((c) => c[0])).toEqual([
+      'https://x/api/catalog/provider/p1?page=1',
+      'https://x/api/reviews/provider/p1',
+    ]);
+  });
+
+  it('proveedores.detalle en un 404 lanza ErrorApi con status 404', async () => {
+    const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl: () => respuesta(404, { error: 'Proveedor no encontrado' }) });
+    await expect(api.proveedores.detalle('x')).rejects.toMatchObject({ status: 404, message: 'Proveedor no encontrado' });
+  });
+
   it('convierte el error del backend en ErrorApi con su mensaje', async () => {
     const api = crearCliente({ baseUrl: 'https://x/api', getToken: () => null, fetchImpl: () => respuesta(400, { error: 'Email inválido' }) });
     await expect(api.auth.login({ email: 'a', password: 'b' })).rejects.toMatchObject({ status: 400, message: 'Email inválido' });

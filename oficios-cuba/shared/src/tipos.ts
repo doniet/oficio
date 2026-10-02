@@ -149,6 +149,22 @@ export interface ProviderPublic extends ProviderCard {
   email_contact?: string | null;
   /** Solo viene si el perfil es un negocio (routes/providers.ts, GET /providers/:id). */
   horario?: string | null;
+  gallery: string[];
+  /**
+   * Solo vienen si el profesional marcó `show_on_map`. Y aun así NO son la coordenada guardada:
+   * es el punto PUBLICADO (`lib/ubicacion.ts`), desplazado 100-300 m al azar cuando la precisión
+   * es `zona`. Nunca el real.
+   */
+  lat?: number;
+  lng?: number;
+}
+
+/** Una zona de servicio del proveedor, tal como la arma `serviceAreasOf` (routes/providers.ts). */
+export interface ProviderServiceArea {
+  id: string;
+  municipality_id: string;
+  municipality_name: string;
+  province_name: string;
 }
 
 export interface ProviderServiceItem {
@@ -270,3 +286,35 @@ export const RADIO_APROX_M = 300;
  */
 export const ZONA_DESDE_GRADOS = 0.0054;
 export type Bbox = { sur: number; oeste: number; norte: number; este: number };
+
+// Copiados letra por letra de frontend/src/types/index.ts:401-437. CatalogInput,
+// CatalogSearchItem y CatalogSearchPage NO se copian: son de escritura y de la búsqueda general,
+// y la app no hace ninguna de las dos.
+
+/** NO es el PriceType de servicios (línea 3): son dos uniones distintas con un miembro común. */
+export type CatalogPriceType = 'fixed' | 'from' | 'ask';
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  description: string | null;
+  /** null si price_type es 'ask' (a consultar). */
+  price: number | null;
+  price_type: CatalogPriceType;
+  price_currency: Currency;
+  image: string | null;
+  section: string | null;
+  available: boolean;
+  created_at: string;
+}
+
+export interface CatalogPage {
+  items: CatalogItem[];
+  sections: { name: string; count: number }[];
+  /** Con el filtro aplicado. */
+  total: number;
+  /** Sin filtros: si es 0 el perfil no enseña la sección. */
+  total_all: number;
+  page: number;
+  pages: number;
+}

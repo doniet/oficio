@@ -1,4 +1,4 @@
-import type { CategoryStat, Conversation, DispositivoPush, Message, PaginaServicios, ProviderCard, Review, ServiceDetail, ServiceSummary, SesionUsuario, User } from './tipos';
+import type { CatalogPage, CategoryStat, Conversation, DispositivoPush, Message, PaginaServicios, Pagination, ProviderCard, ProviderPublic, ProviderServiceArea, ProviderServiceItem, Review, ServiceDetail, ServiceSummary, SesionUsuario, User } from './tipos';
 import type { DatosLogin, DatosRegistro } from './validacion';
 
 export class ErrorApi extends Error {
@@ -77,6 +77,18 @@ export function crearCliente({ baseUrl, getToken, onUnauthorized, timeoutMs = 20
       destacados: (limit = 6) => pedir<{ providers: ProviderCard[] }>('GET', '/providers/featured', undefined, { limit }),
       /** Deja constancia de que el cliente contactó por WhatsApp/llamada (vale para poder reseñar). 204. */
       contacto: (id: string, via: 'whatsapp' | 'call') => pedir<void>('POST', `/providers/${encodeURIComponent(id)}/contact`, { via }),
+      detalle: (id: string) => pedir<{
+        provider: ProviderPublic; services: ProviderServiceItem[]; serviceAreas: ProviderServiceArea[];
+        reviews: Review[]; distribution: { rating: number; count: number }[];
+      }>('GET', `/providers/${encodeURIComponent(id)}`),
+    },
+    catalogo: {
+      deProveedor: (id: string, opciones?: { q?: string; section?: string; page?: number }) =>
+        pedir<CatalogPage>('GET', `/catalog/provider/${encodeURIComponent(id)}`, undefined, opciones),
+    },
+    resenas: {
+      deProveedor: (id: string, opciones?: { page?: number; limit?: number }) =>
+        pedir<{ reviews: Review[]; pagination: Pagination }>('GET', `/reviews/provider/${encodeURIComponent(id)}`, undefined, opciones),
     },
     /** CUP por 1 USD. En prod lo sirve nginx desde dardoventas.com; la API da el respaldo. */
     tasa: () => pedir<{ usd: number; updated_at: string | null; fuente: string }>('GET', '/tasas'),
