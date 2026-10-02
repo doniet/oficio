@@ -1275,3 +1275,40 @@
   decisión de Dariel (sección B del checklist de dispositivo); el recorrido de 9 puntos sigue sin
   caminarse en un Android real. Sub-proyecto 2 de la 0.2.5 sin empezar.
 - Blockers: ninguno.
+
+## 2026-10-02 02:55 — claude-code (vps2) — Sub-proyecto 2 verificado en emulador, 0.2.5 compilada (sin publicar)
+- Changes: se retomó el sub-proyecto 2 (ficha del proveedor en la app), que anoche quedó con el
+  código completo pero **sin la verificación visual**: la sesión se cortó seis minutos después de
+  instalar el APK de prueba y no llegó a mirarse ni una pantalla. Se caminó el recorrido entero en
+  el emulador `emulator-5556` de j-u contra producción (`oficio.dardoit.com`), con datos reales.
+  Salió **un defecto**, arreglado en `66e4889`: la galería «Fotos de mis trabajos» del perfil se
+  pintaba como un hueco en blanco. `galeriaFoto` era el único de los seis `aspectRatio` de la app
+  montado sobre un ancho en porcentaje, y además en un hijo directo de `flexDirection:'row'`;
+  juntos en el mismo nodo la caja se medía bien pero no pintaba nada — ni la foto, ni el 📷 de
+  respaldo, ni su propio fondo. Medido sobre «Pinturas Colonial Trinidad» (dos fotos que responden
+  200): los 996×314 px de la sección daban 100 % blanco puro y cero nodos de vista. El reparto pasa
+  a dos nodos — el porcentaje en el hijo de la fila, la proporción en una caja interna al 100 % —
+  que es lo que ya hacía la rejilla del catálogo de esa misma pantalla y lo que hacen los otros
+  cinco `aspectRatio`. Tras el arreglo, en el build publicable: dos `ImageView` de 313×313 px en sus
+  coordenadas exactas y la franja baja de 100 % a 37,5 % de blanco (el hueco del tercer sitio).
+  Después, `0774ec5` sube a **0.2.5 / versionCode 8**.
+- Tests: pass — app **133/133** en 13 suites, `shared` **24/24** en 3, `tsc --noEmit` limpio.
+  Verificación en emulador (10 comprobaciones, todas con captura mirada): el arreglo crítico del
+  Atrás de anoche (mapa → hoja → perfil → Atrás devuelve al mapa con la hoja viva) ✅; perfil con
+  datos reales ✅; catálogo con filtros y precios CUP + USD ✅; modal de artículo ✅; reseñas del
+  perfil con la distribución 5→1 ✅; acordeón «Reseñas (3)» en la hoja del mapa, que no se monta
+  hasta abrirlo y no aparece con `review_count = 0` ✅; zonas de servicio agrupadas por provincia ✅;
+  servicio → perfil → Atrás ✅; Compartir y su cancelación ✅; galería ✅ (tras el arreglo).
+  Artefacto `dist/oficios-cuba-0.2.5.apk`: versionCode 8, `arm64-v8a`+`armeabi-v7a`, firma
+  `111a8cec…` (la definitiva), 0 permisos `SYSTEM_ALERT`/`BOOT_COMPLETED`, 84 490 913 B,
+  sha256 `c6867d1807c392cb9459f9cac17f38fc80a44f6703bb09534225d2fd071bfedf`.
+- Security: sin cambios de superficie. Ningún archivo fuera de `oficios-cuba/mobile/`, ninguna
+  dependencia nueva, ningún endpoint nuevo. El emulador dibuja por software y no reproduce fallos de
+  GPU: el arreglo es de reparto de cajas, no de pintado por GPU, pero conviene una mirada en un
+  teléfono real al publicar.
+- Next: **la 0.2.5 está compilada y verificada pero NO publicada** — `scripts/publicar-apk.sh` lo
+  bloqueó el clasificador de modo auto por ser un despliegue a producción, y queda pendiente del OK
+  de Dariel. Con ese OK: publicar, fusionar `app-ficha-proveedor` en `master` (21+3 commits, avance
+  limpio) y empujar. Siguen pendientes de decisión visual de Dariel, del sub-proyecto 1: el control
+  visible «volver a la lista» y el contraste del icono de `ListaCelda`.
+- Blockers: el permiso para publicar. Nada de código.
