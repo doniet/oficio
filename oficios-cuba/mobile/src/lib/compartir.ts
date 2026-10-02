@@ -16,8 +16,18 @@ export function urlPerfil(id: string): string {
  * `esCancelacion` — así que se traga en silencio y la función no lanza por eso.
  */
 export async function compartirPerfil(id: string, nombre: string): Promise<void> {
+  return compartir(nombre, urlPerfil(id));
+}
+
+/**
+ * El compartir de verdad, y el único: lo llaman `compartirPerfil` y el `BotonCompartir` de
+ * `componentes/ui.tsx`. Vive aquí y no dentro del botón porque es lo que las pruebas cubren — un
+ * `Share.share` escrito a mano en el componente dejaría las pruebas verdes sobre un camino que
+ * nadie recorre.
+ */
+export async function compartir(titulo: string, url: string): Promise<void> {
   try {
-    const resultado = await Share.share({ title: nombre, url: urlPerfil(id) });
+    const resultado = await Share.share({ title: titulo, url });
     if (esCancelacion(resultado)) return;
   } catch (error) {
     if (esCancelacion(error)) return;

@@ -2,7 +2,7 @@ import { Share } from 'react-native';
 
 jest.mock('../src/lib/api', () => ({ origenWeb: jest.fn(() => 'https://oficio.dardoit.com') }));
 
-import { compartirPerfil, esCancelacion, urlPerfil } from '../src/lib/compartir';
+import { compartirPerfil, esCancelacion, urlPerfil, compartir } from '../src/lib/compartir';
 
 // Se espía el método real en vez de reemplazar todo el módulo 'react-native': jest-expo necesita
 // el resto del módulo intacto durante su propio setup (Platform, NativeModules…).
@@ -52,5 +52,12 @@ describe('compartirPerfil', () => {
   it('un rechazo de Android (cancelar) resuelve sin lanzar', async () => {
     mockShare.mockRejectedValue(new Error('cancelado'));
     await expect(compartirPerfil('p1', 'Taller de Juan')).resolves.toBeUndefined();
+  });
+
+  it('compartir es el camino que usa el botón: manda título y url tal cual', async () => {
+    const espia = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
+    await compartir('Taller Nápoles', 'https://oficio.dardoit.com/proveedor/abc');
+    expect(espia).toHaveBeenCalledWith({ title: 'Taller Nápoles', url: 'https://oficio.dardoit.com/proveedor/abc' });
+    espia.mockRestore();
   });
 });

@@ -1,9 +1,10 @@
 import { ReactNode, useState } from 'react';
-import { Pressable, Share, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { initials } from '@oficio/shared';
 import { urlImagen } from '../lib/api';
+import { compartir as compartirApp } from '../lib/compartir';
 import { ambar, brand, fuentes, ink, panel, radios, sand, sea, sombra } from '../lib/tema';
 
 /** .card de la web: blanca, borde sand-200, radio 16 y shadow-card. */
@@ -166,11 +167,11 @@ export function Acordeon({ titulo, defaultAbierto = false, children }: { titulo:
  * anuncia aquí, porque compartir no es una acción crítica.
  */
 export function BotonCompartir({ titulo, url, tamano = 22 }: { titulo: string; url: string; tamano?: number }) {
-  const compartir = () => {
-    Share.share({ title: titulo, url }).catch(() => {});
-  };
+  // El Share vive en lib/compartir.ts: es el camino que cubren las pruebas. Escribirlo aquí a
+  // mano dejaría esas pruebas verdes sobre código que no se embarca.
+  const alCompartir = () => { compartirApp(titulo, url).catch(() => {}); };
   return (
-    <Pressable onPress={compartir} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Compartir ${titulo}`}>
+    <Pressable onPress={alCompartir} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Compartir ${titulo}`}>
       <Ionicons name="share-social-outline" size={tamano} color={ink[500]} />
     </Pressable>
   );
