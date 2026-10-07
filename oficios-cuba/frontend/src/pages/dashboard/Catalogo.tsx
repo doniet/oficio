@@ -9,6 +9,7 @@ import type { CatalogItem } from '../../types';
 import { PageTitle } from '../../components/DashboardLayout';
 import { Alert, EmptyState, ErrorState, PageLoader, cn } from '../../components/ui';
 import CatalogItemForm from '../../components/catalog/admin/CatalogItemForm';
+import EstadoDardoVentas from '../../components/catalog/admin/EstadoDardoVentas';
 import { ConfirmDialog } from './parts';
 
 type Item = CatalogItem & { hidden_by_plan: boolean };
@@ -34,6 +35,8 @@ function Fila({ item, tasa, onToggle, onEdit, onDelete }: {
   item: Item; tasa: number; onToggle: () => void; onEdit: () => void; onDelete: () => void;
 }) {
   const precio = catalogPrice(item, tasa);
+  // Lo importado se cambia en el punto de venta: aquí se reescribiría en la próxima sincronización.
+  const importado = item.origen === 'dardoventas';
   return (
     <li className={cn('flex gap-3 p-3 sm:p-4', item.hidden_by_plan && 'opacity-60')}>
       <Miniatura item={item} />
@@ -41,6 +44,7 @@ function Fila({ item, tasa, onToggle, onEdit, onDelete }: {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p className="truncate font-semibold">{item.name}</p>
           {item.hidden_by_plan && <span className="badge bg-sand-200 text-ink-600">Oculto por tu plan</span>}
+          {importado && <span className="badge bg-sea-50 text-sea-700">De DardoVentas</span>}
         </div>
         {item.section && <p className="truncate text-xs text-ink-400">{item.section}</p>}
         <p className="mt-0.5 text-sm">
@@ -48,22 +52,26 @@ function Fila({ item, tasa, onToggle, onEdit, onDelete }: {
           <span className="font-semibold text-ink-800">{precio.amount}</span>
           {precio.alt && <span className="ml-1.5 text-xs text-ink-400">{precio.alt}</span>}
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2">
-            <span className="relative inline-flex">
-              <input type="checkbox" className="peer sr-only" checked={item.available} onChange={onToggle} aria-label={`${item.name}: disponible`} />
-              <span className="h-5 w-9 rounded-full bg-sand-300 transition peer-checked:bg-sea-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sea-500/40" />
-              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+        {importado ? (
+          <p className="mt-2 text-xs text-ink-400">Se cambia desde tu punto de venta.</p>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span className="relative inline-flex">
+                <input type="checkbox" className="peer sr-only" checked={item.available} onChange={onToggle} aria-label={`${item.name}: disponible`} />
+                <span className="h-5 w-9 rounded-full bg-sand-300 transition peer-checked:bg-sea-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sea-500/40" />
+                <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+              </span>
+              <span className={cn('text-xs font-semibold', item.available ? 'text-sea-700' : 'text-ink-400')}>{item.available ? 'Disponible' : 'Agotado'}</span>
+            </label>
+            <span className="ml-auto flex gap-1">
+              <button type="button" onClick={onEdit} className="btn-ghost btn-sm"><Pencil className="h-4 w-4" /> Editar</button>
+              <button type="button" onClick={onDelete} className="btn-ghost btn-sm text-red-600 hover:bg-red-50" aria-label={`Borrar ${item.name}`}>
+                <Trash2 className="h-4 w-4" />
+              </button>
             </span>
-            <span className={cn('text-xs font-semibold', item.available ? 'text-sea-700' : 'text-ink-400')}>{item.available ? 'Disponible' : 'Agotado'}</span>
-          </label>
-          <span className="ml-auto flex gap-1">
-            <button type="button" onClick={onEdit} className="btn-ghost btn-sm"><Pencil className="h-4 w-4" /> Editar</button>
-            <button type="button" onClick={onDelete} className="btn-ghost btn-sm text-red-600 hover:bg-red-50" aria-label={`Borrar ${item.name}`}>
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </span>
-        </div>
+          </div>
+        )}
       </div>
     </li>
   );
@@ -186,6 +194,7 @@ export default function Catalogo() {
           </button>
         )}
       />
+      <EstadoDardoVentas onCambio={load} />
 
       <div className="card p-4">
         <div className="flex items-baseline justify-between gap-3 text-sm">

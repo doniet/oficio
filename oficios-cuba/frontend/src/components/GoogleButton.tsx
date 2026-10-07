@@ -62,7 +62,7 @@ export function useDestinoGoogle() {
   const navigate = useNavigate();
   const toast = useToast();
   return (user: User, isNew: boolean, next: string | null | undefined) => {
-    if (isNew && user.user_type === 'provider') {
+    if (isNew && user.user_type === 'provider' && !next) {
       toast('¡Cuenta creada en el plan Gratis! Completa tu perfil para aparecer en las búsquedas.');
       navigate('/dashboard/perfil', { replace: true });
     } else {

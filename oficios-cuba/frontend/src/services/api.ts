@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, Bbox, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, Appointment, AppointmentStatus, CalendarData, Currency, MapaRespuesta, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
+import type { Agenda, AgendaBlock, Bbox, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, EstadoDardoVentas, Appointment, AppointmentStatus, CalendarData, Currency, MapaRespuesta, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -153,6 +153,12 @@ export const catalogApi = {
   update: (id: string, data: CatalogInput) => api.put<{ item: CatalogItem }>(`/catalog/${id}`, data),
   setAvailable: (id: string, available: boolean) => api.patch(`/catalog/${id}/available`, { available }),
   remove: (id: string) => api.delete(`/catalog/${id}`),
+};
+
+export const dardoventasApi = {
+  vincular: (code: string) => api.post<{ id: string }>('/dardoventas/vincular', { code }),
+  estado: () => api.get<EstadoDardoVentas>('/dardoventas/estado'),
+  desvincular: () => api.delete('/dardoventas/vincular'),
 };
 
 export const subscriptionApi = {

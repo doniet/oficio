@@ -524,3 +524,11 @@ export const RADIO_APROX_M = 300;
  *  vista). Sale de la geometría: por debajo de 0,0054° el área de 600 m no cabe en su celda. */
 export const ZONA_DESDE_GRADOS = 0.0054;
 export type Bbox = { sur: number; oeste: number; norte: number; este: number };
+
+export interface EstadoDardoVentas {
+  vinculado: boolean;
+  linked_at: string | null;
+  synced_at: string | null;
+  articulos: number;
+  canje: { id: string; status: 'pendiente' | 'ok' | 'error'; error: string | null } | null;
+}

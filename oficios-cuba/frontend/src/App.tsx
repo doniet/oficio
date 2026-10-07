@@ -29,6 +29,7 @@ const MisCitas = lazy(() => import('./pages/dashboard/MisCitas'));
 const Catalogo = lazy(() => import('./pages/dashboard/Catalogo'));
 const Admin = lazy(() => import('./pages/admin/Admin'));
 const GoogleCallback = lazy(() => import('./pages/auth/GoogleCallback'));
+const VincularDardoVentas = lazy(() => import('./pages/VincularDardoVentas'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 // /buscar y /profesionales eran rutas viejas: se conserva la query y el hash enteros para no
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="planes" element={<Plans />} />
           <Route path="servicio/:id" element={<ServiceDetail />} />
           <Route path="proveedor/:id" element={<ProviderProfile />} />
+          <Route path="vincular/dardoventas" element={<VincularDardoVentas />} />
           <Route path="login" element={<GuestOnly><Login /></GuestOnly>} />
           <Route path="registro" element={<GuestOnly><Register /></GuestOnly>} />
           <Route path="auth/google" element={<GoogleCallback />} />
