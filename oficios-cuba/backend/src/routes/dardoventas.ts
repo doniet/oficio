@@ -12,7 +12,7 @@ import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 const router = Router();
 
 const MAX_INTENTOS_HORA = 10;
-const entrada = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/, 'El código no es válido') });
+const entrada = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{22,128}$/, 'El código no es válido') });
 
 async function miPerfil(req: AuthRequest) {
   const id = await providerProfileIdFor(req.user!.id);

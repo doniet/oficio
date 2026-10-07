@@ -7,7 +7,7 @@ import { canjearPendientes, configDv, MSG, type ConfigDv } from '../src/notifier
 import { api, ponerPlan, registrar } from './helpers.js';
 import { art, BASE, pedirFalso, respuestaCatalogo } from './dardoventas-doble.js';
 
-const CODIGO = 'codigo-de-prueba-123';
+const CODIGO = 'codigo-de-prueba-1234567890';
 const hasta = new Date(Date.now() + 90 * 86_400_000);
 const cfg: ConfigDv = { base: BASE, secreto: 'secreto-de-prueba', proHasta: hasta };
 const slugNuevo = () => `slug${Math.random().toString(36).slice(2).padEnd(14, '0')}`;
@@ -49,6 +49,8 @@ describe('API: apuntar el canje', () => {
     const p = await registrar('provider');
     expect((await api.post('/api/dardoventas/vincular').set(p.auth).send({ code: 'a b' })).status).toBe(400);
     expect((await api.post('/api/dardoventas/vincular').set(p.auth).send({ code: 'x'.repeat(200) })).status).toBe(400);
+    expect((await api.post('/api/dardoventas/vincular').set(p.auth).send({ code: 'x'.repeat(21) })).status).toBe(400);
+    expect((await api.post('/api/dardoventas/vincular').set(p.auth).send({ code: 'x'.repeat(22) })).status).toBe(202);
   });
 
   it('un código nuevo sustituye al pendiente anterior', async () => {
@@ -153,6 +155,41 @@ describe('notificador: canjear', () => {
     await ponerPlan(providerId!, 'basic', null);
     await canjearPendientes({ ...cfg, proHasta: new Date(Date.now() - 1000) }, dobleCanje(slugNuevo()).pedir);
     expect(await perfil(providerId!)).toMatchObject({ subscription_plan: 'basic', subscription_expires_at: null });
+  });
+});
+
+describe('notificador: carreras con un canje en vuelo', () => {
+  it('un código nuevo llegado durante el canje lo deja sustituido: no vincula ni pisa el error', async () => {
+    const { auth, providerId, canjeId } = await pedirVinculo();
+    const slug = slugNuevo();
+    let segundo: { body: { id: string } } | undefined;
+    const { pedir } = pedirFalso(async (url) => {
+      if (url.endsWith('/api/pub/link')) {
+        segundo = await api.post('/api/dardoventas/vincular').set(auth).send({ code: `${CODIGO}-2` });
+        return Response.json({ ok: true, slug });
+      }
+      return respuestaCatalogo([art('a')]);
+    });
+    await canjearPendientes(cfg, pedir);
+    expect(await canje(canjeId)).toMatchObject({ status: 'error', error: 'Sustituido por un código más nuevo.', code: null });
+    expect((await perfil(providerId!))?.dardoventas_slug).toBeNull();
+    // El segundo sigue pendiente y es el que cuenta.
+    expect((await canje(segundo!.body.id))?.status).toBe('pendiente');
+  });
+
+  it('si el perfil se vinculó mientras tanto, el canje termina con error y no cambia el vínculo', async () => {
+    const { providerId, canjeId } = await pedirVinculo();
+    const otro = slugNuevo();
+    const { pedir } = pedirFalso(async (url) => {
+      if (url.endsWith('/api/pub/link')) {
+        await q('UPDATE provider_profiles SET dardoventas_slug = $1 WHERE id = $2', [otro, providerId]);
+        return Response.json({ ok: true, slug: slugNuevo() });
+      }
+      return respuestaCatalogo([art('a')]);
+    });
+    await canjearPendientes(cfg, pedir);
+    expect(await canje(canjeId)).toEqual({ status: 'error', error: MSG.yaVinculado, code: null });
+    expect((await perfil(providerId!))?.dardoventas_slug).toBe(otro);
   });
 });
 

@@ -249,6 +249,7 @@ DardoVentas tiene que implementarlo así, o avisar para cambiar el de acá.
 - **Respuestas del canje:** `200 {"ok": true, "slug": "…", "businessName": "…"}`. Código
   desconocido, caducado o ya usado: `400`, `404`, `409` o `410`, indistintamente. Secreto
   incorrecto: `401`.
+- **Código de vínculo:** `^[A-Za-z0-9_-]{22,128}$` (al menos 128 bits aleatorios en base64url), de un solo uso y con TTL de 15 min.
 - **`slug`:** `^[A-Za-z0-9_-]{16,64}$` (128 bits en base64url son 22 caracteres).
 - **`uid`:** `^[A-Za-z0-9_-]{1,64}$`. Un artículo con otro `uid` se ignora.
 - **Raíz del catálogo:** `{"schema_version": 1, "items": [ … ]}`. Otro `schema_version` se trata

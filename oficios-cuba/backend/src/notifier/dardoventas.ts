@@ -277,6 +277,7 @@ export const MSG = {
   codigo: 'DardoVentas no reconoce ese código o ya se usó. Pide uno nuevo en mi.dardoventas.com.',
   red: 'No pudimos hablar con DardoVentas. Prueba otra vez dentro de unos minutos.',
   otraCuenta: 'Ese negocio de DardoVentas ya está conectado con otra cuenta de Encuentrauno.',
+  yaVinculado: 'Tu negocio ya está conectado con DardoVentas.',
 } as const;
 
 /** El secreto se lee de un archivo (montado solo en este contenedor), nunca de una variable. */
@@ -298,12 +299,16 @@ const respuestaCanje = z.object({
 });
 
 // El código no se guarda más de lo necesario: se borra al terminar, salga bien o mal.
+// Solo cierra un canje todavía pendiente: uno sustituido o caducado mientras esperaba a DardoVentas
+// ya tiene su estado final y no se pisa.
 async function terminar(id: string, error: string | null) {
   await q(
-    'UPDATE dardoventas_canjes SET status = $2, error = $3, code = NULL, done_at = now() WHERE id = $1',
+    "UPDATE dardoventas_canjes SET status = $2, error = $3, code = NULL, done_at = now() WHERE id = $1 AND status = 'pendiente'",
     [id, error ? 'error' : 'ok', error],
   );
 }
+
+const OMITIR = Symbol('canje ya cerrado');
 
 async function canjear(k: { id: string; provider_id: string; code: string }, cfg: ConfigDv, pedir: Pedir) {
   if (!cfg.secreto) return terminar(k.id, MSG.apagado);
@@ -316,7 +321,8 @@ async function canjear(k: { id: string; provider_id: string; code: string }, cfg
       body: JSON.stringify({ code: k.code }),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch {
+  } catch (err) {
+    console.error(`dardoventas canje: ${(err as Error).name}: ${(err as Error).message}`);
     return terminar(k.id, MSG.red);
   }
   if ([400, 404, 409, 410].includes(res.status)) {
@@ -333,6 +339,15 @@ async function canjear(k: { id: string; provider_id: string; code: string }, cfg
 
   const { slug, businessName } = r.data;
   const error = await tx(async (c) => {
+    // El estado leído antes de esperar a DardoVentas puede haber caducado: se vuelve a mirar con el
+    // perfil y el canje bloqueados (perfil primero, el mismo orden que la API, para no abrazarse).
+    const perfil = await c.qOne<{ dardoventas_slug: string | null }>(
+      'SELECT dardoventas_slug FROM provider_profiles WHERE id = $1 FOR UPDATE', [k.provider_id],
+    );
+    const vigente = await c.qOne<{ status: string }>('SELECT status FROM dardoventas_canjes WHERE id = $1 FOR UPDATE', [k.id]);
+    if (vigente?.status !== 'pendiente') return OMITIR;
+    if (!perfil) return MSG.red;
+    if (perfil.dardoventas_slug) return MSG.yaVinculado;
     if (await c.qOne('SELECT 1 FROM provider_profiles WHERE dardoventas_slug = $1 AND id <> $2', [slug, k.provider_id])) {
       return MSG.otraCuenta;
     }
@@ -346,6 +361,7 @@ async function canjear(k: { id: string; provider_id: string; code: string }, cfg
     if (cfg.proHasta && cfg.proHasta > new Date()) await regalarPro(c, k.provider_id, cfg.proHasta);
     return null;
   });
+  if (error === OMITIR) return;
   await terminar(k.id, error);
   if (error) return;
   // El vínculo ya está guardado: si la primera pasada falla, la pasada regular lo reintenta.

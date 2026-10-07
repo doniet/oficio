@@ -35,7 +35,7 @@ async function esperarEsquema() {
                  AND table_name IN ('notifications', 'push_outbox', 'dardoventas_canjes')) AS n`,
     );
     if (Number(listo[0].n) === 3) return;
-    console.log('Esperando a que la API cree la base…');
+    console.log('Esperando a que la API migre la base (faltan tablas de avisos o de DardoVentas)…');
     await pausa(5000);
   }
 }
