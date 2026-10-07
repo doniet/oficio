@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Store } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -21,6 +21,13 @@ export default function VincularDardoVentas() {
   const toast = useToast();
   const [enCurso, setEnCurso] = useState(false);
   const [error, setError] = useState('');
+  // El código es de un solo uso: si el canje acabó mal o tardó, el mismo código ya no sirve.
+  const [codigoGastado, setCodigoGastado] = useState(false);
+  const montado = useRef(true);
+  useEffect(() => {
+    montado.current = true;
+    return () => { montado.current = false; };
+  }, []);
   const code = params.get('code') ?? '';
 
   if (isLoading) return <PageLoader />;
@@ -32,11 +39,16 @@ export default function VincularDardoVentas() {
   const conectar = async () => {
     setEnCurso(true);
     setError('');
+    setCodigoGastado(false);
     try {
       const { data } = await dardoventasApi.vincular(code);
-      for (let esperado = 0; esperado < ESPERA.maxMs; esperado += ESPERA.intervaloMs) {
+      // Plazo fijo: lo que tarde cada consulta no alarga la espera total.
+      const limite = Date.now() + ESPERA.maxMs;
+      while (Date.now() < limite) {
         await pausa(ESPERA.intervaloMs);
+        if (!montado.current) return;
         const canje = (await dardoventasApi.estado()).data.canje;
+        if (!montado.current) return;
         if (canje?.id !== data.id || canje.status === 'pendiente') continue;
         if (canje.status === 'ok') {
           toast('¡Catálogo conectado! Ahora completa tu ficha y marca tu ubicación para salir en el mapa.');
@@ -44,11 +56,14 @@ export default function VincularDardoVentas() {
           return;
         }
         setError(canje.error ?? 'No se pudo conectar el catálogo.');
+        setCodigoGastado(true);
         setEnCurso(false);
         return;
       }
       setError('DardoVentas está tardando en responder. Mira en «Catálogo» dentro de un rato si ya quedó conectado.');
+      setCodigoGastado(true);
     } catch (err) {
+      if (!montado.current) return;
       setError(apiError(err, 'No se pudo conectar el catálogo.'));
     }
     setEnCurso(false);
@@ -72,9 +87,15 @@ export default function VincularDardoVentas() {
               actualizarán solos. Tu ubicación, tu dirección y tu horario los decides tú en tu perfil.
             </p>
             {error && <Alert>{error}</Alert>}
-            <button type="button" onClick={conectar} disabled={enCurso} className="btn-primary w-full">
-              {enCurso ? <><Spinner className="h-4 w-4" /> Conectando…</> : 'Conectar mi catálogo'}
-            </button>
+            {codigoGastado ? (
+              <p className="text-sm text-ink-600">
+                Vuelve a mi.dardoventas.com y pulsa «Publicar mi catálogo en Encuentrauno» otra vez para recibir un código nuevo.
+              </p>
+            ) : (
+              <button type="button" onClick={conectar} disabled={enCurso} className="btn-primary w-full">
+                {enCurso ? <><Spinner className="h-4 w-4" /> Conectando…</> : 'Conectar mi catálogo'}
+              </button>
+            )}
           </>
         )}
       </div>

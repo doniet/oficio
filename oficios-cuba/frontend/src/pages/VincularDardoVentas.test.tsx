@@ -1,12 +1,13 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VincularDardoVentas, { ESPERA } from './VincularDardoVentas';
 import { dardoventasApi } from '../services/api';
 
 const auth = { user: null as null | { user_type: 'client' | 'provider' }, isLoading: false };
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => auth }));
-vi.mock('../hooks/useToast', () => ({ useToast: () => vi.fn() }));
+const toast = vi.fn();
+vi.mock('../hooks/useToast', () => ({ useToast: () => toast }));
 vi.mock('../services/api', async () => {
   const real = await vi.importActual<typeof import('../services/api')>('../services/api');
   return { ...real, dardoventasApi: { vincular: vi.fn(), estado: vi.fn(), desvincular: vi.fn() } };
@@ -17,9 +18,16 @@ function Donde() {
   return <p data-testid="donde">{l.pathname + l.search}</p>;
 }
 
+let irA: (to: string) => void = () => {};
+function Capturar() {
+  irA = useNavigate();
+  return null;
+}
+
 function montar(url = '/vincular/dardoventas?code=abcdefgh123') {
   render(
     <MemoryRouter initialEntries={[url]}>
+      <Capturar />
       <Routes>
         <Route path="/vincular/dardoventas" element={<VincularDardoVentas />} />
         <Route path="*" element={<Donde />} />
@@ -77,6 +85,17 @@ describe('VincularDardoVentas', () => {
     montar();
     fireEvent.click(screen.getByRole('button', { name: /conectar mi catálogo/i }));
     expect(await screen.findByText('El código caducó.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /conectar/i })).toBeNull();
+    expect(screen.getByText(/Publicar mi catálogo en Encuentrauno/)).toBeTruthy();
+  });
+
+  it('si la petición de conectar falla antes de registrar el canje, deja reintentar con el mismo código', async () => {
+    auth.user = { user_type: 'provider' };
+    vi.mocked(dardoventasApi.vincular).mockRejectedValue(new Error('sin red'));
+    montar();
+    fireEvent.click(screen.getByRole('button', { name: /conectar mi catálogo/i }));
+    expect(await screen.findByText(/No se pudo conectar el catálogo/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /conectar mi catálogo/i })).toBeTruthy();
   });
 
   it('si tarda demasiado, lo dice en vez de quedarse girando', async () => {
@@ -85,5 +104,22 @@ describe('VincularDardoVentas', () => {
     montar();
     fireEvent.click(screen.getByRole('button', { name: /conectar mi catálogo/i }));
     expect(await screen.findByText(/está tardando/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /conectar/i })).toBeNull();
+  });
+
+  it('si el usuario se va a otra página, el canje que acaba después no lo trae de vuelta', async () => {
+    auth.user = { user_type: 'provider' };
+    let resolver: (v: unknown) => void = () => {};
+    vi.mocked(dardoventasApi.estado).mockReturnValue(new Promise((r) => { resolver = r; }) as never);
+    montar();
+    fireEvent.click(screen.getByRole('button', { name: /conectar mi catálogo/i }));
+    await waitFor(() => expect(dardoventasApi.estado).toHaveBeenCalledTimes(1));
+    act(() => irA('/otra'));
+    expect(screen.getByTestId('donde').textContent).toBe('/otra');
+    resolver(estado({ status: 'ok' }));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(screen.getByTestId('donde').textContent).toBe('/otra');
+    expect(dardoventasApi.estado).toHaveBeenCalledTimes(1);
+    expect(toast).not.toHaveBeenCalled();
   });
 });

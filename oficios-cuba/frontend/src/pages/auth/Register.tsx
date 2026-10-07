@@ -61,7 +61,7 @@ export default function Register() {
       });
       if (type === 'provider') {
         toast('¡Cuenta creada! Completa tu perfil y, si quieres, marca tu ubicación para aparecer también en el mapa.');
-        navigate('/dashboard/perfil', { replace: true });
+        navigate(next ?? '/dashboard/perfil', { replace: true });
       } else {
         toast('¡Te damos la bienvenida a Encuentrauno!');
         navigate(next ?? '/dashboard', { replace: true });
