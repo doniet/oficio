@@ -12,22 +12,22 @@ const columna = (tabla: string, col: string) => qOne<{ data_type: string; udt_na
 );
 
 describe('migrar', () => {
-  it('deja la versión 1 registrada', async () => {
-    expect((await qOne<{ v: number }>('SELECT max(version) AS v FROM schema_migrations'))?.v).toBe(1);
+  it('deja registradas la v1 y todas las migraciones', async () => {
+    expect((await qOne<{ v: number }>('SELECT max(version) AS v FROM schema_migrations'))?.v).toBe(2);
   });
 
   it('es idempotente: aplicarla dos veces no falla', async () => {
     await migrar();
-    expect((await qOne<{ n: string }>('SELECT count(*) AS n FROM schema_migrations'))?.n).toBe('1');
+    expect((await qOne<{ n: string }>('SELECT count(*) AS n FROM schema_migrations'))?.n).toBe('2');
   });
 
-  it('crea las 25 tablas del modelo', async () => {
+  it('crea las 26 tablas del modelo', async () => {
     const { length } = await q(
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
           AND table_name <> 'schema_migrations' AND table_name NOT LIKE 'spatial_%'`,
     );
-    expect(length).toBe(25);
+    expect(length).toBe(26);
   });
 });
 

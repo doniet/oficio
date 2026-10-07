@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import { z } from 'zod';
 import { q, qOne, tx, type Tx } from '../db/acceso.js';
 import { ESQUEMA_VERSION } from '../db/migrar.js';
+import { MIGRACIONES } from '../db/migraciones.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { DEMO_MODE, JWT_SECRET } from '../config.js';
@@ -154,7 +155,7 @@ router.get('/system', asyncHandler(async (_req: AuthRequest, res) => {
     'SELECT version, COUNT(*) AS n FROM apk_descargas GROUP BY version ORDER BY MAX(created_at) DESC',
   );
   res.json({
-    schema_version: version?.v ?? 0, schema_expected: ESQUEMA_VERSION,
+    schema_version: version?.v ?? 0, schema_expected: Math.max(ESQUEMA_VERSION, ...MIGRACIONES.map((m) => m.version)),
     demo_mode: DEMO_MODE,
     node: process.version,
     uptime_s: Math.round(process.uptime()),
