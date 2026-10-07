@@ -21,6 +21,7 @@ describe('migración 2: DardoVentas', () => {
       DROP COLUMN dardoventas_etag, DROP COLUMN dardoventas_synced_at, DROP COLUMN dardoventas_fallos,
       DROP COLUMN dardoventas_reintento_en`);
     await q('DROP TABLE dardoventas_canjes');
+    await q('DROP TABLE dardoventas_regalos');
     await q('DELETE FROM schema_migrations WHERE version = 2');
     await q("INSERT INTO catalog_items (id, provider_id, name, created_at) VALUES ($1, $2, 'Pan', now())", [uuidv4(), p.providerId]);
 
@@ -29,6 +30,7 @@ describe('migración 2: DardoVentas', () => {
     expect(await existe('catalog_items', 'origen')).toBe(true);
     expect(await existe('provider_profiles', 'dardoventas_slug')).toBe(true);
     expect(await existe('dardoventas_canjes', 'code')).toBe(true);
+    expect(await existe('dardoventas_regalos', 'slug')).toBe(true);
     const fila = await qOne<{ origen: string }>('SELECT origen FROM catalog_items WHERE provider_id = $1', [p.providerId]);
     expect(fila?.origen).toBe('propio');
     expect((await q('SELECT version FROM schema_migrations ORDER BY version')).length).toBe(2);

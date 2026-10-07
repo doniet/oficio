@@ -4,8 +4,9 @@ import { metrosEntre, RADIO_APROX_MAX_M, RADIO_APROX_MIN_M } from '../src/lib/ub
 import { seedMapa } from '../src/db/seed-mapa.js';
 
 // Este archivo probaba, en SQLite, las migraciones 11-13 una a una (PRAGMA user_version, tablas
-// creadas desde :memory:). El esquema de Postgres nació limpio en la v1 (db/migrar.ts): no hay
-// migraciones incrementales que reproducir — "migración 11/12/13" ya no significa nada. Lo que
+// creadas desde :memory:). El esquema de Postgres nació limpio en la v1 (db/migrar.ts) y las
+// migraciones incrementales posteriores viven en db/migraciones.ts (la 2 es de DardoVentas, no
+// del mapa): "migración 11/12/13" ya no significa nada. Lo que
 // sigue prueba las MISMAS invariantes que esas migraciones protegían, contra el esquema final:
 // que map_precision/show_on_map sigan naciendo con el valor seguro por defecto, que los
 // municipios sembrados caigan dentro de Cuba, y — el corazón del archivo — que ningún perfil con

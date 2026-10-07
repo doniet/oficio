@@ -24,6 +24,7 @@ export async function migrar() {
       await c.q(sql);
       await c.q('INSERT INTO schema_migrations (version) VALUES ($1)', [ESQUEMA_VERSION]);
     });
+    console.log(`Base de datos migrada a la versión ${ESQUEMA_VERSION}`);
   }
 
   for (const m of MIGRACIONES) {
@@ -32,5 +33,6 @@ export async function migrar() {
       await c.q(m.sql);
       await c.q('INSERT INTO schema_migrations (version) VALUES ($1)', [m.version]);
     });
+    console.log(`Base de datos migrada a la versión ${m.version}`);
   }
 }

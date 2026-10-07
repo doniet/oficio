@@ -12,8 +12,9 @@ import type { Tx } from './acceso.js';
 // confirmado todavía. enforcePlanLimit() (la versión exportada, para el resto de llamadores)
 // simplemente abre su propia tx() y delega aquí.
 export async function aplicarLimiteDePlan(c: Tx, providerId: string) {
+  // FOR UPDATE: el perfil se bloquea antes que catalog_items/services, el mismo orden que la sincronización, para no abrazarse con ella.
   const row = await c.qOne<{ subscription_plan: string }>(
-    'SELECT subscription_plan FROM provider_profiles WHERE id = $1', [providerId],
+    'SELECT subscription_plan FROM provider_profiles WHERE id = $1 FOR UPDATE', [providerId],
   );
   if (!row) return;
   const { maxServices: max, maxCatalog } = planDe(row.subscription_plan);

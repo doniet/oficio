@@ -34,6 +34,15 @@ export const MIGRACIONES: { version: number; sql: string }[] = [
       );
       CREATE INDEX idx_dv_canjes ON dardoventas_canjes (status, created_at);
       CREATE INDEX idx_dv_canjes_perfil ON dardoventas_canjes (provider_id, created_at);
+
+      -- Un negocio de DardoVentas (slug) regala el Profesional una sola vez. Sin esta marca, se
+      -- podía vincular la cuenta A, desvincularla, pedir otro código y vincular la B: las dos
+      -- quedaban Profesional. El regalo no se retira al desvincular; esta fila solo impide repetirlo.
+      CREATE TABLE dardoventas_regalos (
+        slug text PRIMARY KEY,
+        provider_id uuid REFERENCES provider_profiles(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
     `,
   },
 ];

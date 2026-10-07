@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prueba del proxy de fotos de DardoVentas (nginx.conf, location ^~ /ext/dv/foto/) sin salir a internet:
-# un nginx "doble" hace de ventas.dardoit.com con un certificado autofirmado (el proxy no verifica,
-# igual que /api/tasas) y el nginx.conf real se monta en un nginx limpio. No construye la SPA.
+# un nginx "doble" hace de ventas.dardoit.com con un certificado autofirmado; el contenedor web de
+# la prueba confía en ese certificado, y un segundo contenedor web sin esa confianza comprueba que
+# proxy_ssl_verify lo rechaza. El nginx.conf real se monta en un nginx limpio. No construye la SPA.
 set -euo pipefail
 cd "$(dirname "$0")"
 RED=oficio-dv-prueba-$$

@@ -150,11 +150,43 @@ describe('notificador: canjear', () => {
     expect((await perfil(primero.providerId!))?.dardoventas_slug).toBe(slug);
   });
 
-  it('con el regalo ya vencido se vincula pero no se toca el plan', async () => {
+  it('con el regalo ya vencido se vincula pero no se toca el plan, ni se anota el regalo', async () => {
     const { providerId } = await pedirVinculo();
     await ponerPlan(providerId!, 'basic', null);
-    await canjearPendientes({ ...cfg, proHasta: new Date(Date.now() - 1000) }, dobleCanje(slugNuevo()).pedir);
+    const slug = slugNuevo();
+    await canjearPendientes({ ...cfg, proHasta: new Date(Date.now() - 1000) }, dobleCanje(slug).pedir);
     expect(await perfil(providerId!)).toMatchObject({ subscription_plan: 'basic', subscription_expires_at: null });
+    expect(await qOne('SELECT 1 FROM dardoventas_regalos WHERE slug = $1', [slug])).toBeUndefined();
+  });
+
+  it('el Profesional se regala una sola vez por negocio de DardoVentas, aunque cambie de cuenta', async () => {
+    const slug = slugNuevo();
+    const a = await pedirVinculo();
+    await canjearPendientes(cfg, dobleCanje(slug).pedir);
+    expect((await perfil(a.providerId!))?.subscription_plan).toBe('pro');
+    expect(await qOne('SELECT 1 FROM dardoventas_regalos WHERE slug = $1 AND provider_id = $2', [slug, a.providerId])).toBeTruthy();
+
+    // Desvincular no retira el regalo.
+    expect((await api.delete('/api/dardoventas/vincular').set(a.auth)).status).toBe(200);
+    expect(await perfil(a.providerId!)).toMatchObject({ dardoventas_slug: null, subscription_plan: 'pro' });
+
+    const b = await pedirVinculo();
+    await canjearPendientes(cfg, dobleCanje(slug).pedir);
+    expect(await canje(b.canjeId)).toMatchObject({ status: 'ok', error: null });
+    expect(await perfil(b.providerId!)).toMatchObject({ dardoventas_slug: slug, subscription_plan: 'free' });
+    expect((await perfil(a.providerId!))?.subscription_plan).toBe('pro');
+  });
+
+  it('un nombre de negocio largo y con NUL no tumba el canje: se limpia y se recorta a 80', async () => {
+    const { providerId, canjeId } = await pedirVinculo();
+    const largo = `${'N'.repeat(40)}\u0000${'o'.repeat(110)}`;
+    const { pedir } = pedirFalso((url) => (url.endsWith('/api/pub/link')
+      ? Response.json({ ok: true, slug: slugNuevo(), businessName: largo })
+      : respuestaCatalogo([art('a')])));
+    await canjearPendientes(cfg, pedir);
+    expect((await canje(canjeId))?.status).toBe('ok');
+    const nombre = (await perfil(providerId!))?.business_name;
+    expect(nombre).toBe(`${'N'.repeat(40)}${'o'.repeat(40)}`);
   });
 });
 

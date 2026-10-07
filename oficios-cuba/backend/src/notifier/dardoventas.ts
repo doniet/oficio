@@ -295,7 +295,8 @@ export function configDv(env: NodeJS.ProcessEnv = process.env): ConfigDv {
 const respuestaCanje = z.object({
   ok: z.literal(true),
   slug: z.string().regex(SLUG),
-  businessName: z.string().trim().max(120).nullish(),
+  // PUT /me/profile admite 80 como máximo: un nombre largo se recorta, no tumba el canje.
+  businessName: sinNul.nullish().transform((t) => corta(t, 80)),
 });
 
 // El código no se guarda más de lo necesario: se borra al terminar, salga bien o mal.
@@ -358,7 +359,15 @@ async function canjear(k: { id: string; provider_id: string; code: string }, cfg
        WHERE id = $1`,
       [k.provider_id, slug, businessName ?? null],
     );
-    if (cfg.proHasta && cfg.proHasta > new Date()) await regalarPro(c, k.provider_id, cfg.proHasta);
+    // Una sola vez por negocio de DardoVentas, aunque cambie de cuenta. Con el regalo apagado o vencido
+    // no se anota nada: uno configurado después aún puede aplicarse.
+    if (cfg.proHasta && cfg.proHasta > new Date()) {
+      const nuevo = await c.qOne(
+        'INSERT INTO dardoventas_regalos (slug, provider_id) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING RETURNING slug',
+        [slug, k.provider_id],
+      );
+      if (nuevo) await regalarPro(c, k.provider_id, cfg.proHasta);
+    }
     return null;
   });
   if (error === OMITIR) return;
