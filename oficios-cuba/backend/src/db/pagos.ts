@@ -41,7 +41,7 @@ async function pendiente(c: Tx, subscriptionId: string) {
 //
 // enforcePlanLimit() se llama DESPUÉS de que esta transacción confirme, no dentro: abre su propia
 // conexión del pool, y si se llamara dentro leería el plan viejo (la transacción exterior todavía
-// no ha hecho COMMIT). Ver el comentario de aplicarLimiteDePlan en db/index.ts.
+// no ha hecho COMMIT). Ver el comentario de aplicarLimiteDePlan en db/limite-plan.ts.
 export async function confirmarPago(subscriptionId: string) {
   const resultado = await tx(async (c) => {
     const sub = await pendiente(c, subscriptionId);
