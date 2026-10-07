@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { clienteIp } from './lib/cliente.js';
 import appMovilRoutes from './routes/app-movil.js';
+import dardoventasRoutes from './routes/dardoventas.js';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
@@ -111,6 +112,7 @@ app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/app', appMovilRoutes);
+app.use('/api/dardoventas', dardoventasRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);

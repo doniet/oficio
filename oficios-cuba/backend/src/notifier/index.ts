@@ -7,6 +7,7 @@ import { clienteTelegram, enviarPendientes, estado, latido, presentarse, recibir
 import { descifrarToken } from '../lib/telegram-comun.js';
 import { cargarCuentaFcm, crearCanalFcm } from '../push/fcm.js';
 import { enviarPushPendientes, type CanalesPush } from './push.js';
+import { canjearPendientes, configDv, sincronizarPendientes } from './dardoventas.js';
 
 // Proceso del contenedor oficio_notifier. La base la migra la API: aquí solo se espera a que exista.
 // El token lo pega un admin en el panel; la API lo guarda cifrado con la clave pública que este
@@ -29,10 +30,11 @@ function clavePrivada() {
 
 async function esperarEsquema() {
   for (;;) {
-    const tablas = await q<{ n: string }>(
-      "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('notifications', 'push_outbox')",
+    const listo = await q<{ n: string }>(
+      `SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'
+                 AND table_name IN ('notifications', 'push_outbox', 'dardoventas_canjes')) AS n`,
     );
-    if (Number(tablas[0].n) === 2) return;
+    if (Number(listo[0].n) === 3) return;
     console.log('Esperando a que la API cree la base…');
     await pausa(5000);
   }
@@ -109,11 +111,17 @@ async function main() {
   await latido();
   await sincronizarToken(privada);
   const push = canalesPush();
+  const dv = configDv();
+  console.log(`DardoVentas: canje ${dv.secreto ? 'activo' : 'apagado (falta DARDOVENTAS_SECRETO_FILE)'}, ` +
+    `plan regalado ${dv.proHasta ? `hasta ${dv.proHasta.toISOString().slice(0, 10)}` : 'no'}`);
   await Promise.all([
     ...(push.fcm ? [bucle('push', () => enviarPushPendientes(push), 3000)] : []),
     bucle('token', () => sincronizarToken(privada), 10_000),
     bucle('recibir', async () => (llamar ? recibir(llamar) : (await latido(), pausa(5000))), 0),
     bucle('enviar', async () => (llamar ? enviarPendientes(llamar) : latido()), 3000),
+    // Aparte del latido: una pasada larga del catálogo nunca debe retrasarlo.
+    bucle('dardoventas-canje', () => canjearPendientes(dv), 3000),
+    bucle('dardoventas-catalogo', () => sincronizarPendientes(dv), 60_000),
   ]);
 }
 

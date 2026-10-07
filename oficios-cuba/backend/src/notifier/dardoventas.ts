@@ -1,6 +1,7 @@
+import { existsSync, readFileSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { desvincular } from '../db/dardoventas.js';
+import { desvincular, regalarPro } from '../db/dardoventas.js';
 import { aplicarLimiteDePlan } from '../db/limite-plan.js';
 import { q, tx } from './db.js';
 
@@ -266,4 +267,109 @@ export async function sincronizarPendientes(cfg: ConfigDv, pedir: Pedir = fetch)
     }
   }
   return perfiles.length;
+}
+
+export const TTL_CODIGO_MIN = 15;
+
+export const MSG = {
+  caducado: 'El código caducó. Vuelve a mi.dardoventas.com y pide uno nuevo.',
+  apagado: 'La conexión con DardoVentas todavía no está activa. Prueba más tarde.',
+  codigo: 'DardoVentas no reconoce ese código o ya se usó. Pide uno nuevo en mi.dardoventas.com.',
+  red: 'No pudimos hablar con DardoVentas. Prueba otra vez dentro de unos minutos.',
+  otraCuenta: 'Ese negocio de DardoVentas ya está conectado con otra cuenta de Encuentrauno.',
+} as const;
+
+/** El secreto se lee de un archivo (montado solo en este contenedor), nunca de una variable. */
+export function configDv(env: NodeJS.ProcessEnv = process.env): ConfigDv {
+  const archivo = env.DARDOVENTAS_SECRETO_FILE;
+  const secreto = archivo && existsSync(archivo) ? readFileSync(archivo, 'utf8').trim() || null : null;
+  const hasta = env.DARDOVENTAS_PRO_HASTA ? new Date(env.DARDOVENTAS_PRO_HASTA) : null;
+  return {
+    base: (env.DARDOVENTAS_URL || 'https://ventas.dardoit.com').replace(/\/+$/, ''),
+    secreto,
+    proHasta: hasta && !Number.isNaN(hasta.getTime()) ? hasta : null,
+  };
+}
+
+const respuestaCanje = z.object({
+  ok: z.literal(true),
+  slug: z.string().regex(SLUG),
+  businessName: z.string().trim().max(120).nullish(),
+});
+
+// El código no se guarda más de lo necesario: se borra al terminar, salga bien o mal.
+async function terminar(id: string, error: string | null) {
+  await q(
+    'UPDATE dardoventas_canjes SET status = $2, error = $3, code = NULL, done_at = now() WHERE id = $1',
+    [id, error ? 'error' : 'ok', error],
+  );
+}
+
+async function canjear(k: { id: string; provider_id: string; code: string }, cfg: ConfigDv, pedir: Pedir) {
+  if (!cfg.secreto) return terminar(k.id, MSG.apagado);
+  let res: Response;
+  try {
+    res = await pedir(`${cfg.base}/api/pub/link`, {
+      method: 'POST',
+      redirect: 'error', // misma razón que en el catálogo: un 3xx desde fuera sería SSRF hacia net_dmz
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.secreto}` },
+      body: JSON.stringify({ code: k.code }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return terminar(k.id, MSG.red);
+  }
+  if ([400, 404, 409, 410].includes(res.status)) {
+    await res.body?.cancel().catch(() => {});
+    return terminar(k.id, MSG.codigo);
+  }
+  if (res.status === 401) console.error('dardoventas: el secreto del canje no vale (401)');
+  if (res.status !== 200) {
+    await res.body?.cancel().catch(() => {});
+    return terminar(k.id, MSG.red);
+  }
+  const r = respuestaCanje.safeParse(await res.json().catch(() => null));
+  if (!r.success) return terminar(k.id, MSG.red);
+
+  const { slug, businessName } = r.data;
+  const error = await tx(async (c) => {
+    if (await c.qOne('SELECT 1 FROM provider_profiles WHERE dardoventas_slug = $1 AND id <> $2', [slug, k.provider_id])) {
+      return MSG.otraCuenta;
+    }
+    await c.q(
+      `UPDATE provider_profiles SET dardoventas_slug = $2, dardoventas_linked_at = now(), dardoventas_etag = NULL,
+         dardoventas_synced_at = NULL, dardoventas_fallos = 0, dardoventas_reintento_en = NULL,
+         kind = 'negocio', business_name = COALESCE(NULLIF(business_name, ''), $3), updated_at = now()
+       WHERE id = $1`,
+      [k.provider_id, slug, businessName ?? null],
+    );
+    if (cfg.proHasta && cfg.proHasta > new Date()) await regalarPro(c, k.provider_id, cfg.proHasta);
+    return null;
+  });
+  await terminar(k.id, error);
+  if (error) return;
+  // El vínculo ya está guardado: si la primera pasada falla, la pasada regular lo reintenta.
+  try {
+    await sincronizarNegocio({ id: k.provider_id, dardoventas_slug: slug, dardoventas_etag: null }, cfg, pedir);
+  } catch (err) {
+    console.error(`dardoventas ${k.provider_id}: primera sincronización: ${(err as Error).message}`);
+  }
+}
+
+export async function canjearPendientes(cfg: ConfigDv, pedir: Pedir = fetch) {
+  await q(
+    `UPDATE dardoventas_canjes SET status = 'error', error = $1, code = NULL, done_at = now()
+     WHERE status = 'pendiente' AND created_at < now() - make_interval(mins => $2)`,
+    [MSG.caducado, TTL_CODIGO_MIN],
+  );
+  const pendientes = await q<{ id: string; provider_id: string; code: string }>(
+    "SELECT id, provider_id, code FROM dardoventas_canjes WHERE status = 'pendiente' ORDER BY created_at LIMIT 10",
+  );
+  for (const k of pendientes) {
+    // Un canje que lance no puede dejar sin atender a los demás.
+    try { await canjear(k, cfg, pedir); } catch (err) {
+      console.error(`dardoventas canje ${k.id}: ${(err as Error).message}`);
+      await terminar(k.id, MSG.red).catch(() => {});
+    }
+  }
 }
