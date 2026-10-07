@@ -85,8 +85,8 @@ services:
   # Mismo código e imagen que la API, otro proceso. Es el ÚNICO que puede leer el token del bot (la API
   # lo guarda cifrado con la clave pública de este contenedor; la privada vive en secrets/notifier,
   # que solo monta él) y el único con salida a internet (net_dmz, como oficio_web), solo hacia
-  # api.telegram.org y, con la cuenta de Firebase en secrets/fcm/, oauth2/fcm.googleapis.com (push de
-  # las apps, que la API apunta en push_outbox). Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
+  # api.telegram.org, ventas.dardoit.com (catálogo de DardoVentas) y, con la cuenta de Firebase en
+  # secrets/fcm/, oauth2/fcm.googleapis.com (push de las apps, que la API apunta en push_outbox). Recibe por long polling: no escucha ningún puerto ni tiene ruta en Traefik.
   oficio_notifier:
     image: oficio-api:latest
     container_name: oficio_notifier
@@ -103,10 +103,16 @@ services:
       - TZ=America/Havana
       # Push de las apps: si el archivo no existe, el push queda apagado y Telegram sigue igual.
       - FCM_SERVICE_ACCOUNT_FILE=/app/fcm/cuenta.json
+      # Catálogo de DardoVentas (docs/superpowers/specs/2026-10-06-dardoventas-catalogo-design.md).
+      # Sin el archivo del secreto, el canje queda apagado y los catálogos ya vinculados se siguen sondeando.
+      - DARDOVENTAS_URL=https://ventas.dardoit.com
+      - DARDOVENTAS_SECRETO_FILE=/app/dardoventas/secreto
+      - DARDOVENTAS_PRO_HASTA=${DARDOVENTAS_PRO_HASTA:-}
     volumes:
       - ./data:/app/data
       - ./secrets/notifier:/app/keys
       - ./secrets/fcm:/app/fcm:ro
+      - ./secrets/dardoventas:/app/dardoventas:ro
     networks:
       - net_dmz
       # Para llegar a oficio_db (interna, sin exponer puertos). net_dmz sigue siendo la única

@@ -13,7 +13,8 @@
     "seed:mapa": "tsx src/db/seed-mapa-cli.ts",
     "seed:catalogo": "tsx src/db/seed-catalogo-demo-cli.ts",
     "push:prueba": "tsx src/scripts/push-prueba.ts",
-    "admin": "tsx src/scripts/admin.ts"
+    "admin": "tsx src/scripts/admin.ts",
+    "doble:dardoventas": "tsx src/scripts/doble-dardoventas.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
