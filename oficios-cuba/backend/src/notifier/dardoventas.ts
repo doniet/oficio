@@ -41,12 +41,15 @@ const raizDv = z.object({
   items: z.array(z.unknown()).max(MAX_ARTICULOS),
 });
 
+// Postgres rechaza el NUL en un text: un solo artículo con \u0000 tumbaría la transacción entera.
+const sinNul = z.string().transform((t) => t.replace(/\u0000/g, ''));
+
 // Lista blanca: lo que no se nombra aquí no entra, aunque DardoVentas lo mande.
 const articuloDv = z.object({
   uid: z.string().regex(UID),
-  name: z.string().trim().min(1),
-  description: z.string().nullish(),
-  category: z.string().nullish(),
+  name: sinNul.pipe(z.string().trim().min(1)),
+  description: sinNul.nullish(),
+  category: sinNul.nullish(),
   priceCup: z.number().finite().min(0).max(100_000_000).nullish(),
   disponible: z.boolean(),
   photoUrl: z.unknown(),
@@ -67,11 +70,32 @@ export function rutaFoto(url: unknown, base: string, slug: string, uid: string):
   return v && VERSION_FOTO.test(v) ? `/ext/dv/foto/${slug}/${uid}.jpg?v=${v}` : null;
 }
 
+// 5 MB de texto caben en la cota de bytes pero no en la de memoria: millones de `{}` o `[]` diminutos
+// ocupan >100 MB al parsearse y el contenedor tiene 128. Contar aperturas fuera de cadenas es barato
+// y se hace ANTES de JSON.parse. Un catálogo legítimo tiene ~1 objeto por artículo.
+const MAX_ESTRUCTURAS = MAX_ARTICULOS * 2 + 16;
+
+function comprobarEstructura(texto: string) {
+  let dentro = false;
+  let escapado = false;
+  let abiertas = 0;
+  for (let i = 0; i < texto.length; i++) {
+    const ch = texto.charCodeAt(i);
+    if (dentro) {
+      if (escapado) escapado = false;
+      else if (ch === 92) escapado = true; // \
+      else if (ch === 34) dentro = false; // "
+    } else if (ch === 34) dentro = true;
+    else if ((ch === 123 || ch === 91) && ++abiertas > MAX_ESTRUCTURAS) throw new Error('catálogo con demasiada estructura');
+  }
+}
+
 /**
  * Lanza si la raíz no vale (y entonces la pasada no toca nada). Un artículo roto se ignora, pero si
  * su uid es válido cuenta como presente: que venga mal no significa que lo hayan quitado.
  */
 export function leerCatalogo(texto: string, base: string, slug: string) {
+  comprobarEstructura(texto);
   const raiz = raizDv.parse(JSON.parse(texto));
   const presentes = new Set<string>();
   const articulos: ArticuloImportado[] = [];
@@ -115,15 +139,20 @@ async function leerConTope(res: Response, max: number) {
   return Buffer.concat(trozos).toString('utf8');
 }
 
-async function anotarFallo(id: string, motivo: string) {
-  console.error(`dardoventas ${id}: ${motivo}`);
-  // En el SET, dardoventas_fallos es todavía el valor viejo: 5, 10, 20… minutos, tope 6 h.
+// Solo si sigue vinculado con ese slug: un perfil ya desvinculado no debe quedar marcado.
+// En el SET, dardoventas_fallos es todavía el valor viejo: 5, 10, 20… minutos, tope 6 h.
+async function programarReintento(id: string, slug: string) {
   await q(
     `UPDATE provider_profiles SET dardoventas_fallos = dardoventas_fallos + 1,
        dardoventas_reintento_en = now() + make_interval(mins => LEAST(360, 5 * power(2, LEAST(dardoventas_fallos, 7))::int))
-     WHERE id = $1`,
-    [id],
+     WHERE id = $1 AND dardoventas_slug = $2`,
+    [id, slug],
   );
+}
+
+async function anotarFallo(id: string, slug: string, motivo: string) {
+  console.error(`dardoventas ${id}: ${motivo}`);
+  await programarReintento(id, slug);
 }
 
 type PerfilDv = { id: string; dardoventas_slug: string; dardoventas_etag: string | null };
@@ -132,11 +161,12 @@ export async function sincronizarNegocio(p: PerfilDv, cfg: ConfigDv, pedir: Pedi
   let res: Response;
   try {
     res = await pedir(`${cfg.base}/api/pub/catalog/${encodeURIComponent(p.dardoventas_slug)}`, {
+      redirect: 'error', // un 3xx desde fuera sería SSRF ciego hacia net_dmz o una bajada a http
       headers: { Accept: 'application/json', ...(p.dardoventas_etag ? { 'If-None-Match': p.dardoventas_etag } : {}) },
       signal: AbortSignal.timeout(20_000),
     });
   } catch (err) {
-    await anotarFallo(p.id, `red: ${(err as Error).message}`);
+    await anotarFallo(p.id, p.dardoventas_slug, `red: ${(err as Error).message}`);
     return 'error' as const;
   }
 
@@ -158,48 +188,62 @@ export async function sincronizarNegocio(p: PerfilDv, cfg: ConfigDv, pedir: Pedi
   }
 
   if (res.status !== 200) {
-    await anotarFallo(p.id, `HTTP ${res.status}`);
+    await res.body?.cancel().catch(() => {});
+    await anotarFallo(p.id, p.dardoventas_slug, `HTTP ${res.status}`);
     return 'error' as const;
   }
+
+  // Penalización por adelantado: si leer o parsear este cuerpo mata el proceso (memoria), al
+  // reiniciar el negocio ya está en reintento y no vuelve a ser el primero de la cola. El éxito
+  // la borra; los fallos de aquí en adelante solo se registran, ya están anotados.
+  await programarReintento(p.id, p.dardoventas_slug);
 
   let leido: ReturnType<typeof leerCatalogo>;
   try {
     leido = leerCatalogo(await leerConTope(res, MAX_BYTES), cfg.base, p.dardoventas_slug);
   } catch (err) {
-    await anotarFallo(p.id, `catálogo ilegible: ${(err as Error).message}`);
+    console.error(`dardoventas ${p.id}: catálogo ilegible: ${(err as Error).message}`);
     return 'error' as const;
   }
 
-  const etag = res.headers.get('etag');
+  const etagCrudo = res.headers.get('etag');
+  const etag = etagCrudo && etagCrudo.length <= 256 ? etagCrudo : null;
   // Una transacción por negocio, no una global: no bloquea la tabla durante toda la pasada.
-  const hecho = await tx(async (c) => {
-    // Pudieron desvincularlo mientras se descargaba: entonces no se reimporta nada.
-    const vigente = await c.qOne('SELECT 1 FROM provider_profiles WHERE id = $1 AND dardoventas_slug = $2 FOR UPDATE', [p.id, p.dardoventas_slug]);
-    if (!vigente) return false;
-    const ahora = new Date().toISOString();
-    for (const a of leido.articulos) {
+  let hecho: boolean;
+  try {
+    hecho = await tx(async (c) => {
+      // Pudieron desvincularlo mientras se descargaba: entonces no se reimporta nada.
+      const vigente = await c.qOne('SELECT 1 FROM provider_profiles WHERE id = $1 AND dardoventas_slug = $2 FOR UPDATE', [p.id, p.dardoventas_slug]);
+      if (!vigente) return false;
+      const ahora = new Date().toISOString();
+      for (const a of leido.articulos) {
+        await c.q(
+          `INSERT INTO catalog_items (id, provider_id, origen, uid_externo, name, description, price, price_type, price_currency, image, section, available, created_at)
+           VALUES ($1, $2, 'dardoventas', $3, $4, $5, $6, $7, 'CUP', $8, $9, $10, $11)
+           ON CONFLICT (provider_id, uid_externo) WHERE uid_externo IS NOT NULL DO UPDATE SET
+             name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price,
+             price_type = EXCLUDED.price_type, price_currency = 'CUP', image = EXCLUDED.image,
+             section = EXCLUDED.section, available = EXCLUDED.available, updated_at = EXCLUDED.created_at`,
+          [uuidv4(), p.id, a.uid, a.name, a.description, a.price, a.price == null ? 'ask' : 'fixed', a.image, a.section, a.available, ahora],
+        );
+      }
       await c.q(
-        `INSERT INTO catalog_items (id, provider_id, origen, uid_externo, name, description, price, price_type, price_currency, image, section, available, created_at)
-         VALUES ($1, $2, 'dardoventas', $3, $4, $5, $6, $7, 'CUP', $8, $9, $10, $11)
-         ON CONFLICT (provider_id, uid_externo) WHERE uid_externo IS NOT NULL DO UPDATE SET
-           name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price,
-           price_type = EXCLUDED.price_type, price_currency = 'CUP', image = EXCLUDED.image,
-           section = EXCLUDED.section, available = EXCLUDED.available, updated_at = EXCLUDED.created_at`,
-        [uuidv4(), p.id, a.uid, a.name, a.description, a.price, a.price == null ? 'ask' : 'fixed', a.image, a.section, a.available, ahora],
+        `DELETE FROM catalog_items WHERE provider_id = $1 AND origen = 'dardoventas' AND NOT (uid_externo = ANY($2::text[]))`,
+        [p.id, leido.presentes],
       );
-    }
-    await c.q(
-      `DELETE FROM catalog_items WHERE provider_id = $1 AND origen = 'dardoventas' AND NOT (uid_externo = ANY($2::text[]))`,
-      [p.id, leido.presentes],
-    );
-    await c.q(
-      `UPDATE provider_profiles SET dardoventas_etag = $2, dardoventas_synced_at = now(), dardoventas_fallos = 0,
-         dardoventas_reintento_en = NULL WHERE id = $1`,
-      [p.id, etag],
-    );
-    await aplicarLimiteDePlan(c, p.id);
-    return true;
-  });
+      await c.q(
+        `UPDATE provider_profiles SET dardoventas_etag = $2, dardoventas_synced_at = now(), dardoventas_fallos = 0,
+           dardoventas_reintento_en = NULL WHERE id = $1`,
+        [p.id, etag],
+      );
+      await aplicarLimiteDePlan(c, p.id);
+      return true;
+    });
+  } catch (err) {
+    // La penalización ya está anotada: no se vuelve a sumar. Se conserva lo importado.
+    console.error(`dardoventas ${p.id}: no se pudo guardar: ${(err as Error).message}`);
+    return 'error' as const;
+  }
   return hecho ? 'actualizado' as const : 'desvinculado' as const;
 }
 
@@ -214,6 +258,12 @@ export async function sincronizarPendientes(cfg: ConfigDv, pedir: Pedir = fetch)
       LIMIT 20`,
     [PERIODO_MIN],
   );
-  for (const p of perfiles) await sincronizarNegocio(p, cfg, pedir);
+  for (const p of perfiles) {
+    // Un negocio que lance no puede cortar la vuelta de los demás, ni quedarse el primero de la cola.
+    try { await sincronizarNegocio(p, cfg, pedir); } catch (err) {
+      console.error(`dardoventas ${p.id}: ${(err as Error).message}`);
+      await programarReintento(p.id, p.dardoventas_slug).catch(() => {});
+    }
+  }
   return perfiles.length;
 }

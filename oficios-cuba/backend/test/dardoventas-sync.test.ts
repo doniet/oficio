@@ -64,6 +64,7 @@ describe('sincronizarNegocio', () => {
     ]));
     expect(await sincronizarNegocio(n.perfil, cfg, pedir)).toBe('actualizado');
     expect(llamadas[0].url).toBe(`${BASE}/api/pub/catalog/${n.slug}`);
+    expect(llamadas[0].init.redirect).toBe('error');
     expect(await importados(n.providerId!)).toEqual([
       { uid_externo: 'a', name: 'Artículo a', price: 1250.5, price_type: 'fixed', price_currency: 'CUP', section: 'Bebidas', available: true, image: `/ext/dv/foto/${n.slug}/a.jpg?v=9`, origen: 'dardoventas' },
       { uid_externo: 'b', name: 'Artículo b', price: null, price_type: 'ask', price_currency: 'CUP', section: null, available: false, image: null, origen: 'dardoventas' },
@@ -124,6 +125,9 @@ describe('sincronizarNegocio', () => {
     const p = await perfil(n.providerId!);
     expect(p?.dardoventas_fallos).toBe(1);
     expect(p?.dardoventas_reintento_en).not.toBeNull();
+    const minutos = (new Date(p!.dardoventas_reintento_en!).getTime() - Date.now()) / 60_000;
+    expect(minutos).toBeGreaterThan(4);
+    expect(minutos).toBeLessThan(6);
   });
 
   it('una respuesta de más de 5 MB sin Content-Length se corta sin tocar la base', async () => {
@@ -158,6 +162,89 @@ describe('sincronizarNegocio', () => {
     expect(await importados(n.providerId!)).toHaveLength(0);
   });
 
+  it('un NUL en el texto no rompe la pasada: se quita y el artículo se importa', async () => {
+    const n = await negocioVinculado();
+    const { pedir } = pedirFalso(() => respuestaCatalogo([
+      art('a', { name: 'Ca\u0000fé', description: 'des\u0000c', category: 'Be\u0000bidas' }),
+    ]));
+    expect(await sincronizarNegocio(n.perfil, cfg, pedir)).toBe('actualizado');
+    const [f] = await importados(n.providerId!);
+    expect(f.name).toBe('Café');
+    expect(f.section).toBe('Bebidas');
+  });
+
+  it('un error de la base dentro de la transacción da «error», programa el reintento y no borra nada', async () => {
+    const n = await negocioVinculado();
+    await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => respuestaCatalogo([art('a'), art('b')])).pedir);
+    await q("ALTER TABLE catalog_items ADD CONSTRAINT prueba_boom CHECK (name <> 'BOOM')");
+    try {
+      const r = await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => respuestaCatalogo([art('a'), art('c', { name: 'BOOM' })], '"e2"')).pedir);
+      expect(r).toBe('error');
+    } finally {
+      await q('ALTER TABLE catalog_items DROP CONSTRAINT prueba_boom');
+    }
+    expect((await importados(n.providerId!)).map((f) => f.uid_externo)).toEqual(['a', 'b']);
+    const p = await perfil(n.providerId!);
+    expect(p?.dardoventas_fallos).toBe(1);
+    expect(p?.dardoventas_reintento_en).not.toBeNull();
+    expect(p?.dardoventas_etag).toBe('"e1"');
+  });
+
+  it('un JSON de menos de 5 MB con una estructura enorme se rechaza antes de parsearlo', async () => {
+    const n = await negocioVinculado();
+    await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => respuestaCatalogo([art('a')])).pedir);
+    const hostil = art('a', { extra: Array.from({ length: 200_000 }, () => ({})) });
+    const cuerpo = JSON.stringify({ schema_version: 1, items: [hostil] });
+    expect(cuerpo.length).toBeLessThan(5 * 1024 * 1024);
+    expect(await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => new Response(cuerpo, { status: 200 })).pedir)).toBe('error');
+    expect(await importados(n.providerId!)).toHaveLength(1);
+    expect((await perfil(n.providerId!))?.dardoventas_fallos).toBe(1);
+  });
+
+  it('los corchetes y llaves dentro de cadenas no cuentan para el tope de estructura', () => {
+    const texto = JSON.stringify({ schema_version: 1, items: [art('a', { name: '{'.repeat(50_000) + '\\"[' })] });
+    expect(leerCatalogo(texto, BASE, 'abcdefghijklmnop').articulos).toHaveLength(1);
+  });
+
+  it('antes de leer el cuerpo de un 200 ya deja anotado el reintento (si el proceso cae, no vuelve a caer)', async () => {
+    const n = await negocioVinculado();
+    let visto: Awaited<ReturnType<typeof perfil>>;
+    // highWaterMark 0: pull() solo corre cuando alguien lee, como el cuerpo de una respuesta de red.
+    const respuesta = () => new Response(new ReadableStream<Uint8Array>({
+      async pull() {
+        visto = await perfil(n.providerId!);
+        throw new Error('el proceso cayó');
+      },
+    }, { highWaterMark: 0 }), { status: 200 });
+    expect(await sincronizarNegocio(n.perfil, cfg, pedirFalso(respuesta).pedir)).toBe('error');
+    expect(visto!.dardoventas_fallos).toBe(1);
+    expect(visto!.dardoventas_reintento_en).not.toBeNull();
+    expect((await perfil(n.providerId!))?.dardoventas_fallos).toBe(1);
+  });
+
+  it('el éxito borra la penalización anotada de antemano', async () => {
+    const n = await negocioVinculado();
+    await q('UPDATE provider_profiles SET dardoventas_fallos = 3 WHERE id = $1', [n.providerId]);
+    await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => respuestaCatalogo([art('a')])).pedir);
+    expect(await perfil(n.providerId!)).toMatchObject({ dardoventas_fallos: 0, dardoventas_reintento_en: null });
+  });
+
+  it('un ETag desmesurado no se guarda', async () => {
+    const n = await negocioVinculado();
+    await sincronizarNegocio(n.perfil, cfg, pedirFalso(() => respuestaCatalogo([art('a')], `"${'e'.repeat(300)}"`)).pedir);
+    expect((await perfil(n.providerId!))?.dardoventas_etag).toBeNull();
+  });
+
+  it('un fallo no marca a un negocio que ya no está vinculado', async () => {
+    const n = await negocioVinculado();
+    const { pedir } = pedirFalso(async () => {
+      await q('UPDATE provider_profiles SET dardoventas_slug = NULL WHERE id = $1', [n.providerId]);
+      return new Response('fallo', { status: 500 });
+    });
+    expect(await sincronizarNegocio(n.perfil, cfg, pedir)).toBe('error');
+    expect(await perfil(n.providerId!)).toMatchObject({ dardoventas_fallos: 0, dardoventas_reintento_en: null });
+  });
+
   it('respeta el tope del plan: con Básico se ven 50 y el resto queda oculto', async () => {
     const n = await negocioVinculado('basic');
     const items = Array.from({ length: 60 }, (_, i) => art(`u${String(i).padStart(2, '0')}`));
@@ -179,6 +266,35 @@ describe('sincronizarPendientes', () => {
     expect(await sincronizarPendientes(cfg, pedir)).toBe(1);
     expect(llamadas).toHaveLength(2);
     expect(new Headers(llamadas[1].init.headers).get('If-None-Match')).toBe('"e1"');
+  });
+
+  it('si un negocio da error en la base, el siguiente de la misma pasada se sincroniza igual', async () => {
+    await q('UPDATE provider_profiles SET dardoventas_slug = NULL');
+    const malo = await negocioVinculado();
+    const bueno = await negocioVinculado();
+    // El malo tiene synced_at NULL y va primero (NULLS FIRST); el bueno ya toca por antigüedad.
+    await q("UPDATE provider_profiles SET dardoventas_synced_at = now() - interval '31 minutes' WHERE id = $1", [bueno.providerId]);
+    await q("ALTER TABLE catalog_items ADD CONSTRAINT prueba_boom CHECK (name <> 'BOOM')");
+    try {
+      const { pedir } = pedirFalso((url) => respuestaCatalogo(url.includes(malo.slug) ? [art('x', { name: 'BOOM' })] : [art('a')]));
+      expect(await sincronizarPendientes(cfg, pedir)).toBe(2);
+    } finally {
+      await q('ALTER TABLE catalog_items DROP CONSTRAINT prueba_boom');
+    }
+    expect(await importados(malo.providerId!)).toHaveLength(0);
+    expect(await importados(bueno.providerId!)).toHaveLength(1);
+    expect((await perfil(malo.providerId!))?.dardoventas_fallos).toBe(1);
+  });
+
+  it('una excepción inesperada con un negocio no corta la pasada de los demás', async () => {
+    await q('UPDATE provider_profiles SET dardoventas_slug = NULL');
+    const malo = await negocioVinculado();
+    const bueno = await negocioVinculado();
+    await q("UPDATE provider_profiles SET dardoventas_synced_at = now() - interval '31 minutes' WHERE id = $1", [bueno.providerId]);
+    const { pedir } = pedirFalso((url) => (url.includes(malo.slug) ? (undefined as unknown as Response) : respuestaCatalogo([art('a')])));
+    expect(await sincronizarPendientes(cfg, pedir)).toBe(2);
+    expect(await importados(bueno.providerId!)).toHaveLength(1);
+    expect((await perfil(malo.providerId!))?.dardoventas_fallos).toBe(1);
   });
 
   it('no insiste con un negocio que está en reintento', async () => {

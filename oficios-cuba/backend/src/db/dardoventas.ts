@@ -30,6 +30,9 @@ export async function regalarPro(c: Tx, providerId: string, hasta: Date) {
  * vuelva a marcar. Desde el panel de Encuentrauno no se toca: ahí decide él.
  */
 export async function desvincular(c: Tx, providerId: string, ocultarDelMapa: boolean) {
+  // Mismo orden de bloqueo que el sincronizador (perfil primero, artículos después): al revés,
+  // un desvincular desde el panel y una pasada del notificador se esperarían mutuamente.
+  await c.q('SELECT 1 FROM provider_profiles WHERE id = $1 FOR UPDATE', [providerId]);
   await c.q("DELETE FROM catalog_items WHERE provider_id = $1 AND origen = 'dardoventas'", [providerId]);
   await c.q(
     `UPDATE provider_profiles SET dardoventas_slug = NULL, dardoventas_linked_at = NULL, dardoventas_etag = NULL,
