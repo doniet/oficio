@@ -143,8 +143,9 @@ export function whatsappLink(phone: string, text: string) {
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Precio de un artículo del catálogo: { prefix: 'desde' | '', amount, alt (≈ otra moneda) }. */
-export function catalogPrice(item: { price: number | null; price_type: 'fixed' | 'from' | 'ask'; price_currency: Currency }, tasa?: number) {
+export function catalogPrice(item: { price: number | null; price_type: 'fixed' | 'from' | 'ask'; price_currency: Currency; convertible?: boolean }, tasa?: number) {
   if (item.price_type === 'ask' || item.price == null) return { prefix: '', amount: 'A consultar', alt: null as string | null };
   const p = priceParts({ price_min: item.price, price_type: 'fixed', price_currency: item.price_currency }, tasa);
-  return { prefix: item.price_type === 'from' ? 'desde' : '', amount: p.main, alt: p.alt };
+  // Importado de DardoVentas: la cifra es la que se cobra en caja y un «≈» con otra tasa la contradiría.
+  return { prefix: item.price_type === 'from' ? 'desde' : '', amount: p.main, alt: item.convertible === false ? null : p.alt };
 }

@@ -412,6 +412,10 @@ export interface CatalogItem {
   section: string | null;
   available: boolean;
   created_at: string;
+  /** 'dardoventas' = importado del punto de venta: no se edita a mano. Ausente en servidores viejos. */
+  origen?: 'propio' | 'dardoventas';
+  /** false = su precio no se convierte a la otra moneda (el CUP del POS sale de la tasa del negocio). */
+  convertible?: boolean;
 }
 
 export interface CatalogInput {

@@ -73,12 +73,13 @@ export function precioRenglon(price: number, moneda: Currency, tasa: number = TA
  * comparten el miembro 'fixed'.
  */
 export function precioCatalogo(
-  item: { price: number | null; price_type: CatalogPriceType; price_currency: Currency },
+  item: { price: number | null; price_type: CatalogPriceType; price_currency: Currency; convertible?: boolean },
   tasa: number = TASA_RESPALDO,
 ) {
   if (item.price_type === 'ask' || item.price == null) return { prefijo: '', cifra: 'A consultar', alt: null as string | null };
   const p = precioRenglon(item.price, item.price_currency, tasa);
-  return { prefijo: item.price_type === 'from' ? 'desde' : '', cifra: p.principal, alt: p.alt };
+  // Importado de DardoVentas: la cifra es la que se cobra en caja y un «≈» con otra tasa la contradiría.
+  return { prefijo: item.price_type === 'from' ? 'desde' : '', cifra: p.principal, alt: item.convertible === false ? null : p.alt };
 }
 
 export const ETIQUETA_TIPO_PRECIO: Record<PriceType, string> = {

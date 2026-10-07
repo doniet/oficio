@@ -82,4 +82,15 @@ describe('formato', () => {
     expect(desde.alt).not.toBeNull();
     expect(precioCatalogo({ price: 500, price_type: 'fixed', price_currency: 'CUP' }, 500).prefijo).toBe('');
   });
+
+  describe('precioCatalogo: artículos importados', () => {
+    const base = { price: 250, price_type: 'fixed' as const, price_currency: 'CUP' as const };
+    it('sin convertible (o true) da el equivalente, como siempre', () => {
+      expect(precioCatalogo(base, 500).alt).not.toBeNull();
+      expect(precioCatalogo({ ...base, convertible: true }, 500).alt).not.toBeNull();
+    });
+    it('con convertible=false no inventa un equivalente', () => {
+      expect(precioCatalogo({ ...base, convertible: false }, 500)).toEqual({ prefijo: '', cifra: '250 CUP', alt: null });
+    });
+  });
 });
