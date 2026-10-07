@@ -27,7 +27,9 @@ const itemSchema = z.object({
   available: z.boolean().default(true),
 }).refine((d) => d.price_type === 'ask' || (d.price !== null && d.price !== undefined), { message: 'Pon el precio o elige «A consultar»', path: ['price'] });
 
-const COLUMNAS = 'ci.id, ci.name, ci.description, ci.price, ci.price_type, ci.price_currency, ci.image, ci.section, ci.available, ci.created_at';
+// convertible = false en lo importado: su CUP sale de la tasa propia del negocio y convertirlo con
+// la de elTOQUE daría una cifra distinta de la que se cobra en caja (spec, «Los precios no se convierten»).
+const COLUMNAS = "ci.id, ci.name, ci.description, ci.price, ci.price_type, ci.price_currency, ci.image, ci.section, ci.available, ci.created_at, ci.origen, ci.origen <> 'dardoventas' AS convertible";
 // available ya es boolean (columna boolean, no INTEGER 0/1): nada que convertir al leer.
 const aItem = <T extends { available: boolean }>(r: T) => r;
 
@@ -158,10 +160,17 @@ router.post('/', authMiddleware, requireProvider, asyncHandler(async (req: AuthR
   res.status(201).json({ item: aItem((await qOne<{ available: boolean } & Record<string, unknown>>(`SELECT ${COLUMNAS} FROM catalog_items ci WHERE id = $1`, [id]))!) });
 }));
 
+const NO_SE_EDITA = 'Este artículo viene de DardoVentas: cámbialo en tu punto de venta.';
+
+// Lo importado se reescribe en cada sincronización: una edición a mano se perdería sola, que es
+// peor que no dejar editar.
 async function itemPropio(req: AuthRequest) {
   const { id: providerId, plan } = await miPerfil(req);
-  const item = await qOne<{ id: string; image: string | null }>('SELECT id, image FROM catalog_items WHERE id = $1 AND provider_id = $2', [req.params.id, providerId]);
+  const item = await qOne<{ id: string; image: string | null; origen: string }>(
+    'SELECT id, image, origen FROM catalog_items WHERE id = $1 AND provider_id = $2', [req.params.id, providerId],
+  );
   if (!item) throw new AppError('Artículo no encontrado', 404);
+  if (item.origen === 'dardoventas') throw new AppError(NO_SE_EDITA, 403);
   return { item, plan, providerId };
 }
 
