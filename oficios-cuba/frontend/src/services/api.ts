@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { Agenda, AgendaBlock, Bbox, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, EstadoDardoVentas, Appointment, AppointmentStatus, CalendarData, Currency, MapaRespuesta, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
+import type { Agenda, AgendaBlock, Bbox, CatalogInput, CatalogItem, CatalogPage, CatalogSearchPage, EstadoDardoVentas, Appointment, AppointmentStatus, CalendarData, Currency, MapaProductosRespuesta, MapaRespuesta, OrdenProductos, PriceRow, PriceType, SlotsResponse, Tasa, TelegramGroupId, TelegramStatus, UserType } from '../types';
 
 const TOKEN_KEY = 'oc_token';
 
@@ -203,6 +203,13 @@ export const mapaApi = {
   celda: (bbox: Bbox, cy: number, cx: number, params: { tab?: string; q?: string; category?: string }, signal?: AbortSignal) =>
     api.get<MapaRespuesta>('/mapa/celda', {
       params: { bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, cy, cx, ...params },
+      signal,
+    }).then((r) => r.data),
+
+  /** Los productos de la zona visible (`dentro`, paginado) y los más cercanos de fuera (`fuera`, solo en la página 1). */
+  productos: (bbox: Bbox, params: { q?: string; category?: string; sort?: OrdenProductos; page?: number }, signal?: AbortSignal) =>
+    api.get<MapaProductosRespuesta>('/mapa/productos', {
+      params: { bbox: `${bbox.sur},${bbox.oeste},${bbox.norte},${bbox.este}`, ...params },
       signal,
     }).then((r) => r.data),
 };

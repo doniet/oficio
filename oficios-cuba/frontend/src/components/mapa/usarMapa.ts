@@ -51,7 +51,11 @@ const CUBA_ENTERA: Bbox = { sur: 19, oeste: -85.5, norte: 24, este: -73.5 };
 // más abajo). Mismo orden que ve el usuario en los controles del mapa (`ControlesMapa.tsx`).
 const ORDEN_PESTANAS = ['servicios', 'negocios', 'productos'] as const;
 
-export function usarMapa(params: { tab: string; q: string; category: string }, onAgotada?: (siguiente: string) => void) {
+export function usarMapa(
+  params: { tab: string; q: string; category: string },
+  onAgotada?: (siguiente: string) => void,
+  onZona?: (b: Bbox) => void,
+) {
   const [puntos, setPuntos] = useState<PuntoMapa[]>([]);
   const [celda, setCelda] = useState(0);
   const [hayMas, setHayMas] = useState(false);
@@ -93,6 +97,10 @@ export function usarMapa(params: { tab: string; q: string; category: string }, o
   // siempre a la versión del primer render.
   const onAgotadaRef = useRef(onAgotada);
   onAgotadaRef.current = onAgotada;
+  // La zona con que se pintaron los pines, para quien tenga que pedir algo de ESA misma zona (la
+  // lista de productos): pedirla con el bbox del último arrastre la desfasaría del mapa.
+  const onZonaRef = useRef(onZona);
+  onZonaRef.current = onZona;
 
   // La próxima pestaña sin probar para esta búsqueda, en el orden fijo de ORDEN_PESTANAS,
   // arrancando justo después de la actual. null si ya se probaron las tres.
@@ -153,6 +161,7 @@ export function usarMapa(params: { tab: string; q: string; category: string }, o
         setHayMas(r.hay_mas);
         setCargando(false);
         bboxPintadoRef.current = bbox;
+        onZonaRef.current?.(bbox);
         if (r.puntos.length === 0) {
           if (paramsRef.current.q) {
             if (!intentadaRef.current) {

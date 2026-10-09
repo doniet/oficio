@@ -105,6 +105,15 @@ describe('usarMapa', () => {
     expect(result.current.puntos).toEqual([puntoTexto]);
   });
 
+  it('avisa con onZona del bbox con que pintó los pines', async () => {
+    const onZona = vi.fn();
+    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    const { result } = renderHook(() => usarMapa({ tab: 'productos', q: '', category: '' }, undefined, onZona));
+    act(() => { result.current.alMover(bbox, true); });
+    await act(async () => { await espera(300); });
+    expect(onZona).toHaveBeenCalledWith(bbox);
+  });
+
   it('arrastrar el mapa recarga solo, con su antirrebote, sin botón de por medio', async () => {
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
 

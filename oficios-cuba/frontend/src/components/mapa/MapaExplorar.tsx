@@ -132,7 +132,7 @@ function Eventos({ zoomRecien, alMover, onClicVacio }: {
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, onCerrarPanel, onAgotada, alMapa }: {
+export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, onCerrarPanel, onAgotada, onZona, alMapa }: {
   tab: string; q: string; category: string;
   /** El `id` del punto que tiene su ficha abierta: su marcador cambia de círculo a pin. */
   seleccionadoId?: string | null;
@@ -147,10 +147,12 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
   /** La pestaña actual se quedó sin resultados (en la zona visible y, si había texto, en toda
    * Cuba): quien tiene la URL decide a cuál saltar. */
   onAgotada?: (siguiente: string) => void;
+  /** Llega cada vez que se pintan pines, con el bbox con que se pidieron. */
+  onZona?: (b: Bbox) => void;
   /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
   alMapa?: (m: LeafletMap) => void;
 }) {
-  const mapa = usarMapa({ tab, q, category }, onAgotada);
+  const mapa = usarMapa({ tab, q, category }, onAgotada, onZona);
 
   // Modo zona: por debajo de este tamaño de celda el área de 600 m ya no cabe en ella, así que
   // los círculos de celdas vecinas se solaparían por fuerza. Sale de la geometría, no del gusto.

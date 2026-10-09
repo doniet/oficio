@@ -517,6 +517,24 @@ export type PuntoMapa = {
 
 export type MapaRespuesta = { puntos: PuntoMapa[]; celda: number; hay_mas: boolean };
 
+/** Orden de la lista de productos del mapa (GET /mapa/productos). */
+export type OrdenProductos = 'relevance' | 'price_asc' | 'price_desc';
+
+/** Un artículo de la lista de productos del mapa: lo de /catalog/search más el punto PUBLICADO del negocio. */
+export type ProductoMapa = CatalogSearchItem & {
+  lat: number;
+  lng: number;
+  tipo: 'oficio' | 'negocio';
+  aproximado: boolean;
+  /** Solo en `fuera`: desde el centro de la zona visible, en km con un decimal. */
+  distancia_km?: number;
+};
+
+export interface MapaProductosRespuesta {
+  dentro: { items: ProductoMapa[]; total: number; page: number; pages: number };
+  fuera: ProductoMapa[];
+}
+
 /** El área que se dibuja alrededor de un punto aproximado: el negocio está dentro. */
 export const RADIO_APROX_M = 300;
 
