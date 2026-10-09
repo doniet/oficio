@@ -6,6 +6,8 @@ import { categoriaColumna, queryTextos } from '../lib/entrada.js';
 import { consultaSQL, termino } from '../lib/buscador.js';
 import { conMargen, leerBbox, tamanoCelda } from '../lib/mapa.js';
 import { segunPlan } from './providers.js';
+import { TASA_CUP_USD } from '../config.js';
+import { COLUMNAS as COLUMNAS_ARTICULO, CON_CATALOGO } from './catalog.js';
 
 const router = Router();
 
@@ -304,6 +306,111 @@ router.get('/celda', asyncHandler(async (req, res) => {
   })));
 
   res.json({ puntos, celda, hay_mas });
+}));
+
+// ── Productos de la zona visible ───────────────────────────────────────────────────────────────
+// La lista de la pestaña Productos del mapa. A diferencia de `/` y `/celda`, NO infla el bbox con
+// conMargen: la lista dice «N productos en esta zona» y tiene que ser verdad para lo que se ve.
+
+const ORDENES_PRODUCTOS = ['relevance', 'price_asc', 'price_desc'] as const;
+type OrdenProductos = (typeof ORDENES_PRODUCTOS)[number];
+const POR_PAGINA_PRODUCTOS = 20;
+
+// En CUP para poder comparar monedas. Con la tasa de RESPALDO, como el filtro de precio de
+// /services: la del día vive en nginx (/api/tasas) y la API no tiene salida para pedirla.
+// NULL para «A consultar»: con NULLS LAST va al final en los dos sentidos.
+export const PRECIO_CUP_ARTICULO = `(CASE WHEN ci.price_type = 'ask' OR ci.price IS NULL THEN NULL
+  WHEN ci.price_currency = 'USD' THEN ci.price * ${Number(TASA_CUP_USD)} ELSE ci.price END)`;
+
+export const ORDEN_PRECIO: Record<'price_asc' | 'price_desc', string> = {
+  price_asc: 'precio_cup ASC NULLS LAST, id',
+  price_desc: 'precio_cup DESC NULLS LAST, id',
+};
+
+export const JOINS_PRODUCTOS = `FROM catalog_items ci
+  JOIN provider_profiles pp ON ci.provider_id = pp.id
+  JOIN users u ON pp.user_id = u.id
+  LEFT JOIN provinces p ON pp.province_id = p.id
+  LEFT JOIN municipalities m ON pp.municipality_id = m.id`;
+
+// Las mismas columnas que /catalog/search (para que la web reuse CatalogSearchItem) más el punto
+// PUBLICADO. kind y map_precision se leen para decidir `tipo` y `aproximado`, y no se devuelven.
+export const COLUMNAS_PRODUCTO_MAPA = `${COLUMNAS_ARTICULO}, pp.id AS provider_id,
+  COALESCE(pp.business_name, u.full_name) AS provider_name, u.avatar_url AS provider_avatar,
+  pp.subscription_plan, pp.contact_mode, pp.whatsapp, p.name AS province_name, m.name AS municipality_name,
+  pp.kind, pp.map_precision, ${LAT_SERVIDA} AS lat, ${LNG_SERVIDA} AS lng`;
+
+// Lo común a `dentro` y `fuera`: visibilidad del artículo y del perfil, texto y categoría. Sin la
+// condición de zona: cada consulta añade la suya. Parámetros desde $1, como filtroDeVisibles.
+export function filtroProductos(texto: string | undefined, category: string | undefined) {
+  let where = `WHERE ${CON_CATALOGO} AND ci.available = true AND pp.show_on_map = true AND pp.punto_pub IS NOT NULL`;
+  const params: unknown[] = [];
+  let coincide = '0';
+  const idx = params.length + 1;
+  const t = termino(texto, 'ci.busca', idx);
+  if (t) {
+    // pp.busca igual que /catalog/search: el nombre del negocio también es un término válido.
+    where += ` AND (${t.sql} OR pp.busca @@ ${consultaSQL(idx)})`;
+    params.push(...t.params);
+    coincide = `ts_rank(ci.busca, ${consultaSQL(idx)})`;
+  }
+  if (category) {
+    const campo = categoriaColumna(category);
+    params.push(category);
+    const n = params.length;
+    where += ` AND pp.id IN (SELECT s.provider_id FROM services s JOIN categories c ON s.category_id = c.id
+      WHERE s.is_active = true AND (c.${campo} = $${n} OR c.parent_id IN (SELECT id FROM categories WHERE ${campo} = $${n})))`;
+  }
+  return { where, params, coincide };
+}
+
+// Fila de SQL → lo que viaja. Se quitan las columnas de trabajo; `tipo` sale de segunPlan(), la
+// única fuente de «qué kind se le muestra a la gente» (ver el comentario en GET /).
+export function aProductoMapa(f: any) {
+  const { peso: _p, coincide: _c, turno: _t, precio_cup: _pc, distancia_m, kind: _k, map_precision, ...r } = f;
+  const plan = segunPlan(f);
+  return {
+    ...r,
+    subscription_plan: plan.subscription_plan,
+    tipo: plan.kind as 'oficio' | 'negocio',
+    aproximado: map_precision === 'zona',
+    ...(distancia_m != null ? { distancia_km: Math.round(Number(distancia_m) / 100) / 10 } : {}),
+  };
+}
+
+router.get('/productos', asyncHandler(async (req, res) => {
+  if (req.query.sort !== undefined && typeof req.query.sort !== 'string') throw new AppError('Orden no válido', 400);
+  const { q: texto, category, sort = 'relevance' } = queryTextos(req.query, ['q', 'category', 'sort'] as const);
+  if (!ORDENES_PRODUCTOS.includes(sort as OrdenProductos)) throw new AppError('Orden no válido', 400);
+  const visible = leerBbox(typeof req.query.bbox === 'string' ? req.query.bbox : undefined);
+  const page = Math.max(1, Number(req.query.page) || 1);
+
+  const { where, params, coincide } = filtroProductos(texto, category);
+  // ST_MakeEnvelope toma (oeste, sur, este, norte): OTRO orden que el bbox de la API.
+  const e = params.length;
+  params.push(visible.oeste, visible.sur, visible.este, visible.norte);
+  const caja = `ST_MakeEnvelope($${e + 1}, $${e + 2}, $${e + 3}, $${e + 4}, 4326)::geography`;
+  const dentroWhere = `${where} AND ST_Intersects(pp.punto_pub, ${caja})`;
+
+  const total = Number((await qOne<{ n: string }>(`SELECT COUNT(*) AS n ${JOINS_PRODUCTOS} ${dentroWhere}`, params))!.n);
+
+  const orden = sort === 'relevance'
+    ? 'turno, peso DESC, coincide DESC, created_at DESC, id'
+    : ORDEN_PRECIO[sort as 'price_asc' | 'price_desc'];
+  const conPagina = [...params, POR_PAGINA_PRODUCTOS, (page - 1) * POR_PAGINA_PRODUCTOS];
+  const filas = await q<any>(`
+    SELECT * FROM (
+      SELECT ${COLUMNAS_PRODUCTO_MAPA}, ${PLAN_WEIGHT_SQL} AS peso, ${coincide} AS coincide, ${PRECIO_CUP_ARTICULO} AS precio_cup,
+        -- Mismo intercalado que /catalog/search: primero el mejor artículo de cada negocio, luego el segundo…
+        ROW_NUMBER() OVER (PARTITION BY ci.provider_id ORDER BY ${coincide} DESC, ci.image IS NULL ASC, ci.created_at DESC) AS turno
+      ${JOINS_PRODUCTOS} ${dentroWhere}
+    ) x ORDER BY ${orden} LIMIT $${conPagina.length - 1} OFFSET $${conPagina.length}
+  `, conPagina);
+
+  res.json({
+    dentro: { items: filas.map(aProductoMapa), total, page, pages: Math.max(1, Math.ceil(total / POR_PAGINA_PRODUCTOS)) },
+    fuera: [],
+  });
 }));
 
 export default router;

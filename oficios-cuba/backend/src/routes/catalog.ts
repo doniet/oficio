@@ -14,7 +14,7 @@ const router = Router();
 // Catálogo de productos o servicios (Básico 50, Profesional 1000). Lo público solo muestra
 // artículos dentro del límite del plan actual (hidden_by_plan = false) de perfiles con catálogo.
 const POR_PAGINA = 24;
-const CON_CATALOGO = `pp.is_active = true AND ${CON_CATALOGO_SQL}`;
+export const CON_CATALOGO = `pp.is_active = true AND ${CON_CATALOGO_SQL}`;
 
 const itemSchema = z.object({
   name: z.string().trim().min(2, 'El nombre es muy corto').max(120),
@@ -29,7 +29,7 @@ const itemSchema = z.object({
 
 // convertible = false en lo importado: su CUP sale de la tasa propia del negocio y convertirlo con
 // la de elTOQUE daría una cifra distinta de la que se cobra en caja (spec, «Los precios no se convierten»).
-const COLUMNAS = "ci.id, ci.name, ci.description, ci.price, ci.price_type, ci.price_currency, ci.image, ci.section, ci.available, ci.created_at, ci.origen, ci.origen <> 'dardoventas' AS convertible";
+export const COLUMNAS = "ci.id, ci.name, ci.description, ci.price, ci.price_type, ci.price_currency, ci.image, ci.section, ci.available, ci.created_at, ci.origen, ci.origen <> 'dardoventas' AS convertible";
 // available ya es boolean (columna boolean, no INTEGER 0/1): nada que convertir al leer.
 const aItem = <T extends { available: boolean }>(r: T) => r;
 
