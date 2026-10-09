@@ -76,8 +76,15 @@ function SeccionServicios({ servicios, abierta, onToggle }: { servicios: Provide
  * modal de detalle que ya usa la búsqueda general (`CatalogItemModal`), con su botón de contacto.
  */
 function ProductoMiniCard({ item, onAbrir, marcado = false }: { item: CatalogItem; onAbrir: () => void; marcado?: boolean }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  // En móvil la hoja asoma baja y la tarjeta marcada puede quedar bajo el pliegue: se trae a la
+  // vista una vez, al aparecer. `?.` porque jsdom no implementa scrollIntoView.
+  useEffect(() => {
+    if (marcado) ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [marcado]);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onAbrir}
       className={cn(

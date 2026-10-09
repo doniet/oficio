@@ -427,6 +427,21 @@ describe('PanelMapa — catálogo filtrado en la pestaña Productos', () => {
     expect(nombresEnOrden).toEqual(['Tuercas', 'Tornillos surtidos']);
   });
 
+  it('con productoMarcado, la tarjeta marcada se desplaza a la vista una sola vez (móvil: la hoja asoma bajo el pliegue)', async () => {
+    const desplazar = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: desplazar });
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem({ id: 'x', name: 'Tornillos surtidos' }), catalogItem({ id: 'm', name: 'Tuercas' })], sections: [], total: 2, total_all: 2, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tornillos', productoMarcado: catalogItem({ id: 'm', name: 'Tuercas' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const marcado = await screen.findByText('Lo que tocaste');
+    expect(desplazar).toHaveBeenCalledTimes(1);
+    expect(desplazar).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(desplazar.mock.contexts[0]).toBe(marcado.closest('button'));
+    delete (window.HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
   // Review Focus 2: la búsqueda coincidió por el nombre del negocio.
   it('si el catálogo filtrado no trae el producto tocado, igual lo enseña', async () => {
     vi.mocked(catalogApi.ofProvider).mockResolvedValue({
