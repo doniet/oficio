@@ -15,6 +15,7 @@ import {
 import { ZONA_DESDE_GRADOS, type Bbox, type PuntoMapa } from '@oficio/shared';
 import { acotarACuba, acotarBbox, CUBA, usarMapa } from '../lib/mapa';
 import { contenidoDeCelda } from '../lib/panelMapa';
+import { limitesDeCaja } from '../lib/productosMapa';
 import { PIN_POR_TIPO } from '../lib/pines';
 import { brand, fuentes, ink, radios, sand, sombra } from '../lib/tema';
 
@@ -59,6 +60,15 @@ const ZOOM_CERCA_DE_MI = 13;
 // Ojo: `onRegionDidChange` dispara UNA vez al asentarse la cámara, no por fotograma — el delta que
 // se mide aquí ya incluye la inercia posterior a soltar.
 const UMBRAL_ZOOM = 0.05;
+// Márgenes al ampliar hasta un producto de fuera. Pequeños abajo a propósito: el mapa ya termina
+// donde empieza la hoja (explorar.tsx lo encoge con `altoReservado`), así que sumar aquí el alto de
+// la hoja la contaría dos veces. Arriba más, porque la gota del seleccionado se dibuja ENCIMA de su
+// coordenada (46 px) y la píldora «Cargando…» ocupa esa franja.
+const MARGEN_AMPLIAR = { top: 72, right: 32, bottom: 32, left: 32 };
+// Espera antes de ampliar: tocar el producto devuelve la hoja al anclaje asomado y el mapa cambia
+// de alto en ese mismo render. Encajar la caja antes de que MapLibre se entere del alto nuevo la
+// calcularía con el viejo (con la lista abierta del todo, una franja de pocas decenas de px).
+const ESPERA_AMPLIAR_MS = 150;
 
 function bboxDeLimites([oeste, sur, este, norte]: LngLatBounds): Bbox {
   return acotarBbox({ sur, oeste, norte, este });
@@ -124,10 +134,10 @@ const AreaZona = memo(function AreaZona({ punto, onAbrir }: { punto: PuntoMapa; 
  * pin normal con cola, el contraste ya está validado y no hay un segundo juego de colores que
  * mantener. (La gota de la web lleva un círculo blanco liso porque sus pines nunca llevaron icono.)
  */
-const PinSeleccionado = memo(function PinSeleccionado({ punto, onAbrir }: { punto: PuntoMapa; onAbrir(p: PuntoMapa): void }) {
+const PinSeleccionado = memo(function PinSeleccionado({ punto, onAbrir }: { punto: PuntoMapa; onAbrir?(p: PuntoMapa): void }) {
   const { fondo, glifo } = PIN_POR_TIPO[punto.tipo];
   return (
-    <Marker id={punto.id} lngLat={[punto.lng, punto.lat]} anchor="bottom" onPress={() => onAbrir(punto)}>
+    <Marker id={onAbrir ? punto.id : `suelto-${punto.id}`} lngLat={[punto.lng, punto.lat]} anchor="bottom" onPress={onAbrir ? () => onAbrir(punto) : undefined}>
       <View style={e.gotaEnvoltorio}>
         {/* La cola: un cuadrado rotado 45° con tres esquinas redondeadas, debajo del círculo y tapado
             por él en todo su ancho salvo la punta. Sin react-native-svg a propósito (ver el spec,
@@ -146,16 +156,23 @@ const PinSeleccionado = memo(function PinSeleccionado({ punto, onAbrir }: { punt
   );
 });
 
-export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista }: {
+export default function MapaExplorar({ tab, q, category, seleccionado, onAbrir, onAbrirLista, onZona, ampliarHasta }: {
   tab: string; q: string; category: string;
-  /** El `id` del punto con su ficha abierta: su marcador pasa de círculo a gota. */
-  seleccionadoId?: string | null;
+  /** El punto con su ficha abierta: su marcador pasa de círculo a gota. Si no está entre los
+   *  pintados (agrupado en otro, o abierto desde un producto), se pinta una gota suelta en su sitio. */
+  seleccionado?: PuntoMapa | null;
+  /** La zona con que se piden los pines, justo antes de pedirlos. La lista de productos la usa. */
+  onZona?(b: Bbox): void;
+  /** Ampliar el mapa hasta incluir esta caja (un producto de fuera). `n` distingue dos peticiones
+   *  con la misma caja. */
+  ampliarHasta?: { caja: Bbox; n: number } | null;
   onAbrir(p: PuntoMapa): void;
   /** Los negocios de una celda al tocar un grupo. Si la celda falla, llega vacía con el mensaje:
    *  la hoja se abre igual. */
   onAbrirLista(puntos: PuntoMapa[], error?: string, reintentar?: () => void): void;
 }) {
-  const { puntos, cargando, error, celda, sugerencia, alMoverMapa, buscarZonaVisible, cargarCelda } = usarMapa({ tab, q, category });
+  const { puntos, cargando, error, celda, sugerencia, alMoverMapa, buscarZonaVisible, cargarCelda } = usarMapa({ tab, q, category }, onZona);
+  const seleccionadoId = seleccionado?.id ?? null;
 
   // Mismo umbral que la web (ZONA_DESDE_GRADOS, en @oficio/shared): por debajo de este tamaño de
   // celda el área ya no cabe en ella. Una constante y dos clientes, o el mismo negocio se vería
@@ -197,7 +214,9 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
   // resultados del filtro viejo y reabriría la hoja que el cambio acababa de cerrar. Por (3) no basta
   // con que `cargarCelda` señalara el abandono aparte: el token es lo único que cubre los tres.
   const tokenCelda = useRef(0);
-  useEffect(() => () => { tokenCelda.current += 1; }, [tab, q, category]);
+  // `seleccionadoId` también: abrir la ficha de un producto mientras carga una celda tocada antes
+  // haría que la celda, al llegar, tapara esa ficha con su lista.
+  useEffect(() => () => { tokenCelda.current += 1; }, [tab, q, category, seleccionadoId]);
 
   // Un punto suelto abre su ficha; un grupo abre la lista de su celda. Es la misma interacción para
   // el «+N» y para un área: enseñar dos gestos para el mismo hecho sería pedirle al usuario que
@@ -256,6 +275,21 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
     camaraRef.current?.flyTo({ center: [sugerencia.lng, sugerencia.lat], zoom: ZOOM_CERCA_DE_MI, duration: 600 });
   }, [sugerencia]);
 
+  // `fitBounds` existe en el CameraRef de MapLibre RN 11.4 (bounds en orden oeste, sur, este, norte;
+  // `padding` en las opciones). Igual que en «Cerca de mí», el cambio de región que provoca cuenta
+  // como zoom: es un salto pedido, y la lista de productos tiene que seguirlo.
+  useEffect(() => {
+    if (!ampliarHasta) return;
+    const t = setTimeout(() => {
+      zoomAnterior.current = null;
+      camaraRef.current?.fitBounds(limitesDeCaja(ampliarHasta.caja), { padding: MARGEN_AMPLIAR, duration: 600 });
+    }, ESPERA_AMPLIAR_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ampliarHasta?.n]);
+
+  const seleccionadoSuelto = seleccionado && !puntos.some((p) => p.id === seleccionado.id) ? seleccionado : null;
+
   return (
     <View style={e.contenedor}>
       <MapaLibre
@@ -286,6 +320,9 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
             ? <PinSeleccionado key={p.id} punto={p} onAbrir={abrir} />
             : <Pin key={p.id} punto={p} onAbrir={abrir} />;
         })}
+        {/* Sin `onAbrir`: su ficha ya está abierta, y tocarla la reabriría como si viniera de un pin
+            (perdería «Lo que tocaste» y la vuelta a la lista). Igual que la web (`interactive={false}`). */}
+        {seleccionadoSuelto ? <PinSeleccionado key={`suelto-${seleccionadoSuelto.id}`} punto={{ ...seleccionadoSuelto, detras: 0 }} /> : null}
       </MapaLibre>
 
       {cargando ? (

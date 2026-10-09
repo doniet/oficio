@@ -63,3 +63,26 @@ export function claveProductos(zona: Bbox | null, q: string, category: string, s
 export function articulosConMarcado<T extends CatalogItem>(items: T[], marcado: T | null | undefined): T[] {
   return marcado ? [marcado, ...items.filter((i) => i.id !== marcado.id)] : items;
 }
+
+/** El botón de volver de una ficha abierta desde la lista: «‹ N productos». */
+export function etiquetaVolverProductos(total: number): string {
+  return `${total} ${total === 1 ? 'producto' : 'productos'}`;
+}
+
+/** Bbox → el `LngLatBounds` de MapLibre RN, que va en orden GeoJSON (oeste, sur, este, norte). */
+export function limitesDeCaja(b: Bbox): [number, number, number, number] {
+  return [b.oeste, b.sur, b.este, b.norte];
+}
+
+/**
+ * «Ver más»: la página siguiente se pega solo si la búsqueda (zona, texto, categoría y orden) sigue
+ * siendo la misma con la que se pidió; si no, es de otra lista y se descarta (`null`). Sin repetir
+ * ids: un empate de orden entre dos páginas podría traer el mismo artículo dos veces.
+ */
+export function pegarPagina(
+  actuales: ProductoMapa[], nuevos: ProductoMapa[], claveAlPedir: string, claveAhora: string,
+): ProductoMapa[] | null {
+  if (claveAlPedir !== claveAhora) return null;
+  const vistos = new Set(actuales.map((p) => p.id));
+  return [...actuales, ...nuevos.filter((p) => !vistos.has(p.id))];
+}

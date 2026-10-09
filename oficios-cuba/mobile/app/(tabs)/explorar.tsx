@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useScrollToTop } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ErrorApi, type PuntoMapa } from '@oficio/shared';
+import { ErrorApi, type Bbox, type OrdenProductos, type ProductoMapa, type PuntoMapa } from '@oficio/shared';
 import { Boton } from '../../src/componentes/Boton';
 import { TarjetaServicio, TarjetaServicioEsqueleto } from '../../src/componentes/TarjetaServicio';
 import { Chip, EstadoError, EstadoVacio, u } from '../../src/componentes/ui';
@@ -15,13 +15,20 @@ import { useSesion } from '../../src/lib/contexto';
 import {
   ESTADO_PANEL_VACIO,
   type EstadoPanel,
+  desdeProductos,
   reduceAbrirLista,
+  reduceAbrirProductos,
   reduceAbrirPunto,
   reduceCerrar,
   reduceElegirDeLista,
+  reduceElegirProducto,
   reduceVolverALista,
+  reduceVolverAProductos,
+  textoBotonProductos,
 } from '../../src/lib/panelMapa';
-import { brand, fuentes, ink, paper, radios, sand } from '../../src/lib/tema';
+import { cajaQueIncluye, etiquetaVolverProductos } from '../../src/lib/productosMapa';
+import { usarProductosMapa } from '../../src/lib/usarProductosMapa';
+import { brand, fuentes, ink, paper, radios, sand, sombra } from '../../src/lib/tema';
 
 type Categoria = { slug: string; nombre: string };
 type Vista = 'lista' | 'mapa';
@@ -57,6 +64,13 @@ export default function Explorar() {
   // dimensiones de toda la ventana): así ambos usan la misma referencia pase lo que pase con la
   // cabecera o la barra de pestañas, y no pueden desalinearse entre sí.
   const [altoContenedor, setAltoContenedor] = useState(0);
+  // La zona con que se pide la lista de productos: la última con que el mapa pidió sus pines (llega
+  // por `onZona`). No se congela con una ficha abierta: en la app nada panea el mapa por su cuenta
+  // al abrir un producto de la zona, así que un cambio de zona siempre lo hizo el usuario.
+  const [zona, setZona] = useState<Bbox | null>(null);
+  // Sin URL donde guardarlo (la web lo lleva en `?orden=`): vive en la pantalla.
+  const [orden, setOrden] = useState<OrdenProductos>('relevance');
+  const [ampliarHasta, setAmpliarHasta] = useState<{ caja: Bbox; n: number } | null>(null);
 
   useEffect(() => {
     setTexto(params.q ?? '');
@@ -92,19 +106,45 @@ export default function Explorar() {
 
   const alElegirDeLista = useCallback((p: PuntoMapa) => { setPanel((e) => reduceElegirDeLista(e, p)); }, []);
   const alVolverALista = useCallback(() => { setPanel((e) => reduceVolverALista(e)); }, []);
+  const alVolverAProductos = useCallback(() => { setPanel((e) => reduceVolverAProductos(e)); }, []);
   const alCerrarHoja = useCallback(() => { setPanel(reduceCerrar); setIndiceHoja(-1); }, []);
 
-  // Cambiar de categoría o de texto cierra la hoja: lo abierto puede no pertenecer ya a lo que el
-  // mapa muestra, y eso vale igual para una lista que para una ficha.
+  const enProductos = vista === 'mapa' && tab === 'productos';
+  const productos = usarProductosMapa({ zona, q, category: categoria?.slug ?? '', sort: orden, activo: enProductos });
+
+  // Cambiar de categoría, de texto, de pestaña o de vista cierra la hoja: lo abierto puede no
+  // pertenecer ya a lo que el mapa muestra, y eso vale igual para una lista que para una ficha. En
+  // la pestaña Productos, en cambio, lo que se abre es su lista (una búsqueda nueva vuelve a ella
+  // aunque hubiera una ficha abierta). Mover el mapa NO está aquí: nunca reabre la lista.
   useEffect(() => {
-    setPanel(reduceCerrar);
-    setIndiceHoja(-1);
-  }, [q, categoria?.slug, tab]);
+    setPanel(enProductos ? reduceAbrirProductos : reduceCerrar);
+    setIndiceHoja(enProductos ? 0 : -1);
+  }, [q, categoria?.slug, tab, vista]);
+
+  // Sin mapa no hay zona: al volver a él, la lista espera la del mapa nuevo en vez de pedir la vieja.
+  // Y ninguna ampliación pendiente: el mapa nuevo la ejecutaría al montarse, volando a un producto
+  // que se tocó antes de irse a la lista.
+  useEffect(() => {
+    if (vista === 'mapa') return;
+    setZona(null);
+    setAmpliarHasta(null);
+  }, [vista]);
+
+  const alElegirProducto = useCallback((p: ProductoMapa, deFuera: boolean) => {
+    setPanel((e) => reduceElegirProducto(e, p));
+    setIndiceHoja(0);
+    // Uno de fuera amplía el mapa lo justo para incluir su negocio, sin perder lo que se veía.
+    // Uno de la zona no mueve nada: su negocio ya está a la vista, encima de la hoja.
+    if (deFuera && zona) setAmpliarHasta((a) => ({ caja: cajaQueIncluye(zona, p), n: (a?.n ?? 0) + 1 }));
+  }, [zona]);
 
   // 0 % cuando está cerrada; si no, la fracción del anclaje actual (30 % o 85 %) del mismo
   // contenedor que mide `onLayout` más abajo — el mismo que usa HojaPunto para sus snapPoints
   // en porcentaje, así que ambos números están atados a una sola medida real.
   const altoReservado = indiceHoja === 1 ? altoContenedor * ANCLA_ABIERTA : indiceHoja === 0 ? altoContenedor * ANCLA_ASOMADA : 0;
+
+  const vieneDeProductos = desdeProductos(panel);
+  const textoBoton = textoBotonProductos({ enProductos, panel, total: productos.total, fuera: productos.fuera.length });
 
   const filtros = (
     <View style={{ gap: 16 }}>
@@ -249,10 +289,24 @@ export default function Explorar() {
                 tab={tab}
                 q={q}
                 category={categoria?.slug ?? ''}
-                seleccionadoId={panel.punto?.id ?? null}
+                seleccionado={panel.punto}
                 onAbrir={alAbrirPunto}
                 onAbrirLista={alAbrirLista}
+                onZona={setZona}
+                ampliarHasta={ampliarHasta}
               />
+              {/* Cerrada la lista, que no se pierda: la hoja tapa medio mapa y es normal cerrarla
+                  para mirar; reabrirla no puede exigir volver a buscar. */}
+              {textoBoton ? (
+                <Pressable
+                  onPress={() => { setPanel(reduceAbrirProductos); setIndiceHoja(0); }}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [e.botonProductos, pressed && { opacity: 0.9 }]}
+                >
+                  <Ionicons name="pricetags-outline" size={16} color="#ffffff" />
+                  <Text style={e.botonProductosTexto}>{textoBoton}</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
 
@@ -263,11 +317,20 @@ export default function Explorar() {
             onReintentarLista={panel.reintentarLista ?? undefined}
             onElegirDeLista={alElegirDeLista}
             onVolverALista={panel.listaPrevia ? alVolverALista : undefined}
+            onVolverAProductos={vieneDeProductos ? alVolverAProductos : undefined}
+            etiquetaVolver={vieneDeProductos ? etiquetaVolverProductos(productos.total) : undefined}
+            productos={enProductos && panel.productos ? {
+              dentro: productos.dentro, total: productos.total, fuera: productos.fuera,
+              orden, onOrden: setOrden,
+              cargando: productos.cargando, error: productos.error, onReintentar: productos.reintentar,
+              hayMas: productos.hayMas, cargandoMas: productos.cargandoMas, onVerMas: productos.verMas,
+              onElegir: alElegirProducto, marcadoId: panel.productoMarcado?.id ?? null,
+            } : null}
             onCerrar={alCerrarHoja}
             onCambiaIndice={setIndiceHoja}
             tab={tab}
             q={q}
-            productoMarcado={panel.productoMarcado}
+            productoMarcado={vieneDeProductos ? panel.productoMarcado : null}
           />
         </View>
       </SafeAreaView>
@@ -291,4 +354,11 @@ const e = StyleSheet.create({
   // El carrusel sale hasta el borde de la pantalla (como en la web) pero arranca alineado al contenido.
   chipsFuera: { marginHorizontal: -16 },
   chipsScroll: { gap: 8, paddingHorizontal: 16 },
+  // Abajo y centrado, a la altura de «Cerca de mí» (bottom 24 en MapaExplorar) pero sin pisarlo:
+  // ese botón va a la derecha y mide 48, así que a 360 dp quedan ~250 dp en medio para el texto.
+  botonProductos: {
+    position: 'absolute', bottom: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
+    minHeight: 44, paddingHorizontal: 18, borderRadius: radios.chip, backgroundColor: brand[600], ...sombra.lift,
+  },
+  botonProductosTexto: { fontFamily: fuentes.textoFuerte, fontSize: 14, color: '#ffffff' },
 });

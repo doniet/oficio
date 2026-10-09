@@ -34,3 +34,14 @@ export function accionAtras({ punto, lista, hayListaPrevia, desdeProductos, prod
   if (punto || lista || productos) return 'cerrar';
   return 'nada';
 }
+
+/**
+ * El fondo oscuro de la hoja según lo que enseña. Con la lista de productos el mapa tiene que
+ * seguir usable a media altura (se explora moviéndolo), así que el fondo aparece solo al abrirla
+ * del todo. `disappearsOnIndex` es lo que importa de verdad: @gorhom/bottom-sheet deja pasar los
+ * toques a través del fondo solo con el índice <= ese valor, y con -1 un fondo invisible seguiría
+ * comiéndose los toques del mapa en el anclaje asomado.
+ */
+export function fondoHoja(contenido: 'celda' | 'ficha' | 'productos' | null): { appearsOnIndex: number; disappearsOnIndex: number } {
+  return contenido === 'productos' ? { appearsOnIndex: 1, disappearsOnIndex: 0 } : { appearsOnIndex: 0, disappearsOnIndex: -1 };
+}

@@ -1,5 +1,5 @@
 import type { ProductoMapa, PuntoMapa } from '@oficio/shared';
-import { puntoDesdeProducto } from './productosMapa';
+import { puntoDesdeProducto, textoVerProductos } from './productosMapa';
 
 /**
  * Qué muestra la hoja del mapa. Gemelo del estado que ExplorarMapa.tsx gobierna en la web, aquí
@@ -86,4 +86,25 @@ export type ContenidoCelda =
 export function contenidoDeCelda(tocado: PuntoMapa, devueltos: PuntoMapa[]): ContenidoCelda {
   if (devueltos.length <= 1) return { clase: 'ficha', punto: devueltos[0] ?? tocado };
   return { clase: 'lista', puntos: devueltos };
+}
+
+export type ContenidoHoja = 'celda' | 'ficha' | 'productos' | null;
+
+/** Qué enseña la hoja. Misma prioridad que HojaPunto: celda, ficha y, solo sin ninguna, productos. */
+export function contenidoHoja(e: Pick<EstadoPanel, 'punto' | 'lista' | 'productos'>): ContenidoHoja {
+  if (e.lista) return 'celda';
+  if (e.punto) return 'ficha';
+  return e.productos ? 'productos' : null;
+}
+
+/**
+ * El botón flotante que reabre la lista de productos cerrada. Solo en la pestaña Productos de la
+ * vista mapa (`enProductos`) y nunca con la hoja abierta, sea lo que sea lo que enseñe: taparía el
+ * mismo sitio que la hoja.
+ */
+export function textoBotonProductos({ enProductos, panel, total, fuera }: {
+  enProductos: boolean; panel: EstadoPanel; total: number; fuera: number;
+}): string | null {
+  if (!enProductos || contenidoHoja(panel) !== null) return null;
+  return textoVerProductos(total, fuera);
 }
