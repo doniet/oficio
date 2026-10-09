@@ -64,7 +64,7 @@ type ProductoMapa = CatalogSearchItem & {
 - Artículos `available = true` y visibles por plan (`CON_CATALOGO_SQL`), de perfiles activos con
   `show_on_map = true` y `punto_pub` dentro del bbox **visible exacto**. A diferencia de `/mapa`, no se
   infla un 50 %: la lista dice «N productos en esta zona» y tiene que ser verdad.
-- 20 por página (la misma `POR_PAGINA` de `catalog.ts`).
+- 20 por página (constante propia, `POR_PAGINA_PRODUCTOS`).
 - `relevance`: mismo intercalado por negocio que `/catalog/search` (`ROW_NUMBER` por perfil, luego
   peso del plan y `ts_rank`), para que un negocio con muchas coincidencias no llene la lista.
 - `price_asc` / `price_desc`: por precio en CUP, convirtiendo el USD con `TASA_CUP_USD` (la tasa de
