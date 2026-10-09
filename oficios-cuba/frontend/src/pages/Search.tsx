@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import ExplorarMapa from '../components/mapa/ExplorarMapa';
-import { ChevronLeft, ChevronRight, List, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Store, Wrench, X } from 'lucide-react';
+import { List, Map as MapIcon, Package, Search as SearchIcon, SearchX, SlidersHorizontal, Store, Wrench, X } from 'lucide-react';
 import { catalogApi, categoryApi, providerApi, provinceApi, serviceApi, apiError } from '../services/api';
-import type { CatalogSearchItem, CatalogSearchPage, Category, Municipality, Pagination, PriceType, ProviderCard as ProviderCardType, Province, ServiceSummary } from '../types';
+import type { CatalogSearchItem, Category, Municipality, PriceType, ProviderCard as ProviderCardType, Province, ServiceSummary } from '../types';
 import { cup, plural, priceTypeLabel } from '../lib/format';
 import { ProviderCard, ProviderCardSkeleton, ServiceCard, ServiceCardSkeleton } from '../components/cards';
 import { EmptyState, ErrorState, Modal, PageLoader, Spinner, cn } from '../components/ui';
@@ -12,39 +12,53 @@ import CatalogItemModal from '../components/catalog/CatalogItemModal';
 
 const ProvinceMapSelector = lazy(() => import('../components/ProvinceMapSelector'));
 
-// Lo único que el endpoint /api/mapa honra: el buscador de texto, la pestaña y la categoría.
-// Provincia, municipio, precio y orden no llegan al mapa (el rectángulo visible ya es la
-// ubicación) — un control que no hace nada es peor que uno ausente, misma regla de la Entrega 1.
-const FILTROS_QUE_HONRA_EL_MAPA: readonly string[] = ['category'];
-
-const SORTS = [
-  { value: 'relevance', label: 'Relevancia' },
-  { value: 'rating', label: 'Mejor valorados' },
-  { value: 'price_asc', label: 'Precio: menor a mayor' },
-  { value: 'price_desc', label: 'Precio: mayor a menor' },
-  { value: 'newest', label: 'Más recientes' },
-];
-
 const PRICE_CAPS = [2000, 5000, 10000, 25000, 50000];
 const PRICE_TYPES: PriceType[] = ['fixed', 'hourly', 'daily', 'negotiable'];
-export type Pestaña = 'servicios' | 'productos' | 'negocios';
-// En Productos solo cuenta la ubicación; en Negocios, provincia y categoría (/providers no
-// filtra por municipio, así que ese filtro no entra aquí: un control que la API no honra es
-// peor que uno ausente).
-// El precio y el tipo de precio son de los oficios y no aplican fuera de Servicios.
-const FILTROS_POR_PESTAÑA: Record<Pestaña, readonly string[]> = {
-  servicios: ['category', 'province', 'municipality', 'price_max', 'price_type'],
-  productos: ['province', 'municipality'],
-  negocios: ['category', 'province'],
+// Los filtros que la búsqueda mezclada entiende. Cada uno solo afecta a las categorías que lo
+// aceptan en el backend (la categoría no llega a /catalog/search, el municipio no llega a
+// /providers): pasarlos de más es inofensivo, el endpoint los ignora.
+const FILTER_KEYS: readonly string[] = ['category', 'province', 'municipality', 'price_max', 'price_type'];
+const PAGE_SIZE = 9;
+
+/** Un resultado de cualquiera de las tres categorías, con su tipo para poder etiquetarlo y pintar la tarjeta correcta. */
+type Resultado =
+  | { tipo: 'servicio'; item: ServiceSummary }
+  | { tipo: 'negocio'; item: ProviderCardType }
+  | { tipo: 'producto'; item: CatalogSearchItem };
+
+/** Intercala las tres listas (servicio, negocio, producto de cada posición, en ese orden) en vez
+ * de pegarlas una tras otra: así ninguna categoría le gana siempre el primer vistazo a las demás. */
+function entrelazar(servicios: ServiceSummary[], negocios: ProviderCardType[], productos: CatalogSearchItem[]): Resultado[] {
+  const out: Resultado[] = [];
+  const max = Math.max(servicios.length, negocios.length, productos.length);
+  for (let i = 0; i < max; i++) {
+    if (servicios[i]) out.push({ tipo: 'servicio', item: servicios[i] });
+    if (negocios[i]) out.push({ tipo: 'negocio', item: negocios[i] });
+    if (productos[i]) out.push({ tipo: 'producto', item: productos[i] });
+  }
+  return out;
+}
+
+const ETIQUETAS_TIPO: Record<Resultado['tipo'], { label: string; Icon: typeof Wrench }> = {
+  servicio: { label: 'Servicio', Icon: Wrench },
+  negocio: { label: 'Negocio', Icon: Store },
+  producto: { label: 'Producto', Icon: Package },
 };
-// Idem para el orden: /providers (Negocios) no implementa price_asc/price_desc, así que el
-// <select> no debe ofrecerlos ahí (caería en relevancia sin avisar). Productos no tiene orden.
-const SORTS_POR_PESTAÑA: Record<Pestaña, readonly string[]> = {
-  servicios: ['relevance', 'rating', 'price_asc', 'price_desc', 'newest'],
-  productos: [],
-  negocios: ['relevance', 'rating', 'newest'],
-};
-const PAGE_SIZE = 12;
+
+/** Una tarjeta de la lista mezclada: la del tipo que toque, con una etiqueta encima que diga cuál es. */
+function TarjetaResultado({ r, onAbrirProducto }: { r: Resultado; onAbrirProducto: (item: CatalogSearchItem) => void }) {
+  const { label, Icon } = ETIQUETAS_TIPO[r.tipo];
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute right-3 top-3 z-10 badge bg-ink-900/80 text-white shadow-sm backdrop-blur">
+        <Icon className="h-3 w-3" /> {label}
+      </span>
+      {r.tipo === 'servicio' ? <ServiceCard service={r.item} />
+        : r.tipo === 'negocio' ? <ProviderCard provider={r.item} />
+        : <CatalogCard item={r.item} onOpen={() => onAbrirProducto(r.item)} />}
+    </div>
+  );
+}
 
 function useUrlFilters() {
   const [params, setParams] = useSearchParams();
@@ -71,19 +85,13 @@ function FilterBlock({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-function Filters({ categories, provinces, municipalities, get, update, onOpenMap, pestaña, enMapa }: {
+function Filters({ categories, provinces, municipalities, get, update, onOpenMap }: {
   categories: Category[]; provinces: Province[]; municipalities: Municipality[];
-  get: (k: string) => string; update: (p: Record<string, string | null>) => void; onOpenMap: () => void; pestaña: Pestaña;
-  enMapa?: boolean;
+  get: (k: string) => string; update: (p: Record<string, string | null>) => void; onOpenMap: () => void;
 }) {
-  const conCategoria = pestaña !== 'productos';
-  // En la vista de mapa, la ubicación es el propio rectángulo visible: mostrar también
-  // provincia/municipio invitaría a que compitan por la misma cosa.
-  const conUbicacion = !enMapa;
-  const conPrecio = pestaña === 'servicios' && !enMapa;
   return (
     <div className="space-y-5">
-      {conCategoria && <FilterBlock title="Categoría">
+      <FilterBlock title="Categoría">
         <select className="input" value={get('category')} onChange={(e) => update({ category: e.target.value || null })} aria-label="Categoría">
           <option value="">Todas las categorías</option>
           {categories.map((c) => (
@@ -93,15 +101,15 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
             </optgroup>
           ))}
         </select>
-      </FilterBlock>}
+      </FilterBlock>
 
-      {conUbicacion && <FilterBlock title="Ubicación">
+      <FilterBlock title="Ubicación">
         <div className="space-y-2">
           <select className="input" value={get('province')} onChange={(e) => update({ province: e.target.value || null })} aria-label="Provincia">
             <option value="">Toda Cuba</option>
             {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          {get('province') && pestaña !== 'negocios' && (
+          {get('province') && (
             <select className="input" value={get('municipality')} onChange={(e) => update({ municipality: e.target.value || null })} aria-label="Municipio">
               <option value="">Todos los municipios</option>
               {municipalities.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -111,9 +119,8 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
             <MapIcon className="h-4 w-4" /> Elegir en el mapa
           </button>
         </div>
-      </FilterBlock>}
+      </FilterBlock>
 
-      {conPrecio && <>
       <FilterBlock title="Precio máximo (CUP)">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => update({ price_max: null })} className={cn('chip', !get('price_max') && 'chip-active')}>Cualquiera</button>
@@ -135,15 +142,13 @@ function Filters({ categories, provinces, municipalities, get, update, onOpenMap
           ))}
         </div>
       </FilterBlock>
-      </>}
     </div>
   );
 }
 
-function MapModal({ open, onClose, provinces, initialProvince, initialMunicipality, onApply, soloProvincia }: {
+function MapModal({ open, onClose, provinces, initialProvince, initialMunicipality, onApply }: {
   open: boolean; onClose: () => void; provinces: Province[];
   initialProvince: string; initialMunicipality: string; onApply: (province: string | null, municipality: string | null) => void;
-  soloProvincia?: boolean;
 }) {
   const [province, setProvince] = useState<Province | null>(null);
   const [municipality, setMunicipality] = useState<Municipality | null>(null);
@@ -182,40 +187,10 @@ function MapModal({ open, onClose, provinces, initialProvince, initialMunicipali
             selectedMunicipality={municipality}
             setSelectedMunicipality={setMunicipality}
             onConfirm={() => { onApply(province?.id ?? null, municipality?.id ?? null); onClose(); }}
-            soloProvincia={soloProvincia}
           />
         </Suspense>
       )}
     </Modal>
-  );
-}
-
-function Pager({ pagination, onPage }: { pagination: Pagination; onPage: (p: number) => void }) {
-  const { page, totalPages } = pagination;
-  if (totalPages <= 1) return null;
-  const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
-    .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1);
-  return (
-    <nav className="mt-10 flex items-center justify-center gap-1.5" aria-label="Paginación">
-      <button onClick={() => onPage(page - 1)} disabled={page <= 1} className="btn-secondary btn-sm h-9 w-9 px-0" aria-label="Página anterior">
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      {pages.map((p, i) => (
-        <span key={p} className="flex items-center gap-1.5">
-          {i > 0 && p - pages[i - 1] > 1 && <span className="px-1 text-ink-300">…</span>}
-          <button
-            onClick={() => onPage(p)}
-            aria-current={p === page ? 'page' : undefined}
-            className={cn('btn-sm h-9 min-w-9 px-2', p === page ? 'btn-dark' : 'btn-secondary')}
-          >
-            {p}
-          </button>
-        </span>
-      ))}
-      <button onClick={() => onPage(page + 1)} disabled={page >= totalPages} className="btn-secondary btn-sm h-9 w-9 px-0" aria-label="Página siguiente">
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </nav>
   );
 }
 
@@ -224,8 +199,6 @@ export default function Search() {
   const [provinces, setProvinces] = useState<Province[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
-  const [services, setServices] = useState<ServiceSummary[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -235,21 +208,20 @@ export default function Search() {
 
   const province = get('province');
   const key = params.toString();
-  const tab = get('tab');
-  const pestaña: Pestaña = tab === 'productos' || tab === 'negocios' ? tab : 'servicios';
-  const productos = pestaña === 'productos';
-  const negocios = pestaña === 'negocios';
   // Sin `vista` en la URL se ve la lista: el precio y la foto deciden un servicio, y eso el mapa
   // no lo enseña. `vista=mapa` es explícito y sobrevive a compartir el enlace.
   const enMapa = get('vista') === 'mapa';
-  const [negs, setNegs] = useState<ProviderCardType[]>([]);
-  const [negPag, setNegPag] = useState<Pagination | null>(null);
-  const [prod, setProd] = useState<CatalogSearchPage | null>(null);
-  const [prodItems, setProdItems] = useState<CatalogSearchItem[]>([]);
-  const [prodMore, setProdMore] = useState(false);
+
+  // La lista mezclada: servicios, negocios y productos de la misma búsqueda, intercalados. Cada
+  // categoría lleva su propia página siguiente (para «Ver más») porque cada una se agota en un
+  // momento distinto: no tiene sentido pedir la página 2 de negocios si ya no quedan.
+  const [resultados, setResultados] = useState<Resultado[]>([]);
+  const [totales, setTotales] = useState<{ servicios: number; negocios: number; productos: number } | null>(null);
+  const [masDisponible, setMasDisponible] = useState({ servicios: false, negocios: false, productos: false });
+  const [paginas, setPaginas] = useState({ servicios: 1, negocios: 1, productos: 1 });
+  const [cargandoMas, setCargandoMas] = useState(false);
   const [abierto, setAbierto] = useState<CatalogSearchItem | null>(null);
   const cerrarArticulo = useCallback(() => setAbierto(null), []);
-  const prodParams = { q: get('q') || undefined, province_id: province || undefined, municipality_id: get('municipality') || undefined };
 
   useEffect(() => { setQ(get('q')); }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -269,83 +241,78 @@ export default function Search() {
   useEffect(() => {
     // En la vista de mapa la lista no se pinta: pedirla igual sería tráfico de más en una
     // conexión cubana lenta, justo lo que el mapa (la vista cara) ya intenta evitar.
-    if (pestaña !== 'servicios' || enMapa) return;
+    if (enMapa) return;
     let alive = true;
     setLoading(true);
     setError('');
-    serviceApi.getAll({
-      q: get('q') || undefined,
-      category: get('category') || undefined,
-      province_id: province || undefined,
-      municipality_id: get('municipality') || undefined,
-      price_max: get('price_max') || undefined,
-      price_type: get('price_type') || undefined,
-      sort: get('sort') || undefined,
-      page: Number(get('page')) || 1,
-      limit: PAGE_SIZE,
-    })
-      .then((r) => {
-        if (!alive) return;
-        setServices(r.data.services);
-        setPagination(r.data.pagination);
-      })
-      .catch((err) => alive && setError(apiError(err, 'No pudimos cargar los servicios.')))
-      .finally(() => alive && setLoading(false));
+    const base = { q: get('q') || undefined, province_id: province || undefined };
+    Promise.allSettled([
+      serviceApi.getAll({
+        ...base, category: get('category') || undefined, municipality_id: get('municipality') || undefined,
+        price_max: get('price_max') || undefined, price_type: get('price_type') || undefined,
+        sort: 'relevance', page: 1, limit: PAGE_SIZE,
+      }),
+      providerApi.getAll({ kind: 'negocio', ...base, category: get('category') || undefined, sort: 'relevance', page: 1, limit: PAGE_SIZE }),
+      catalogApi.search({ ...base, municipality_id: get('municipality') || undefined, page: 1 }),
+    ]).then(([rs, rn, rp]) => {
+      if (!alive) return;
+      const servicios: ServiceSummary[] = rs.status === 'fulfilled' ? rs.value.data.services : [];
+      const negocios: ProviderCardType[] = rn.status === 'fulfilled' ? rn.value.data.providers : [];
+      const productos: CatalogSearchItem[] = rp.status === 'fulfilled' ? rp.value.data.items : [];
+      setResultados(entrelazar(servicios, negocios, productos));
+      setTotales({
+        servicios: rs.status === 'fulfilled' ? rs.value.data.pagination.total : 0,
+        negocios: rn.status === 'fulfilled' ? rn.value.data.pagination.total : 0,
+        productos: rp.status === 'fulfilled' ? rp.value.data.total : 0,
+      });
+      setMasDisponible({
+        servicios: rs.status === 'fulfilled' && rs.value.data.pagination.totalPages > 1,
+        negocios: rn.status === 'fulfilled' && rn.value.data.pagination.totalPages > 1,
+        productos: rp.status === 'fulfilled' && rp.value.data.pages > 1,
+      });
+      setPaginas({ servicios: 1, negocios: 1, productos: 1 });
+      if (rs.status === 'rejected' && rn.status === 'rejected' && rp.status === 'rejected') {
+        setError(apiError(rs.reason, 'No pudimos cargar los resultados.'));
+      }
+    }).finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Productos del catálogo: "Ver más" concatena páginas (no va en la URL).
-  useEffect(() => {
-    if (!productos || enMapa) return;
-    let alive = true;
-    setLoading(true);
-    setError('');
-    catalogApi.search({ ...prodParams, page: 1 })
-      .then((r) => {
-        if (!alive) return;
-        setProd(r.data);
-        setProdItems(r.data.items);
-      })
-      .catch((err) => alive && setError(apiError(err, 'No pudimos cargar los productos.')))
-      .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
-  }, [productos, enMapa, get('q'), province, get('municipality'), reload]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!negocios || enMapa) return;
-    let alive = true;
-    setLoading(true);
-    setError('');
-    providerApi.getAll({
-      kind: 'negocio',
-      q: get('q') || undefined,
-      category: get('category') || undefined,
-      province_id: province || undefined,
-      sort: get('sort') || undefined,
-      page: Number(get('page')) || 1,
-      limit: PAGE_SIZE,
-    })
-      .then((r) => {
-        if (!alive) return;
-        setNegs(r.data.providers);
-        setNegPag(r.data.pagination);
-      })
-      .catch((err) => alive && setError(apiError(err, 'No pudimos cargar los negocios.')))
-      .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
-  }, [negocios, key, reload]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const verMasProductos = async () => {
-    if (!prod) return;
-    setProdMore(true);
+  const verMas = async () => {
+    setCargandoMas(true);
+    const base = { q: get('q') || undefined, province_id: province || undefined };
     try {
-      const r = await catalogApi.search({ ...prodParams, page: prod.page + 1 });
-      setProd(r.data);
-      setProdItems((prev) => [...prev, ...r.data.items]);
-    } catch {
-      /* el botón sigue ahí para reintentar */
+      const [rs, rn, rp] = await Promise.allSettled([
+        masDisponible.servicios
+          ? serviceApi.getAll({
+              ...base, category: get('category') || undefined, municipality_id: get('municipality') || undefined,
+              price_max: get('price_max') || undefined, price_type: get('price_type') || undefined,
+              sort: 'relevance', page: paginas.servicios + 1, limit: PAGE_SIZE,
+            })
+          : Promise.resolve(null),
+        masDisponible.negocios
+          ? providerApi.getAll({ kind: 'negocio', ...base, category: get('category') || undefined, sort: 'relevance', page: paginas.negocios + 1, limit: PAGE_SIZE })
+          : Promise.resolve(null),
+        masDisponible.productos
+          ? catalogApi.search({ ...base, municipality_id: get('municipality') || undefined, page: paginas.productos + 1 })
+          : Promise.resolve(null),
+      ]);
+      const nuevosServicios: ServiceSummary[] = rs.status === 'fulfilled' && rs.value ? rs.value.data.services : [];
+      const nuevosNegocios: ProviderCardType[] = rn.status === 'fulfilled' && rn.value ? rn.value.data.providers : [];
+      const nuevosProductos: CatalogSearchItem[] = rp.status === 'fulfilled' && rp.value ? rp.value.data.items : [];
+      setResultados((prev) => [...prev, ...entrelazar(nuevosServicios, nuevosNegocios, nuevosProductos)]);
+      setPaginas((prev) => ({
+        servicios: masDisponible.servicios && rs.status === 'fulfilled' && rs.value ? prev.servicios + 1 : prev.servicios,
+        negocios: masDisponible.negocios && rn.status === 'fulfilled' && rn.value ? prev.negocios + 1 : prev.negocios,
+        productos: masDisponible.productos && rp.status === 'fulfilled' && rp.value ? prev.productos + 1 : prev.productos,
+      }));
+      setMasDisponible((prev) => ({
+        servicios: prev.servicios && rs.status === 'fulfilled' && !!rs.value && rs.value.data.pagination.page < rs.value.data.pagination.totalPages,
+        negocios: prev.negocios && rn.status === 'fulfilled' && !!rn.value && rn.value.data.pagination.page < rn.value.data.pagination.totalPages,
+        productos: prev.productos && rp.status === 'fulfilled' && !!rp.value && rp.value.data.page < rp.value.data.pages,
+      }));
     } finally {
-      setProdMore(false);
+      setCargandoMas(false);
     }
   };
 
@@ -360,18 +327,13 @@ export default function Search() {
     return slug;
   }, [categories, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // En el mapa, los chips/badge/«Limpiar» solo cuentan lo que el mapa honra: lo demás no hace
-  // nada ahí, así que contarlo o dejarlo "puesto" en un chip sería engañoso.
-  const filterKeys = enMapa
-    ? FILTROS_POR_PESTAÑA[pestaña].filter((k) => FILTROS_QUE_HONRA_EL_MAPA.includes(k))
-    : FILTROS_POR_PESTAÑA[pestaña];
-  // Un filtro que no aplica a la pestaña actual no se muestra ni cuenta, aunque siga en la URL.
-  const puesto = (k: string) => filterKeys.includes(k) && get(k);
-  const sortsDisponibles = SORTS.filter((s) => SORTS_POR_PESTAÑA[pestaña].includes(s.value));
-  // Si llegamos con un sort que esta pestaña no respeta (p. ej. price_asc desde Servicios), el
-  // <select> no puede mostrarlo elegido: la API ya cae en relevancia sin avisar.
-  const sortValue = sortsDisponibles.some((s) => s.value === get('sort')) ? get('sort') : 'relevance';
+  // La vista de mapa es dueña de su propio layout a sangre, así que sale ANTES del marco de
+  // página (container-page, con su ancho máximo y su relleno) en vez de vivir en una caja dentro
+  // de la columna de resultados. Va después de TODOS los hooks de arriba: un retorno temprano por
+  // encima de cualquiera de ellos cambiaría el número de hooks entre renders y React se rompe.
+  if (enMapa) return <ExplorarMapa get={get} update={update} categorias={categories} />;
 
+  const puesto = (k: string) => FILTER_KEYS.includes(k) && get(k);
   const chips: { key: string; label: string; clear: Record<string, null> }[] = [];
   if (get('q')) chips.push({ key: 'q', label: `“${get('q')}”`, clear: { q: null } });
   if (puesto('category')) chips.push({ key: 'category', label: categoryLabel, clear: { category: null } });
@@ -379,36 +341,19 @@ export default function Search() {
   if (puesto('municipality')) chips.push({ key: 'municipality', label: municipalities.find((m) => m.id === get('municipality'))?.name ?? 'Municipio', clear: { municipality: null } });
   if (puesto('price_max')) chips.push({ key: 'price_max', label: `Hasta ${cup(Number(get('price_max')))}`, clear: { price_max: null } });
   if (puesto('price_type')) chips.push({ key: 'price_type', label: priceTypeLabel[get('price_type') as PriceType] ?? get('price_type'), clear: { price_type: null } });
-  const activeFilters = filterKeys.filter((k) => get(k)).length;
-  const clearFilters = () => update(Object.fromEntries(filterKeys.map((k) => [k, null])));
-  // Para el vacío de resultados: si el chip de "q" está puesto, el botón tiene que quitarlo también.
-  const clearAll = () => update({ q: null, ...Object.fromEntries(filterKeys.map((k) => [k, null])) });
+  const activeFilters = FILTER_KEYS.filter((k) => get(k)).length;
+  const clearFilters = () => update(Object.fromEntries(FILTER_KEYS.map((k) => [k, null])));
+  const clearAll = () => update({ q: null, ...Object.fromEntries(FILTER_KEYS.map((k) => [k, null])) });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     update({ q: q.trim() || null });
   };
 
-  const goPage = (p: number) => {
-    update({ page: p > 1 ? String(p) : null }, true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const TITULOS: Record<Pestaña, string> = { servicios: 'Explorar', productos: 'Explorar productos', negocios: 'Explorar negocios' };
-  const title = pestaña === 'servicios'
-    ? categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : TITULOS.servicios)
-    : (get('q') ? `${TITULOS[pestaña]}: “${get('q')}”` : TITULOS[pestaña]);
-  const filterProps = { categories, provinces, municipalities, get, update, pestaña, enMapa, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
-
-  // La vista de mapa es dueña de su propio layout a sangre, así que sale ANTES del marco de
-  // página (container-page, con su ancho máximo y su relleno) en vez de vivir en una caja dentro
-  // de la columna de resultados. Va después de TODOS los hooks de arriba: un retorno temprano por
-  // encima de cualquiera de ellos cambiaría el número de hooks entre renders y React se rompe.
-  if (enMapa) return <ExplorarMapa get={get} update={update} categorias={categories} />;
-  const totalResultados = productos ? prod?.total : negocios ? negPag?.total : pagination?.total;
-  const resultadosTexto = productos
-    ? ['producto encontrado', 'productos encontrados']
-    : negocios ? ['negocio encontrado', 'negocios encontrados'] : ['servicio encontrado', 'servicios encontrados'];
+  const totalResultados = totales ? totales.servicios + totales.negocios + totales.productos : undefined;
+  const title = categoryLabel || (get('q') ? `Resultados para “${get('q')}”` : 'Explorar');
+  const filterProps = { categories, provinces, municipalities, get, update, onOpenMap: () => { setFiltersOpen(false); setMapOpen(true); } };
+  const hayMas = masDisponible.servicios || masDisponible.negocios || masDisponible.productos;
 
   return (
     <div className="container-page py-8 sm:py-10">
@@ -416,33 +361,19 @@ export default function Search() {
         <h1 className="text-balance text-3xl font-bold sm:text-4xl">{title}</h1>
         <form onSubmit={submit} role="search" className="mt-5 flex gap-2">
           <label className="relative flex-1">
-            <span className="sr-only">Buscar servicios</span>
+            <span className="sr-only">Buscar servicios, negocios o productos</span>
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-300" />
             <input
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={productos ? 'Cake, breaker, zapatos, pintura…' : negocios ? 'Panadería, cafetería, taller…' : 'Electricista, clases de inglés, arreglo de celulares…'}
+              placeholder="Electricista, panadería, zapatos…"
               className="input py-3 pl-11"
             />
           </label>
           <button type="submit" className="btn-primary px-5">Buscar</button>
         </form>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <div className="inline-grid grid-cols-3 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Qué buscar">
-            {([['servicios', 'Servicios', Wrench], ['productos', 'Productos', Package], ['negocios', 'Negocios', Store]] as const).map(([valor, label, Icon]) => (
-              <button
-                key={valor}
-                type="button"
-                role="tab"
-                aria-selected={pestaña === valor}
-                onClick={() => update({ tab: valor === 'servicios' ? null : valor })}
-                className={cn('flex items-center justify-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition', pestaña === valor ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}
-              >
-                <Icon className="h-4 w-4" /> {label}
-              </button>
-            ))}
-          </div>
           {/* La lista es el valor por defecto (sin `vista` en la URL): el precio y la foto de un
              servicio deciden, y el mapa no los enseña; también es la vista más cara de cargar. */}
           <div className="inline-grid grid-cols-2 gap-1 rounded-2xl bg-sand-100 p-1" role="tablist" aria-label="Cómo ver los resultados">
@@ -480,22 +411,12 @@ export default function Search() {
         <div className="min-w-0">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink-500" aria-live="polite">
-              {/* El total es de la lista, que en el mapa no se pide: mostrarlo aquí describiría
-                 datos que ya no están en pantalla. */}
-              {enMapa ? '' : loading && totalResultados === undefined ? 'Buscando…' : totalResultados !== undefined ? plural(totalResultados, resultadosTexto[0], resultadosTexto[1]) : ''}
+              {loading && totalResultados === undefined ? 'Buscando…' : totalResultados !== undefined ? plural(totalResultados, 'resultado encontrado', 'resultados encontrados') : ''}
             </p>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setFiltersOpen(true)} className="btn-secondary lg:hidden">
-                <SlidersHorizontal className="h-4 w-4" /> Filtros
-                {activeFilters > 0 && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] leading-5 text-white">{activeFilters}</span>}
-              </button>
-              {pestaña !== 'productos' && !enMapa && <>
-                <label className="sr-only" htmlFor="sort">Ordenar por</label>
-                <select id="sort" value={sortValue} onChange={(e) => update({ sort: e.target.value === 'relevance' ? null : e.target.value })} className="input w-auto py-2 text-sm">
-                  {sortsDisponibles.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </>}
-            </div>
+            <button onClick={() => setFiltersOpen(true)} className="btn-secondary lg:hidden">
+              <SlidersHorizontal className="h-4 w-4" /> Filtros
+              {activeFilters > 0 && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] leading-5 text-white">{activeFilters}</span>}
+            </button>
           </div>
 
           {chips.length > 0 && (
@@ -510,82 +431,28 @@ export default function Search() {
 
           {error ? (
             <ErrorState message={error} onRetry={() => setReload((n) => n + 1)} />
-          ) : negocios ? (
-            loading && negs.length === 0 ? (
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {Array.from({ length: 6 }, (_, i) => <ProviderCardSkeleton key={i} />)}
-              </div>
-            ) : negs.length === 0 ? (
-              <EmptyState
-                icon={<SearchX className="h-7 w-7" />}
-                title="No encontramos negocios"
-                action={chips.length > 0 ? (
-                  <button onClick={clearAll} className="btn-secondary">Quitar los filtros</button>
-                ) : (
-                  <button onClick={() => update({ tab: null })} className="btn-secondary">Buscar servicios</button>
-                )}
-              >
-                Registrar un negocio es del plan Profesional, así que todavía hay pocos. Prueba con otra provincia o sin filtros.
-              </EmptyState>
-            ) : (
-              <>
-                <div className={cn('grid gap-5 transition-opacity sm:grid-cols-2 xl:grid-cols-3', loading && 'opacity-50')} aria-busy={loading}>
-                  {negs.map((n) => <ProviderCard key={n.id} provider={n} />)}
-                </div>
-                {negPag && <Pager pagination={negPag} onPage={goPage} />}
-              </>
-            )
-          ) : productos ? (
-            loading && prodItems.length === 0 ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                {Array.from({ length: 8 }).map((_, i) => <CatalogCardSkeleton key={i} />)}
-              </div>
-            ) : prodItems.length === 0 ? (
-              <EmptyState
-                icon={<SearchX className="h-6 w-6" />}
-                title="No encontramos productos"
-                action={chips.length > 0 ? (
-                  <button onClick={clearAll} className="btn-secondary">Quitar la búsqueda y la zona</button>
-                ) : (
-                  <button onClick={() => update({ tab: null })} className="btn-secondary">Buscar servicios</button>
-                )}
-              >
-                Prueba con otra palabra o amplía la zona. Los productos salen de los catálogos de los profesionales Básico y Profesional.
-              </EmptyState>
-            ) : (
-              <>
-                <div className={cn('grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 xl:grid-cols-4', loading && 'opacity-50')} aria-busy={loading}>
-                  {prodItems.map((it) => <CatalogCard key={it.id} item={it} onOpen={() => setAbierto(it)} />)}
-                </div>
-                {prod && prod.page < prod.pages && (
-                  <button type="button" onClick={verMasProductos} disabled={prodMore} className="btn-secondary mt-6 w-full">
-                    {prodMore && <Spinner className="h-4 w-4" />} Ver más productos
-                  </button>
-                )}
-              </>
-            )
-          ) : loading && services.length === 0 ? (
+          ) : loading && resultados.length === 0 ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => <ServiceCardSkeleton key={i} />)}
+              {Array.from({ length: 6 }).map((_, i) => (i % 3 === 0 ? <CatalogCardSkeleton key={i} /> : i % 3 === 1 ? <ProviderCardSkeleton key={i} /> : <ServiceCardSkeleton key={i} />))}
             </div>
-          ) : services.length === 0 ? (
+          ) : resultados.length === 0 ? (
             <EmptyState
               icon={<SearchX className="h-6 w-6" />}
-              title="No encontramos servicios con esos filtros"
-              action={chips.length > 0 ? (
-                <button onClick={clearAll} className="btn-secondary">Quitar todos los filtros</button>
-              ) : (
-                <Link to="/explorar" className="btn-secondary">Ver todos los servicios</Link>
-              )}
+              title="No encontramos resultados"
+              action={chips.length > 0 ? <button onClick={clearAll} className="btn-secondary">Quitar todos los filtros</button> : undefined}
             >
-              Prueba con otra palabra, amplía la zona a toda la provincia o quita el límite de precio.
+              Prueba con otra palabra, amplía la zona o quita el límite de precio.
             </EmptyState>
           ) : (
             <>
               <div className={cn('grid gap-5 transition-opacity sm:grid-cols-2 xl:grid-cols-3', loading && 'opacity-50')} aria-busy={loading}>
-                {services.map((s) => <ServiceCard key={s.id} service={s} />)}
+                {resultados.map((r) => <TarjetaResultado key={`${r.tipo}-${r.item.id}`} r={r} onAbrirProducto={setAbierto} />)}
               </div>
-              {pagination && <Pager pagination={pagination} onPage={goPage} />}
+              {hayMas && (
+                <button type="button" onClick={verMas} disabled={cargandoMas} className="btn-secondary mt-8 w-full">
+                  {cargandoMas && <Spinner className="h-4 w-4" />} Ver más resultados
+                </button>
+              )}
             </>
           )}
         </div>
@@ -613,9 +480,8 @@ export default function Search() {
         onClose={() => setMapOpen(false)}
         provinces={provinces}
         initialProvince={province}
-        initialMunicipality={negocios ? '' : get('municipality')}
-        onApply={(p, m) => update({ province: p, municipality: negocios ? null : m })}
-        soloProvincia={negocios}
+        initialMunicipality={get('municipality')}
+        onApply={(p, m) => update({ province: p, municipality: m })}
       />
 
     </div>

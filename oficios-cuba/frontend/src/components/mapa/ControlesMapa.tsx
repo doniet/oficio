@@ -5,8 +5,8 @@ import type { Category } from '../../types';
 
 const PESTANAS = [
   ['servicios', 'Servicios', Wrench],
-  ['productos', 'Productos', Package],
   ['negocios', 'Negocios', Store],
+  ['productos', 'Productos', Package],
 ] as const;
 
 const MARCADORES: Record<string, string> = {

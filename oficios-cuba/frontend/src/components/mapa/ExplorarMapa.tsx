@@ -46,6 +46,12 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setErrorLista('');
   }, [tab, category]);
 
+  // El mapa avisa que la pestaña activa se quedó sin resultados: se salta a la que propone,
+  // con la misma convención de URL que el resto de aquí (`servicios` no ensucia la barra).
+  const alAgotarPestaña = useCallback((siguiente: string) => {
+    update({ tab: siguiente === 'servicios' ? null : siguiente });
+  }, [update]);
+
   // Saca el punto elegido de debajo del panel. `panBy` y NO `flyTo`/`setZoom`: cambiar el zoom
   // cambia el tamaño de celda que calcula el servidor, y el punto recién tocado podría
   // reagruparse bajo los pies del usuario. Un paneo solo cambia el rectángulo, y para eso ya
@@ -113,6 +119,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
           onAbrir={abrirPunto}
           onAbrirLista={abrirLista}
           onCerrarPanel={cerrarPanel}
+          onAgotada={alAgotarPestaña}
         />
       </Suspense>
 

@@ -47,7 +47,11 @@ export function acotarACuba(lat: number, lng: number): { lat: number; lng: numbe
 // búsqueda en ALGÚN lado de Cuba?" cuando la zona visible no tiene nada.
 const CUBA_ENTERA: Bbox = { sur: 19, oeste: -85.5, norte: 24, este: -73.5 };
 
-export function usarMapa(params: { tab: string; q: string; category: string }) {
+// El orden en que se prueban las pestañas cuando una se queda sin resultados (ver `onAgotada`
+// más abajo). Mismo orden que ve el usuario en los controles del mapa (`ControlesMapa.tsx`).
+const ORDEN_PESTANAS = ['servicios', 'negocios', 'productos'] as const;
+
+export function usarMapa(params: { tab: string; q: string; category: string }, onAgotada?: (siguiente: string) => void) {
   const [puntos, setPuntos] = useState<PuntoMapa[]>([]);
   const [celda, setCelda] = useState(0);
   const [hayMas, setHayMas] = useState(false);
@@ -61,6 +65,14 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   // texto de búsqueda no cambie: una vez que se sabe la respuesta para ESTA búsqueda (haya o no
   // sugerencia), repetirla en cada movimiento sería gastar peticiones de sobra sin necesidad.
   const intentadaRef = useRef(false);
+  // Para avisar "esta pestaña está agotada" UNA sola vez por búsqueda en ella, no en cada
+  // arrastre/zoom mientras siga sin resultados (eso repetiría el salto a la siguiente sin parar).
+  const agotadaRef = useRef(false);
+  // Qué pestañas ya se probaron sin suerte para la búsqueda actual (mismo texto/categoría),
+  // venga el cambio de pestaña del usuario o del salto automático. Vive fuera de `agotadaRef`
+  // porque sobrevive a los saltos (si no, el ciclo rebotaría entre las mismas dos pestañas) y se
+  // reinicia solo cuando cambia lo que se busca, no la pestaña.
+  const probadasRef = useRef<Set<string>>(new Set());
 
   // La última zona visible que reportó el mapa; no hay estado de React para esto porque cambiarla
   // no debe, por sí sola, disparar un render.
@@ -76,20 +88,50 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   // render; cargar() siempre lee el valor más fresco desde aquí.
   const paramsRef = useRef(params);
   paramsRef.current = params;
+  // Idem para `onAgotada`: si el que llama no lo memoriza, cambia de identidad en cada render y
+  // dejarlo en las deps de un useCallback de vida larga (avisarAgotada) lo dejaría llamando
+  // siempre a la versión del primer render.
+  const onAgotadaRef = useRef(onAgotada);
+  onAgotadaRef.current = onAgotada;
+
+  // La próxima pestaña sin probar para esta búsqueda, en el orden fijo de ORDEN_PESTANAS,
+  // arrancando justo después de la actual. null si ya se probaron las tres.
+  const siguientePestaña = useCallback((actual: string) => {
+    probadasRef.current.add(actual);
+    const i0 = ORDEN_PESTANAS.indexOf(actual as typeof ORDEN_PESTANAS[number]);
+    for (let i = 1; i <= ORDEN_PESTANAS.length; i++) {
+      const candidata = ORDEN_PESTANAS[(i0 + i) % ORDEN_PESTANAS.length];
+      if (!probadasRef.current.has(candidata)) return candidata;
+    }
+    return null;
+  }, []);
+
+  // Confirmado que esta pestaña no tiene nada (ni en la zona visible ni, si había texto, en toda
+  // Cuba): se avisa para saltar a la siguiente. Una sola vez por pestaña (agotadaRef) — si el
+  // salto deja igual sin resultados, la pestaña nueva vuelve a correr este mismo camino con su
+  // propio agotadaRef, reiniciado por el efecto de [tab, q, category] de más abajo.
+  const avisarAgotada = useCallback(() => {
+    if (agotadaRef.current) return;
+    agotadaRef.current = true;
+    const siguiente = siguientePestaña(paramsRef.current.tab);
+    if (siguiente) onAgotadaRef.current?.(siguiente);
+  }, [siguientePestaña]);
 
   // Sin resultados en la zona visible, pero con un texto de búsqueda real: puede que el negocio
   // exista en otra parte de Cuba. Se pregunta UNA vez por búsqueda (intentadaRef), con el mismo
   // bbox inflado de siempre pero del tamaño del país entero, así que el servidor lo trata como
   // cualquier otro — agrupa en celdas grandes y devuelve un representante por zona con datos.
-  // Silencioso a propósito: si falla, se queda el "sin resultados" normal, no es nada crítico.
+  // Si tampoco hay nada ahí, la pestaña queda agotada de verdad y toca saltar a la siguiente.
+  // En error se queda callado (como antes): un fallo de red no es "confirmado sin resultados".
   const buscarEnTodaCuba = useCallback(() => {
     const { tab, q, category } = paramsRef.current;
     mapaApi.buscar(CUBA_ENTERA, { tab: tab || undefined, q: q || undefined, category: category || undefined })
       .then((r) => {
         if (r.puntos.length > 0) setSugerencia({ lat: r.puntos[0].lat, lng: r.puntos[0].lng });
+        else avisarAgotada();
       })
       .catch(() => {});
-  }, []);
+  }, [avisarAgotada]);
 
   const cargar = useCallback(() => {
     const bbox = bboxRef.current;
@@ -111,9 +153,17 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
         setHayMas(r.hay_mas);
         setCargando(false);
         bboxPintadoRef.current = bbox;
-        if (r.puntos.length === 0 && paramsRef.current.q && !intentadaRef.current) {
-          intentadaRef.current = true;
-          buscarEnTodaCuba();
+        if (r.puntos.length === 0) {
+          if (paramsRef.current.q) {
+            if (!intentadaRef.current) {
+              intentadaRef.current = true;
+              buscarEnTodaCuba();
+            }
+          } else {
+            // Sin texto no hay "¿existe en otro lado?" que probar: la zona visible ya es toda la
+            // pregunta, así que la pestaña queda confirmada vacía en el acto.
+            avisarAgotada();
+          }
         }
       })
       .catch((err) => {
@@ -121,7 +171,7 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
         setError(apiError(err, 'No se pudo cargar el mapa. Inténtalo de nuevo.'));
         setCargando(false);
       });
-  }, [buscarEnTodaCuba]);
+  }, [buscarEnTodaCuba, avisarAgotada]);
 
   const programar = useCallback((ms: number) => {
     if (antirreboteRef.current) clearTimeout(antirreboteRef.current);
@@ -149,11 +199,20 @@ export function usarMapa(params: { tab: string; q: string; category: string }) {
   // lado?" y cualquier salto pendiente de la búsqueda anterior deja de tener sentido.
   useEffect(() => {
     intentadaRef.current = false;
+    agotadaRef.current = false;
     setSugerencia(null);
     if (!bboxRef.current) return;
     programar(ANTIRREBOTE_TEXTO_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.tab, params.q, params.category]);
+
+  // Qué pestañas ya se probaron solo se olvida con una búsqueda de verdad distinta (otro texto u
+  // otra categoría) — cambiar de pestaña, a mano o por el salto automático, no la reinicia: si lo
+  // hiciera, el ciclo rebotaría para siempre entre las mismas dos pestañas vacías.
+  useEffect(() => {
+    probadasRef.current = new Set();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.q, params.category]);
 
   useEffect(() => () => {
     if (antirreboteRef.current) clearTimeout(antirreboteRef.current);

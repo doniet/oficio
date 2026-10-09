@@ -130,6 +130,15 @@ describe('Search — el switch lista/mapa conserva la URL', () => {
   });
 
   it('3. pulsar «Lista» desde ?vista=mapa&tab=negocios&q=pan quita vista y conserva tab/q', async () => {
+    // Con resultados de verdad: el mock por defecto (sin puntos) haría que `usarMapa` dé la
+    // pestaña por agotada y salte sola a la siguiente (ver usarMapa.ts), que es justo lo que
+    // esta prueba no quiere observar — aquí lo que se protege es que "Ver en lista" conserve
+    // tab/q, no el salto automático.
+    vi.mocked(mapaApi.buscar).mockResolvedValue({
+      puntos: [{ id: 'p1', tipo: 'negocio', nombre: 'Panadería', lat: 23, lng: -82, plan: 'free', aproximado: false, detras: 0, cy: 0, cx: 0, resumen: '' }],
+      celda: 0.01,
+      hay_mas: false,
+    });
     montar('/explorar?vista=mapa&tab=negocios&q=pan');
 
     // Entra en mapa: espera a que MapaExplorar (chunk lazy) pida su primera zona antes de
