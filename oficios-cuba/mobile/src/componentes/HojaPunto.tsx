@@ -70,7 +70,9 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
   // hacía nada. Lo mismo valía estando en otra pestaña con un punto abierto.
   useFocusEffect(useCallback(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      const accion = accionAtras({ punto: puntoRef.current, lista: listaRef.current ?? null, hayListaPrevia: hayPreviaRef.current });
+      const accion = accionAtras({ punto: puntoRef.current, lista: listaRef.current ?? null, hayListaPrevia: hayPreviaRef.current,
+        // Tarea 4 conecta «abierta desde un producto»; hasta entonces Atrás se comporta como siempre.
+        desdeProductos: false });
       if (accion === 'nada') return false;
       // Volver a la lista NO cierra la hoja: cambia su contenido. Cerrarla y reabrirla haría
       // desaparecer y reaparecer la hoja entera por un paso atrás.

@@ -1,4 +1,5 @@
-import type { PuntoMapa } from '@oficio/shared';
+import type { ProductoMapa, PuntoMapa } from '@oficio/shared';
+import { puntoDesdeProducto } from './productosMapa';
 
 /**
  * Qué muestra la hoja del mapa. Gemelo del estado que ExplorarMapa.tsx gobierna en la web, aquí
@@ -15,29 +16,53 @@ export type EstadoPanel = {
   listaPrevia: PuntoMapa[] | null;
   errorLista: string;
   reintentarLista: (() => void) | null;
+  /** La lista de productos está a la vista (o detrás de una ficha abierta desde ella). */
+  productos: boolean;
+  /** El producto tocado: va primero y marcado en la ficha de su negocio. */
+  productoMarcado: ProductoMapa | null;
+  /** La ficha actual se abrió tocando un producto (no un pin ni una celda). */
+  fichaDeProductos: boolean;
 };
 
 export const ESTADO_PANEL_VACIO: EstadoPanel = {
   punto: null, lista: null, listaPrevia: null, errorLista: '', reintentarLista: null,
+  productos: false, productoMarcado: null, fichaDeProductos: false,
 };
 
-export function reduceAbrirPunto(_e: EstadoPanel, punto: PuntoMapa): EstadoPanel {
-  return { ...ESTADO_PANEL_VACIO, punto };
+export function reduceAbrirPunto(e: EstadoPanel, punto: PuntoMapa): EstadoPanel {
+  return { ...ESTADO_PANEL_VACIO, punto, productos: e.productos };
 }
 
 export function reduceAbrirLista(
-  _e: EstadoPanel, lista: PuntoMapa[], errorLista = '', reintentarLista: (() => void) | null = null,
+  e: EstadoPanel, lista: PuntoMapa[], errorLista = '', reintentarLista: (() => void) | null = null,
 ): EstadoPanel {
-  return { ...ESTADO_PANEL_VACIO, lista, errorLista, reintentarLista };
+  return { ...ESTADO_PANEL_VACIO, lista, errorLista, reintentarLista, productos: e.productos };
 }
 
 export function reduceElegirDeLista(e: EstadoPanel, punto: PuntoMapa): EstadoPanel {
-  return { ...ESTADO_PANEL_VACIO, punto, listaPrevia: e.lista };
+  return { ...ESTADO_PANEL_VACIO, punto, listaPrevia: e.lista, productos: e.productos };
 }
 
 export function reduceVolverALista(e: EstadoPanel): EstadoPanel {
   if (!e.listaPrevia) return e;
-  return { ...ESTADO_PANEL_VACIO, lista: e.listaPrevia };
+  return { ...ESTADO_PANEL_VACIO, lista: e.listaPrevia, productos: e.productos };
+}
+
+export function reduceAbrirProductos(_e: EstadoPanel): EstadoPanel {
+  return { ...ESTADO_PANEL_VACIO, productos: true };
+}
+
+export function reduceElegirProducto(_e: EstadoPanel, p: ProductoMapa): EstadoPanel {
+  return { ...ESTADO_PANEL_VACIO, punto: puntoDesdeProducto(p), productoMarcado: p, fichaDeProductos: true, productos: true };
+}
+
+export function reduceVolverAProductos(e: EstadoPanel): EstadoPanel {
+  return { ...ESTADO_PANEL_VACIO, productos: true, productoMarcado: e.productoMarcado };
+}
+
+/** Atrás vuelve a productos solo si no hay una celda detrás: la lista previa gana. */
+export function desdeProductos(e: EstadoPanel): boolean {
+  return e.fichaDeProductos && e.punto !== null && e.listaPrevia === null;
 }
 
 export function reduceCerrar(_e: EstadoPanel): EstadoPanel {
