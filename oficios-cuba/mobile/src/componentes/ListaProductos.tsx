@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { precioCatalogo, type OrdenProductos, type ProductoMapa } from '@oficio/shared';
-import { ORDENES_PRODUCTOS, lugarYDistancia, tituloProductos } from '../lib/productosMapa';
+import { ORDENES_PRODUCTOS, lugarYDistancia, tituloListaProductos } from '../lib/productosMapa';
 import { useTasa } from '../lib/tasa';
 import { brand, fuentes, ink, radios, sand } from '../lib/tema';
 import { Avatar, Esqueleto, Portada } from './ui';
@@ -47,13 +47,12 @@ function Fila({ p, deFuera, marcado, onElegir }: {
         </View>
         {lugar ? <Text style={e.lugar} numberOfLines={1}>{lugar}</Text> : null}
       </View>
-      {/* Lo que se compara es el precio: va solo, a la derecha. La cifra en una línea y la
-          equivalencia debajo, para que un «desde 12 000 CUP ≈ $25 USD» no empuje al nombre. */}
+      {/* Lo que se compara es el precio: va solo, a la derecha, y es la columna que NO encoge —
+          cede el nombre, que tiene dos líneas. Cada pieza en su línea («desde» encima, la cifra, la
+          equivalencia debajo) para que la columna mida lo que la cifra y no corte un «120 000 CUP». */}
       <View style={e.precio}>
-        <Text style={e.precioCifra} numberOfLines={1}>
-          {precio.prefijo ? <Text style={e.precioMenor}>{precio.prefijo} </Text> : null}
-          {precio.cifra}
-        </Text>
+        {precio.prefijo ? <Text style={e.precioMenor} numberOfLines={1}>{precio.prefijo}</Text> : null}
+        <Text style={e.precioCifra} numberOfLines={1}>{precio.cifra}</Text>
         {precio.alt ? <Text style={e.precioMenor} numberOfLines={1}>{precio.alt}</Text> : null}
       </View>
     </Pressable>
@@ -73,7 +72,7 @@ export default function ListaProductos({
       <View style={e.cabecera}>
         <View style={e.cabeceraFila}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={e.titulo} accessibilityRole="header">{tituloProductos(total)}</Text>
+            <Text style={e.titulo} accessibilityRole="header">{tituloListaProductos({ total, cargando, error })}</Text>
             <Text style={e.sub}>Mueve el mapa para ver otros</Text>
           </View>
           <Pressable onPress={onCerrar} hitSlop={10} accessibilityRole="button" accessibilityLabel="Cerrar la lista de productos">
@@ -174,7 +173,7 @@ const e = StyleSheet.create({
   negocio: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   negocioTexto: { fontFamily: fuentes.texto, fontSize: 12, color: ink[500], flexShrink: 1 },
   lugar: { fontFamily: fuentes.texto, fontSize: 12, color: ink[400] },
-  precio: { alignItems: 'flex-end', maxWidth: 120 },
+  precio: { alignItems: 'flex-end', flexShrink: 0 },
   precioCifra: { fontFamily: fuentes.titulo, fontSize: 14, color: ink[900] },
   precioMenor: { fontFamily: fuentes.texto, fontSize: 11, color: ink[400] },
   vacio: { fontFamily: fuentes.texto, fontSize: 14, color: ink[500], paddingVertical: 12 },

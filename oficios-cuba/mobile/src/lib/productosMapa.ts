@@ -11,6 +11,14 @@ export function tituloProductos(n: number): string {
   return `${n} ${n === 1 ? 'producto' : 'productos'} en esta zona`;
 }
 
+/** Título de la lista: sin «0 productos» mientras aún se busca la primera vez ni tras un fallo que
+ *  dejó la lista vacía. Con datos (también si solo falló «Ver más») la cuenta es cierta y se dice. */
+export function tituloListaProductos({ total, cargando, error }: { total: number; cargando: boolean; error: string }): string {
+  if (total === 0 && cargando) return 'Buscando productos…';
+  if (total === 0 && error) return 'Productos en esta zona';
+  return tituloProductos(total);
+}
+
 export function textoVerProductos(total: number, fuera: number): string | null {
   if (total > 0) return `Ver ${total} ${total === 1 ? 'producto' : 'productos'}`;
   return fuera > 0 ? 'Ver productos cercanos' : null;
@@ -62,6 +70,39 @@ export function claveProductos(zona: Bbox | null, q: string, category: string, s
  *  nombre del negocio, el catálogo del negocio (que solo mira el artículo) no lo devuelve. */
 export function articulosConMarcado<T extends CatalogItem>(items: T[], marcado: T | null | undefined): T[] {
   return marcado ? [marcado, ...items.filter((i) => i.id !== marcado.id)] : items;
+}
+
+/** Lo que oye el lector de pantalla en el botón de volver: el texto visible «N productos» solo no
+ *  dice que es un regreso. */
+export function etiquetaAccesibleVolver(etiqueta: string | undefined): string {
+  return etiqueta ? `Volver a ${etiqueta}` : 'Volver a la lista';
+}
+
+/** Mismo tope que la web (`MAX_PRODUCTOS_ADELANTO`): el resto se ven en el perfil. */
+export const MAX_PRODUCTOS_ADELANTO = 6;
+
+export type VistaSeccionProductos<T> =
+  | { clase: 'error' } | { clase: 'cargando' } | { clase: 'vacia' } | { clase: 'nada' }
+  | { clase: 'lista'; otros: T[]; cuantos: number; verTodos: boolean };
+
+/**
+ * Qué pinta la sección de productos de la ficha. Con un producto marcado, su tarjeta ya va fuera de
+ * la sección, a la vista con la hoja asomada (FichaPunto), así que aquí NO se repite; pero sí
+ * cuenta: en el «Productos (N)» y como ya visto para decidir si hace falta «Ver los N productos».
+ * Si el único que coincide es el marcado, la sección no pinta nada (decir «no encontramos» debajo
+ * de él sería falso).
+ */
+export function vistaSeccionProductos<T extends CatalogItem>({ items, total, marcado, cargando, error }: {
+  items: T[]; total: number; marcado: T | null; cargando: boolean; error: boolean;
+}): VistaSeccionProductos<T> {
+  if (error) return { clase: 'error' };
+  if (cargando) return { clase: 'cargando' };
+  const todos = articulosConMarcado(items, marcado);
+  const otros = marcado ? todos.slice(1) : todos;
+  if (otros.length === 0) return { clase: marcado ? 'nada' : 'vacia' };
+  const cuantos = Math.max(total, todos.length);
+  const adelanto = otros.slice(0, MAX_PRODUCTOS_ADELANTO);
+  return { clase: 'lista', otros: adelanto, cuantos, verTodos: cuantos > adelanto.length + (marcado ? 1 : 0) };
 }
 
 /** El botón de volver de una ficha abierta desde la lista: «‹ N productos». */

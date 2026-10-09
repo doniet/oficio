@@ -9,7 +9,7 @@ import { ModalArticulo, type VendedorCatalogo } from './ModalArticulo';
 import { Acordeon, Avatar, BotonCompartir, Estrellas, EstadoError, Insignia, Portada, Valoracion, u } from './ui';
 import { useSesion } from '../lib/contexto';
 import { urlPerfil } from '../lib/compartir';
-import { articulosConMarcado } from '../lib/productosMapa';
+import { etiquetaAccesibleVolver, vistaSeccionProductos } from '../lib/productosMapa';
 import { RESENAS_POR_PAGINA, tituloServicioResena } from '../lib/resenas';
 import { useTasa } from '../lib/tasa';
 import { brand, fuentes, ink, sand } from '../lib/tema';
@@ -118,10 +118,6 @@ function ListaResenas({ proveedorId }: { proveedorId: string }) {
   );
 }
 
-/** Mismo tope que la web (`MAX_PRODUCTOS_ADELANTO`): el resto se ven en el perfil. */
-const MAX_PRODUCTOS_ADELANTO = 6;
-const RETRASO_BUSQUEDA_MS = 300;
-
 /** Tarjeta pequeña de un producto: foto o inicial, nombre en 2 líneas y precio. */
 function ProductoMini({ item, marcado, alAbrir }: { item: CatalogItem; marcado: boolean; alAbrir: () => void }) {
   const tasa = useTasa();
@@ -130,7 +126,7 @@ function ProductoMini({ item, marcado, alAbrir }: { item: CatalogItem; marcado: 
     <Pressable
       onPress={alAbrir}
       accessibilityRole="button"
-      accessibilityLabel={item.name}
+      accessibilityLabel={marcado ? `Lo que tocaste: ${item.name}` : item.name}
       accessibilityHint="Ver el detalle del artículo"
       style={({ pressed }) => [e.fila, marcado && e.filaMarcada, !item.available && { opacity: 0.6 }, pressed && { opacity: 0.9 }]}
     >
@@ -153,7 +149,8 @@ function ProductoMini({ item, marcado, alAbrir }: { item: CatalogItem; marcado: 
 /**
  * Lo que reemplaza a «Servicios» en la pestaña Productos: el negocio solo está en el mapa porque
  * algún artículo suyo coincidió con la búsqueda, así que se enseña de una vez, sin acordeón.
- * Se monta solo con la ficha desplegada, así que la petición no se hace a media altura.
+ * Se monta solo con la ficha desplegada, así que la petición no se hace a media altura. El
+ * producto marcado NO va aquí: su tarjeta está arriba, fuera de la ficha completa (ver FichaPunto).
  */
 function SeccionProductos({ punto, q, marcado, vendedor }: {
   punto: PuntoMapa; q: string; marcado: CatalogItem | null; vendedor: VendedorCatalogo;
@@ -170,37 +167,35 @@ function SeccionProductos({ punto, q, marcado, vendedor }: {
     let cancelado = false;
     setCargando(true);
     setError(false);
-    // Antirrebote: `q` cambia con cada tecla mientras la ficha sigue abierta.
-    const temporizador = setTimeout(() => {
-      api.catalogo.deProveedor(punto.id, { q: q || undefined })
-        .then((r) => {
-          if (cancelado) return;
-          setProductos(r.items);
-          setTotal(r.total);
-          setCargando(false);
-        })
-        .catch(() => {
-          if (cancelado) return;
-          setError(true);
-          setCargando(false);
-        });
-    }, RETRASO_BUSQUEDA_MS);
-    return () => { cancelado = true; clearTimeout(temporizador); };
+    // Sin antirrebote: `q` solo cambia al enviar la búsqueda, y enviarla devuelve la hoja a la lista
+    // de productos (explorar.tsx), así que esta sección no ve dos `q` seguidos.
+    api.catalogo.deProveedor(punto.id, { q: q || undefined })
+      .then((r) => {
+        if (cancelado) return;
+        setProductos(r.items);
+        setTotal(r.total);
+        setCargando(false);
+      })
+      .catch(() => {
+        if (cancelado) return;
+        setError(true);
+        setCargando(false);
+      });
+    return () => { cancelado = true; };
   }, [punto.id, q, intento]);
 
-  // Con producto tocado se muestra aunque el catálogo no lo traiga: no hay nada que esperar para él.
-  const vistos = articulosConMarcado(productos, marcado);
-  if (error) return <EstadoError mensaje="No pudimos cargar el catálogo." alReintentar={() => setIntento((n) => n + 1)} />;
-  if (cargando && vistos.length === 0) return <Text style={u.suave}>Cargando…</Text>;
-  if (vistos.length === 0) return <Text style={u.suave}>No encontramos productos de este negocio que coincidan con la búsqueda.</Text>;
+  const vista = vistaSeccionProductos({ items: productos, total, marcado, cargando, error });
+  if (vista.clase === 'error') return <EstadoError mensaje="No pudimos cargar el catálogo." alReintentar={() => setIntento((n) => n + 1)} />;
+  if (vista.clase === 'cargando') return <Text style={u.suave}>Cargando…</Text>;
+  if (vista.clase === 'vacia') return <Text style={u.suave}>No encontramos productos de este negocio que coincidan con la búsqueda.</Text>;
+  if (vista.clase === 'nada') return null;
 
-  const adelanto = vistos.slice(0, MAX_PRODUCTOS_ADELANTO);
-  const cuantos = Math.max(total, vistos.length);
+  const { otros, cuantos, verTodos } = vista;
   return (
     <View style={{ gap: 8 }}>
       <Text style={u.acordeonTitulo}>Productos ({cuantos})</Text>
-      {adelanto.map((p) => <ProductoMini key={p.id} item={p} marcado={p.id === marcado?.id} alAbrir={() => setAbierto(p)} />)}
-      {cuantos > adelanto.length ? (
+      {otros.map((p) => <ProductoMini key={p.id} item={p} marcado={false} alAbrir={() => setAbierto(p)} />)}
+      {verTodos ? (
         <Pressable onPress={() => router.push(`/proveedor/${punto.id}`)} accessibilityRole="link" hitSlop={6}>
           <Text style={u.enlace}>Ver los {cuantos} productos</Text>
         </Pressable>
@@ -211,7 +206,13 @@ function SeccionProductos({ punto, q, marcado, vendedor }: {
 }
 
 /** Ficha completa (rating, descripción, categorías, contacto) — solo se pide al desplegar la hoja. */
-function FichaCompleta({ punto, tab, q, productoMarcado }: { punto: PuntoMapa; tab?: string; q: string; productoMarcado: CatalogItem | null }) {
+function FichaCompleta({ punto, tab, q, productoMarcado, abrirMarcado, alCerrarMarcado }: {
+  punto: PuntoMapa; tab?: string; q: string; productoMarcado: CatalogItem | null;
+  /** Se tocó la tarjeta del marcado (fuera de aquí): su detalle se abre en cuanto haya perfil,
+   *  porque `ModalArticulo` necesita del vendedor lo que solo trae el perfil (`has_chat`). */
+  abrirMarcado: boolean;
+  alCerrarMarcado(): void;
+}) {
   const { usuario, api } = useSesion();
   const [perfil, setPerfil] = useState<ProviderPublic | null>(null);
   // Vienen en la MISMA respuesta que el perfil (GET /providers/:id ya los trae): lo que se difiere
@@ -284,8 +285,8 @@ function FichaCompleta({ punto, tab, q, productoMarcado }: { punto: PuntoMapa; t
   return (
     <View style={{ gap: 12 }}>
       <Valoracion rating={perfil.rating} count={perfil.review_count} />
-      {/* Abierta desde un producto, lo tocado va ANTES de la descripción: la hoja asoma a media
-          altura y lo que queda después cae bajo el pliegue (lección de la web). */}
+      {/* Abierta desde un producto, el resto de lo que coincide va ANTES de la descripción: es lo
+          que se vino a ver (lección de la web). El tocado no está aquí: va arriba, fuera. */}
       {productoMarcado ? catalogo : null}
       {perfil.description ? <Text style={u.texto}>{perfil.description}</Text> : null}
       {lugar ? <Text style={u.suave}>{lugar}</Text> : null}
@@ -311,6 +312,7 @@ function FichaCompleta({ punto, tab, q, productoMarcado }: { punto: PuntoMapa; t
           {mostrarLlamar ? <Boton variante="secundario" icono="call-outline" titulo="Llamar" onPress={() => contactar('call')} estilo={{ flex: 1 }} /> : null}
         </View>
       ) : null}
+      {abrirMarcado && productoMarcado ? <ModalArticulo item={productoMarcado} vendedor={vendedor} alCerrar={alCerrarMarcado} /> : null}
     </View>
   );
 }
@@ -322,12 +324,14 @@ function FichaCompleta({ punto, tab, q, productoMarcado }: { punto: PuntoMapa; t
  * Devuelve un fragmento, no una View: sus hijos son hijos directos del contenedor del scroll de la
  * hoja, que es quien pone el `gap` entre ellos.
  */
-export default function FichaPunto({ punto, desplegada, onCerrar, onVolverALista, tab, q = '', productoMarcado = null, etiquetaVolver }: {
+export default function FichaPunto({ punto, desplegada, onCerrar, onDesplegar, onVolverALista, tab, q = '', productoMarcado = null, etiquetaVolver }: {
   punto: PuntoMapa;
   /** La hoja está en el anclaje «abierta» (índice 1): solo entonces se pide la ficha completa, igual
    *  que en la web — a «asomada» alcanza con el resumen y el enlace. */
   desplegada: boolean;
   onCerrar(): void;
+  /** Lleva la hoja a «abierta». Lo usa la tarjeta del producto marcado, que se ve asomada. */
+  onDesplegar?(): void;
   /** Ausente = no se llegó desde la lista de una celda. Presente = sí, y entonces se pinta
    *  «Volver a la lista». Misma señal que ya usa `accionAtras` (lib/hojaPunto.ts) para el botón
    *  físico Atrás: que el manejador exista ES la evidencia de que hay una lista detrás. */
@@ -335,7 +339,7 @@ export default function FichaPunto({ punto, desplegada, onCerrar, onVolverALista
   /** Con `'productos'` la ficha enseña el catálogo filtrado por `q` en lugar de Servicios. */
   tab?: string;
   q?: string;
-  /** El producto tocado en la lista: va primero, marcado y antes de la descripción. */
+  /** El producto tocado en la lista: su tarjeta va arriba del todo, a la vista con la hoja asomada. */
   productoMarcado?: CatalogItem | null;
   /** Texto del botón de volver. Por defecto «Volver a la lista». */
   etiquetaVolver?: string;
@@ -344,14 +348,31 @@ export default function FichaPunto({ punto, desplegada, onCerrar, onVolverALista
     router.push(`/proveedor/${punto.id}`);
   }, [punto.id]);
 
+  // Tocar la tarjeta del marcado pide su detalle; quien lo abre es la ficha completa, cuando tenga
+  // el perfil. Se olvida si cambia el producto o si la hoja vuelve a asomarse antes de abrirlo: si
+  // no, desplegarla más tarde abriría un detalle que nadie acaba de pedir.
+  const [abrirMarcado, setAbrirMarcado] = useState(false);
+  useEffect(() => { setAbrirMarcado(false); }, [productoMarcado?.id, punto.id]);
+  useEffect(() => { if (!desplegada) setAbrirMarcado(false); }, [desplegada]);
+  const tocarMarcado = useCallback(() => {
+    setAbrirMarcado(true);
+    if (!desplegada) onDesplegar?.();
+  }, [desplegada, onDesplegar]);
+
   return (
     <>
       {onVolverALista ? (
-        <Pressable onPress={onVolverALista} hitSlop={8} accessibilityRole="button" accessibilityLabel={etiquetaVolver ?? 'Volver a la lista'} style={e.volver}>
+        <Pressable onPress={onVolverALista} hitSlop={8} accessibilityRole="button" accessibilityLabel={etiquetaAccesibleVolver(etiquetaVolver)} style={e.volver}>
           <Ionicons name="arrow-back" size={16} color={brand[700]} />
           <Text style={u.enlace}>{etiquetaVolver ?? 'Volver a la lista'}</Text>
         </Pressable>
       ) : null}
+
+      {/* Lo que se tocó va ANTES de la cabecera y fuera de la ficha completa: con la hoja asomada
+          es lo único que cabe, y se pinta con lo que ya trajo la lista, sin esperar a la red (la
+          ficha completa solo se pide al desplegar y puede fallar). La sección de productos de
+          abajo no lo repite. */}
+      {productoMarcado ? <ProductoMini item={productoMarcado} marcado alAbrir={tocarMarcado} /> : null}
 
       <View style={e.cabecera}>
         <Avatar nombre={punto.nombre} tamano={48} cuadrado={punto.tipo === 'negocio'} />
@@ -383,7 +404,8 @@ export default function FichaPunto({ punto, desplegada, onCerrar, onVolverALista
       {desplegada ? (
         <>
           <View style={e.separador} />
-          <FichaCompleta punto={punto} tab={tab} q={q} productoMarcado={productoMarcado} />
+          <FichaCompleta punto={punto} tab={tab} q={q} productoMarcado={productoMarcado}
+            abrirMarcado={abrirMarcado} alCerrarMarcado={() => setAbrirMarcado(false)} />
         </>
       ) : null}
     </>

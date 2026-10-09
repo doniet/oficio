@@ -110,3 +110,20 @@ export function textoBotonProductos({ enProductos, panel, total, fuera, error = 
   // lista (y a su «Reintentar»): el «Reintentar» del mapa repite la misma zona y no vuelve a pedirla.
   return textoVerProductos(total, fuera) ?? (error ? 'Ver productos' : null);
 }
+
+/**
+ * La altura de la hoja tras cambiar búsqueda, categoría, pestaña o vista. Fuera de Productos se
+ * cierra. En Productos la lista abre asomada si estaba cerrada, pero si ya estaba abierta se deja
+ * donde está: si la lista sigue a la vista la hoja no se mueve (HojaPunto solo salta a «asomada»
+ * con contenido nuevo), y forzar 0 aquí haría que el mapa reservara un 30 % bajo una hoja del 85 %.
+ * Cuando el contenido sí cambia (una ficha vuelve a la lista), el `onChange` de la hoja lo corrige.
+ */
+export function indiceTrasFiltro(enProductos: boolean, indice: number): number {
+  if (!enProductos) return -1;
+  return indice === -1 ? 0 : indice;
+}
+
+/** Qué busca el campo, para el lector de pantalla. En la vista lista siempre son servicios. */
+export function etiquetaBuscar(vista: 'lista' | 'mapa', tab: 'servicios' | 'negocios' | 'productos'): string {
+  return `Buscar ${vista === 'mapa' ? tab : 'servicios'}`;
+}

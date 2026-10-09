@@ -99,6 +99,8 @@ export function usarProductosMapa({ zona, q, category, sort, activo }: {
     const controlador = new AbortController();
     controladorMas.current = controlador;
     setCargandoMas(true);
+    // El aviso de un «Ver más» anterior que falló no puede quedarse mientras este lo reintenta.
+    setError('');
     pedirConEspera(z, { q: q || undefined, category: category || undefined, sort, page: pagina + 1 }, controlador.signal)
       .then((r) => {
         if (controlador.signal.aborted || claveRef.current !== claveAlPedir) return;

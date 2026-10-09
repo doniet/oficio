@@ -9,7 +9,7 @@ import ListaProductos, { type PropsListaProductos } from './ListaProductos';
 import { accionAtras, fondoHoja } from '../lib/hojaPunto';
 import { tituloCelda } from '../lib/listaCelda';
 import { contenidoHoja } from '../lib/panelMapa';
-import { tituloProductos } from '../lib/productosMapa';
+import { tituloListaProductos } from '../lib/productosMapa';
 import { radios, sand } from '../lib/tema';
 
 // Los dos anclajes de la hoja, exportados porque explorar.tsx los necesita para reservarle
@@ -132,7 +132,7 @@ export default function HojaPunto({ punto, lista, productos, errorLista, onCerra
       backdropComponent={renderBackdrop}
       backgroundStyle={e.fondo}
       handleIndicatorStyle={e.asa}
-      accessibilityLabel={lista ? tituloCelda(errorLista ? 0 : lista.length) : punto ? `Ficha de ${punto.nombre}` : productos ? tituloProductos(productos.total) : 'Ficha del punto seleccionado'}
+      accessibilityLabel={lista ? tituloCelda(errorLista ? 0 : lista.length) : punto ? `Ficha de ${punto.nombre}` : productos ? tituloListaProductos(productos) : 'Ficha del punto seleccionado'}
     >
       <BottomSheetScrollView contentContainerStyle={e.contenido}>
         {lista ? (
@@ -145,6 +145,7 @@ export default function HojaPunto({ punto, lista, productos, errorLista, onCerra
           />
         ) : punto ? (
           <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()}
+            onDesplegar={() => sheetRef.current?.snapToIndex(1)}
             // La celda gana a productos: con una lista de celda detrás, se vuelve a ella.
             onVolverALista={onVolverALista ?? onVolverAProductos}
             etiquetaVolver={onVolverALista ? undefined : etiquetaVolver}

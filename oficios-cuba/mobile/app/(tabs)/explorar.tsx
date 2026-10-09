@@ -16,6 +16,8 @@ import {
   ESTADO_PANEL_VACIO,
   type EstadoPanel,
   desdeProductos,
+  etiquetaBuscar,
+  indiceTrasFiltro,
   reduceAbrirLista,
   reduceAbrirProductos,
   reduceAbrirPunto,
@@ -118,7 +120,7 @@ export default function Explorar() {
   // aunque hubiera una ficha abierta). Mover el mapa NO está aquí: nunca reabre la lista.
   useEffect(() => {
     setPanel(enProductos ? reduceAbrirProductos : reduceCerrar);
-    setIndiceHoja(enProductos ? 0 : -1);
+    setIndiceHoja((i) => indiceTrasFiltro(enProductos, i));
   }, [q, categoria?.slug, tab, vista]);
 
   // Sin mapa no hay zona: al volver a él, la lista espera la del mapa nuevo en vez de pedir la vieja.
@@ -181,7 +183,7 @@ export default function Explorar() {
             placeholderTextColor={ink[300]}
             returnKeyType="search"
             onSubmitEditing={(ev) => setQ(ev.nativeEvent.text.trim())}
-            accessibilityLabel="Buscar servicios"
+            accessibilityLabel={etiquetaBuscar(vista, tab)}
             style={e.input}
           />
           {texto ? (
@@ -298,14 +300,17 @@ export default function Explorar() {
               {/* Cerrada la lista, que no se pierda: la hoja tapa medio mapa y es normal cerrarla
                   para mirar; reabrirla no puede exigir volver a buscar. */}
               {textoBoton ? (
-                <Pressable
-                  onPress={() => { setPanel(reduceAbrirProductos); setIndiceHoja(0); }}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [e.botonProductos, pressed && { opacity: 0.9 }]}
-                >
-                  <Ionicons name="pricetags-outline" size={16} color="#ffffff" />
-                  <Text style={e.botonProductosTexto}>{textoBoton}</Text>
-                </Pressable>
+                <View style={e.botonProductosCarril} pointerEvents="box-none">
+                  <Pressable
+                    onPress={() => { setPanel(reduceAbrirProductos); setIndiceHoja(0); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={textoBoton}
+                    style={({ pressed }) => [e.botonProductos, pressed && { opacity: 0.9 }]}
+                  >
+                    <Ionicons name="pricetags-outline" size={16} color="#ffffff" />
+                    <Text style={e.botonProductosTexto} numberOfLines={1}>{textoBoton}</Text>
+                  </Pressable>
+                </View>
               ) : null}
             </View>
           )}
@@ -354,11 +359,13 @@ const e = StyleSheet.create({
   // El carrusel sale hasta el borde de la pantalla (como en la web) pero arranca alineado al contenido.
   chipsFuera: { marginHorizontal: -16 },
   chipsScroll: { gap: 8, paddingHorizontal: 16 },
-  // Abajo y centrado, a la altura de «Cerca de mí» (bottom 24 en MapaExplorar) pero sin pisarlo:
-  // ese botón va a la derecha y mide 48, así que a 360 dp quedan ~250 dp en medio para el texto.
+  // Abajo y centrado, a la altura de «Cerca de mí» (MapaExplorar: right 16, ancho 48, bottom 24)
+  // pero sin pisarlo: el carril deja 72 dp a cada lado (16 + 48 + 8 de aire), así que a 360 dp el
+  // botón mide como mucho 216 y con la letra grande el texto se corta en vez de meterse debajo.
+  botonProductosCarril: { position: 'absolute', bottom: 28, left: 72, right: 72, alignItems: 'center' },
   botonProductos: {
-    position: 'absolute', bottom: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%',
     minHeight: 44, paddingHorizontal: 18, borderRadius: radios.chip, backgroundColor: brand[600], ...sombra.lift,
   },
-  botonProductosTexto: { fontFamily: fuentes.textoFuerte, fontSize: 14, color: '#ffffff' },
+  botonProductosTexto: { fontFamily: fuentes.textoFuerte, fontSize: 14, color: '#ffffff', flexShrink: 1 },
 });

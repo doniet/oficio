@@ -3,6 +3,8 @@ import {
   contenidoDeCelda,
   desdeProductos,
   ESTADO_PANEL_VACIO,
+  etiquetaBuscar,
+  indiceTrasFiltro,
   reduceAbrirLista,
   reduceAbrirProductos,
   reduceAbrirPunto,
@@ -165,5 +167,32 @@ describe('estado del panel con la lista de productos', () => {
     const s = reduceCerrar(reduceElegirProducto(reduceAbrirProductos(ESTADO_PANEL_VACIO), producto('n1')));
     expect(s).toEqual(ESTADO_PANEL_VACIO);
     expect(s.productos).toBe(false);
+  });
+});
+
+describe('indiceTrasFiltro', () => {
+  it('fuera de Productos, una búsqueda nueva cierra la hoja', () => {
+    expect(indiceTrasFiltro(false, 1)).toBe(-1);
+    expect(indiceTrasFiltro(false, 0)).toBe(-1);
+    expect(indiceTrasFiltro(false, -1)).toBe(-1);
+  });
+  it('en Productos con la hoja cerrada, la lista abre asomada', () => {
+    expect(indiceTrasFiltro(true, -1)).toBe(0);
+  });
+  it('en Productos con la hoja ya abierta, se respeta su altura (el mapa no reserva 30 % bajo una hoja del 85 %)', () => {
+    expect(indiceTrasFiltro(true, 1)).toBe(1);
+    expect(indiceTrasFiltro(true, 0)).toBe(0);
+  });
+});
+
+describe('etiquetaBuscar', () => {
+  it('en la lista, siempre servicios', () => {
+    expect(etiquetaBuscar('lista', 'productos')).toBe('Buscar servicios');
+    expect(etiquetaBuscar('lista', 'servicios')).toBe('Buscar servicios');
+  });
+  it('en el mapa, lo de la pestaña', () => {
+    expect(etiquetaBuscar('mapa', 'servicios')).toBe('Buscar servicios');
+    expect(etiquetaBuscar('mapa', 'negocios')).toBe('Buscar negocios');
+    expect(etiquetaBuscar('mapa', 'productos')).toBe('Buscar productos');
   });
 });
