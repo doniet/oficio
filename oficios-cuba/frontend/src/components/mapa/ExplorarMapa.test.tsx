@@ -333,6 +333,39 @@ describe('ExplorarMapa — lista de productos', () => {
     expect(mapaApi.productos).toHaveBeenCalledTimes(1);
   });
 
+  it('en escritorio, un clic en el mapa vacío no cierra la lista de productos', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b')]));
+    const { container } = montar([], enProductos());
+    await screen.findByRole('heading', { name: '2 productos en esta zona' });
+    const mapa = container.querySelector('.leaflet-container') as HTMLElement;
+    await act(async () => { mapa.click(); await espera(30); });
+    expect(screen.getByRole('heading', { name: '2 productos en esta zona' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Ver 2 productos' })).toBeNull();
+  });
+
+  it('en móvil, un clic en el mapa vacío sí cierra la lista de productos', async () => {
+    fijarAncho(390);
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b')]));
+    const { container } = montar([], enProductos());
+    await screen.findByRole('heading', { name: '2 productos en esta zona' });
+    const mapa = container.querySelector('.leaflet-container') as HTMLElement;
+    await act(async () => { mapa.click(); await espera(30); });
+    expect(await screen.findByRole('button', { name: 'Ver 2 productos' })).toBeTruthy();
+  });
+
+  it('el marcador suelto del negocio tocado usa el color de su tipo', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a', { tipo: 'oficio' })]));
+    const { container } = montar([], enProductos());
+    fireEvent.click(await screen.findByText('Producto a'));
+    await screen.findByText('Lo que tocaste');
+    const pin = await waitFor(() => {
+      const el = container.querySelector('.map-pin--seleccionado');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(pin.innerHTML).toContain('text-brand-400'); // oficio, no el brand-600 del negocio
+  });
+
   it('tocar uno de fuera amplía el mapa hasta incluir su negocio', async () => {
     const lejos = producto('f', { lat: 23.1, lng: -82.4, distancia_km: 300 });
     vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')], [lejos]));

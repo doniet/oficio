@@ -26,6 +26,13 @@ describe('ListaProductos', () => {
   // vitest no registra el afterEach de limpieza automática de RTL: sin esto, cada test ve el DOM del anterior.
   afterEach(() => cleanup());
 
+  it('el botón de cerrar mide al menos 44 px de objetivo táctil', () => {
+    montar();
+    const boton = screen.getByRole('button', { name: 'Cerrar la lista de productos' });
+    expect(boton.className).toContain('min-h-11');
+    expect(boton.className).toContain('min-w-11');
+  });
+
   it('cuenta los productos de la zona y pinta producto, negocio y precio', () => {
     montar();
     expect(screen.getByRole('heading', { name: '2 productos en esta zona' })).toBeTruthy();

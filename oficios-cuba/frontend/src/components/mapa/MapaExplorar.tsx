@@ -137,7 +137,7 @@ export default function MapaExplorar({ tab, q, category, seleccionado, onAbrir, 
   /** El `id` del punto que tiene su ficha abierta: su marcador cambia de círculo a pin. */
   /** El negocio con su ficha abierta o resaltado desde la lista de productos. Si su pin no está
    *  pintado (agrupado detrás de otro en su celda), se pinta uno suelto en su punto publicado. */
-  seleccionado?: { id: string; lat: number; lng: number } | null;
+  seleccionado?: { id: string; lat: number; lng: number; tipo?: PuntoMapa['tipo'] } | null;
   onAbrir: (p: PuntoMapa) => void;
   /**
    * Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). Si la
@@ -284,7 +284,7 @@ export default function MapaExplorar({ tab, q, category, seleccionado, onAbrir, 
           <Marker
             key={`suelto-${seleccionado.id}`}
             position={[seleccionado.lat, seleccionado.lng]}
-            icon={pinSeleccionadoIcon('negocio', 0)}
+            icon={pinSeleccionadoIcon(seleccionado.tipo ?? 'negocio', 0)}
             zIndexOffset={1000}
             interactive={false}
           />

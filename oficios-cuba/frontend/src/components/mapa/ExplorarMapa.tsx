@@ -45,7 +45,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
   // La ficha abierta salió de la lista de productos (y no de un pin o de una celda): solo entonces
   // ofrece volver a ella. `productoMarcado` sobrevive a la vuelta para desplazar la lista.
   const [fichaDeProductos, setFichaDeProductos] = useState(false);
-  const [resaltado, setResaltado] = useState<{ id: string; lat: number; lng: number } | null>(null);
+  const [resaltado, setResaltado] = useState<{ id: string; lat: number; lng: number; tipo: PuntoMapa['tipo'] } | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const esEscritorio = usarEsEscritorio();
 
@@ -202,6 +202,14 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setErrorLista('');
   }, [descongelar]);
 
+  // En escritorio la lista de productos es el panel de la pestaña, no un estorbo que se cierre al
+  // tocar el mapa: se explora moviéndolo, y un clic suelto no debe tirarla. Una ficha o una celda
+  // sí se cierran. En móvil la lista es una hoja que tapa medio mapa y tocar fuera la cierra.
+  const alClicVacio = useCallback(() => {
+    if (esEscritorio && tab === 'productos' && verProductos && !punto && !lista) return;
+    cerrarPanel();
+  }, [esEscritorio, tab, verProductos, punto, lista, cerrarPanel]);
+
   // Hay panel lateral tapando la izquierda del mapa. Lo miran dos: los controles flotantes, que se
   // apartan a su derecha, y el CSS del control de zoom, que vive abajo a la izquierda — es decir,
   // debajo del panel — y sin apartarse deja de recibir clics.
@@ -212,7 +220,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
     cargando: productos.cargando, error: productos.error, onReintentar: productos.reintentar,
     hayMas: productos.hayMas, cargandoMas: productos.cargandoMas, onVerMas: productos.verMas,
     onElegir: elegirProducto,
-    onResaltar: esEscritorio ? (p) => setResaltado(p ? { id: p.provider_id, lat: p.lat, lng: p.lng } : null) : undefined,
+    onResaltar: esEscritorio ? (p) => setResaltado(p ? { id: p.provider_id, lat: p.lat, lng: p.lng, tipo: p.tipo } : null) : undefined,
     ultimoElegidoId: productoMarcado?.id ?? null,
   } : null;
   const hayProductos = productos.total > 0 || productos.fuera.length > 0;
@@ -229,7 +237,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
           alMapa={(m) => { mapRef.current = m; }}
           onAbrir={abrirPunto}
           onAbrirLista={abrirLista}
-          onCerrarPanel={cerrarPanel}
+          onCerrarPanel={alClicVacio}
           onAgotada={alAgotarPestaña}
           onZona={alZona}
         />

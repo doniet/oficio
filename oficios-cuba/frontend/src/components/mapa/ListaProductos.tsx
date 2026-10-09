@@ -88,7 +88,7 @@ export default function ListaProductos({
             </h2>
             <p className="text-xs text-ink-400">Mueve el mapa para ver otros</p>
           </div>
-          <button type="button" onClick={onCerrar} className="btn-ghost btn-sm rounded-full p-1.5" aria-label="Cerrar la lista de productos">
+          <button type="button" onClick={onCerrar} className="btn-ghost -mr-2 -mt-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2.5" aria-label="Cerrar la lista de productos">
             <X className="h-4 w-4" />
           </button>
         </div>
