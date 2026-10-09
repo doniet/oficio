@@ -97,8 +97,9 @@ export function usarMapa(
   // siempre a la versión del primer render.
   const onAgotadaRef = useRef(onAgotada);
   onAgotadaRef.current = onAgotada;
-  // La zona con que se pintaron los pines, para quien tenga que pedir algo de ESA misma zona (la
-  // lista de productos): pedirla con el bbox del último arrastre la desfasaría del mapa.
+  // La zona con que se piden los pines, para quien tenga que pedir algo de ESA misma zona (la
+  // lista de productos): se avisa al pedir, no al pintar, para que ambas peticiones viajen en
+  // paralelo y no una detrás de otra.
   const onZonaRef = useRef(onZona);
   onZonaRef.current = onZona;
 
@@ -153,6 +154,7 @@ export function usarMapa(
     setError('');
     const { tab, q, category } = paramsRef.current;
 
+    onZonaRef.current?.(bbox);
     mapaApi.buscar(bbox, { tab: tab || undefined, q: q || undefined, category: category || undefined }, controlador.signal)
       .then((r) => {
         if (controlador.signal.aborted) return; // ya salió otra petición: esta respuesta llegó tarde
@@ -161,7 +163,6 @@ export function usarMapa(
         setHayMas(r.hay_mas);
         setCargando(false);
         bboxPintadoRef.current = bbox;
-        onZonaRef.current?.(bbox);
         if (r.puntos.length === 0) {
           if (paramsRef.current.q) {
             if (!intentadaRef.current) {

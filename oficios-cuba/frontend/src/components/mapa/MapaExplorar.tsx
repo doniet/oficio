@@ -149,7 +149,7 @@ export default function MapaExplorar({ tab, q, category, seleccionado, onAbrir, 
   /** La pestaña actual se quedó sin resultados (en la zona visible y, si había texto, en toda
    * Cuba): quien tiene la URL decide a cuál saltar. */
   onAgotada?: (siguiente: string) => void;
-  /** Llega cada vez que se pintan pines, con el bbox con que se pidieron. */
+  /** Llega cada vez que se piden los pines, con el bbox con que se piden (antes de que respondan). */
   onZona?: (b: Bbox) => void;
   /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
   alMapa?: (m: LeafletMap) => void;

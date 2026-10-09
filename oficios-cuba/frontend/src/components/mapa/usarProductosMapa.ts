@@ -4,7 +4,7 @@ import type { Bbox, OrdenProductos, ProductoMapa } from '../../types';
 
 /**
  * La lista de productos de la pestaña Productos del mapa. La zona NO la decide este hook: llega de
- * `usarMapa` (vía `onZona`) cuando se pintan los pines, así lista y pines cuentan siempre la misma
+ * `usarMapa` (vía `onZona`) cuando se piden los pines, así lista y pines cuentan siempre la misma
  * zona y comparten su antirrebote en vez de llevar uno cada uno.
  */
 export function usarProductosMapa({ zona, q, category, sort, activo }: {

@@ -105,12 +105,14 @@ describe('usarMapa', () => {
     expect(result.current.puntos).toEqual([puntoTexto]);
   });
 
-  it('avisa con onZona del bbox con que pintó los pines', async () => {
+  it('avisa con onZona del bbox al pedir los pines, sin esperar a que /mapa responda', async () => {
     const onZona = vi.fn();
-    vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    vi.mocked(mapaApi.buscar).mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(() => usarMapa({ tab: 'productos', q: '', category: '' }, undefined, onZona));
     act(() => { result.current.alMover(bbox, true); });
     await act(async () => { await espera(300); });
+    expect(mapaApi.buscar).toHaveBeenCalledTimes(1);
+    expect(onZona).toHaveBeenCalledTimes(1);
     expect(onZona).toHaveBeenCalledWith(bbox);
   });
 
