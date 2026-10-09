@@ -5,7 +5,7 @@ Directorio/marketplace de oficios y servicios en Cuba: los clientes buscan por o
 - **Repo:** `github.com/doniet/oficio` (rama `master`), **compartido con Doniet**. La app vive en la subcarpeta `oficios-cuba/`.
 - **Producción:** `oficio.dardoit.com` en **vps2** (`~/docker/oficio`), detrás de Traefik (`net_dmz`) + túnel Cloudflare de la cuenta Doniet.
 - **Desarrollo:** j-u (`~/Documentos/dev/oficio`).
-- Antes de tocar nada: leer `STATUS.md` (orden cronológico: lo más reciente está al final).
+- Antes de tocar nada: leer `ESTADO.md` (si el proyecto está en DESARROLLO o en PRODUCCIÓN, y qué permite cada uno) y `STATUS.md` (orden cronológico: lo más reciente está al final).
 
 ## Stack
 
