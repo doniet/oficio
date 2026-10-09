@@ -4,7 +4,7 @@ import PanelLateral from './PanelLateral';
 import FichaPunto from './FichaPunto';
 import ListaCelda from './ListaCelda';
 import { usarEsEscritorio, usarPanel } from './usarPanel';
-import type { PuntoMapa } from '../../types';
+import type { CatalogItem, PuntoMapa } from '../../types';
 
 /**
  * La superficie donde el mapa enseña lo que el usuario toca. Elige el envoltorio (hoja inferior
@@ -12,7 +12,7 @@ import type { PuntoMapa } from '../../types';
  * sabe qué muestra ni el contenido sabe dónde está.
  */
 export default function PanelMapa({
-  punto, lista, tab, q, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, onCerrar, focoOrigen,
+  punto, lista, tab, q, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, productoMarcado, etiquetaVolver, onCerrar, focoOrigen,
 }: {
   punto: PuntoMapa | null;
   lista: PuntoMapa[] | null;
@@ -25,6 +25,8 @@ export default function PanelMapa({
   onElegirDeLista(p: PuntoMapa): void;
   /** Presente solo si se llegó a la ficha desde una lista: pinta «Volver a la lista». */
   onVolverALista?: () => void;
+  productoMarcado?: CatalogItem | null;
+  etiquetaVolver?: string;
   onCerrar(): void;
   focoOrigen?: HTMLElement | null;
 }) {
@@ -53,6 +55,8 @@ export default function PanelMapa({
           onCerrar={cerrar}
           onAntesDeNavegar={onAntesDeNavegar}
           onVolverALista={onVolverALista}
+          productoMarcado={productoMarcado}
+          etiquetaVolver={etiquetaVolver}
         />
       ) : (
         <ListaCelda

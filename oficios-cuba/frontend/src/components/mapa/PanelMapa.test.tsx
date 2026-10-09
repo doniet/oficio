@@ -71,12 +71,15 @@ beforeAll(() => {
   });
 });
 
-function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?: PuntoMapa[] | null; tab?: string; q?: string } = {}) {
+function panel(props: { onCerrar?: () => void; punto?: PuntoMapa | null; lista?: PuntoMapa[] | null; tab?: string; q?: string; productoMarcado?: CatalogItem | null; etiquetaVolver?: string; onVolverALista?: () => void } = {}) {
   return createElement(PanelMapa, {
     punto: props.punto === undefined ? punto : props.punto,
     lista: props.lista ?? null,
     tab: props.tab,
     q: props.q,
+    productoMarcado: props.productoMarcado,
+    etiquetaVolver: props.etiquetaVolver,
+    onVolverALista: props.onVolverALista,
     onElegirDeLista: vi.fn(),
     onCerrar: props.onCerrar ?? vi.fn(),
   });
@@ -89,7 +92,7 @@ function envolver(nodo: ReturnType<typeof createElement>) {
   return createElement(MemoryRouter, null, createElement(AuthProvider, null, nodo));
 }
 
-function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null; tab?: string; q?: string } = {}) {
+function montar(props: { onCerrar?: () => void; punto?: PuntoMapa | null; tab?: string; q?: string; productoMarcado?: CatalogItem | null; etiquetaVolver?: string; onVolverALista?: () => void } = {}) {
   const onCerrar = props.onCerrar ?? vi.fn();
   // Imperativo y no en un beforeEach: los `afterEach(() => vi.restoreAllMocks())` de este archivo
   // borrarían cualquier mockResolvedValue puesto fuera de aquí antes de que el siguiente test
@@ -411,6 +414,36 @@ describe('PanelMapa — catálogo filtrado en la pestaña Productos', () => {
     fijarAncho(390);
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('con productoMarcado, ese producto va primero y marcado', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem({ id: 'x', name: 'Tornillos surtidos' }), catalogItem({ id: 'm', name: 'Tuercas' })], sections: [], total: 2, total_all: 2, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tornillos', productoMarcado: catalogItem({ id: 'm', name: 'Tuercas' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const marcado = await screen.findByText('Lo que tocaste');
+    expect(marcado.closest('button')!.textContent).toContain('Tuercas');
+    const nombresEnOrden = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+    expect(nombresEnOrden).toEqual(['Tuercas', 'Tornillos surtidos']);
+  });
+
+  // Review Focus 2: la búsqueda coincidió por el nombre del negocio.
+  it('si el catálogo filtrado no trae el producto tocado, igual lo enseña', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [], sections: [], total: 0, total_all: 4, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'Ferretería', productoMarcado: catalogItem({ id: 'm', name: 'Tuercas' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    expect(await screen.findByText('Tuercas')).toBeTruthy();
+    expect(screen.queryByText(/No encontramos productos/)).toBeNull();
+    expect(screen.getByText('(1)')).toBeTruthy();
+  });
+
+  it('etiquetaVolver cambia el texto del botón de volver', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({ data: { items: [], sections: [], total: 0, total_all: 0, page: 1, pages: 1 } } as any);
+    montar({ tab: 'productos', q: '', onVolverALista: vi.fn(), etiquetaVolver: '7 productos' });
+    expect(await screen.findByRole('button', { name: /7 productos/ })).toBeTruthy();
+  });
 
   it('en Productos se ve el catálogo filtrado en vez de Servicios', async () => {
     vi.mocked(catalogApi.ofProvider).mockResolvedValue({

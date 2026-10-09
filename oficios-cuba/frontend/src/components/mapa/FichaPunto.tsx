@@ -75,13 +75,14 @@ function SeccionServicios({ servicios, abierta, onToggle }: { servicios: Provide
  * `ServicioMiniCard` no enlaza a una página propia —los artículos no tienen una—, abre el mismo
  * modal de detalle que ya usa la búsqueda general (`CatalogItemModal`), con su botón de contacto.
  */
-function ProductoMiniCard({ item, onAbrir }: { item: CatalogItem; onAbrir: () => void }) {
+function ProductoMiniCard({ item, onAbrir, marcado = false }: { item: CatalogItem; onAbrir: () => void; marcado?: boolean }) {
   return (
     <button
       type="button"
       onClick={onAbrir}
       className={cn(
-        'group flex w-full gap-3 rounded-xl border border-sand-200 p-2 text-left transition hover:border-brand-300 hover:shadow-card',
+        'group flex w-full gap-3 rounded-xl border p-2 text-left transition hover:border-brand-300 hover:shadow-card',
+        marcado ? 'border-brand-400 bg-brand-50' : 'border-sand-200',
         !item.available && 'opacity-60',
       )}
     >
@@ -89,6 +90,7 @@ function ProductoMiniCard({ item, onAbrir }: { item: CatalogItem; onAbrir: () =>
         <CatalogImage item={item} />
       </div>
       <div className="min-w-0 flex-1 py-0.5">
+        {marcado && <span className="mb-0.5 inline-block rounded-full bg-brand-100 px-2 text-[11px] font-bold text-brand-700">Lo que tocaste</span>}
         <h4 className="line-clamp-2 text-sm font-bold leading-snug text-ink-900 group-hover:text-brand-700">{item.name}</h4>
         <div className="mt-0.5"><PrecioArticulo item={item} /></div>
       </div>
@@ -105,8 +107,9 @@ const MAX_PRODUCTOS_ADELANTO = 6;
  * justo lo que se tocó el punto para ver. Las fotos siguen cargando perezosas (`CatalogImage`
  * usa `loading="lazy"`), que es lo que de verdad pesa en una conexión lenta.
  */
-function SeccionProductos({ productos, total, cargando, error, providerId, onReintentar, onAbrirProducto }: {
+function SeccionProductos({ productos, total, cargando, error, providerId, onReintentar, onAbrirProducto, marcadoId }: {
   productos: CatalogItem[];
+  marcadoId?: string;
   total: number;
   cargando: boolean;
   error: string;
@@ -138,7 +141,7 @@ function SeccionProductos({ productos, total, cargando, error, providerId, onRei
     <div>
       <p className="mb-2 text-sm font-bold text-ink-900">Productos <span className="font-sans font-semibold text-ink-400">({total})</span></p>
       <ul className="space-y-2">
-        {adelanto.map((p) => <li key={p.id}><ProductoMiniCard item={p} onAbrir={() => onAbrirProducto(p)} /></li>)}
+        {adelanto.map((p) => <li key={p.id}><ProductoMiniCard item={p} onAbrir={() => onAbrirProducto(p)} marcado={p.id === marcadoId} /></li>)}
       </ul>
       {total > adelanto.length && (
         <Link to={`/proveedor/${providerId}#catalogo`} className="link mt-2 inline-block text-sm">
@@ -191,7 +194,7 @@ function SeccionResenas({ resenas, providerId, abierta, onToggle }: { resenas: R
  * cuando el usuario la despliega — en la conexión que esta app apunta a servir, no se pide lo que
  * no se está mirando —; el panel lateral, donde sobra sitio y no hay dos alturas, lo pone siempre.
  */
-export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicios', q = '', onCerrar, onAntesDeNavegar, onVolverALista }: {
+export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicios', q = '', onCerrar, onAntesDeNavegar, onVolverALista, productoMarcado, etiquetaVolver }: {
   punto: PuntoMapa;
   tituloId: string;
   expandida: boolean;
@@ -203,8 +206,12 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
   onCerrar(): void;
   /** Se llama justo antes de navegar a /proveedor/:id, para soltar la entrada de historial. */
   onAntesDeNavegar(): void;
-  /** Ausente = no se llegó desde una lista de celda. Presente = pinta «Volver a la lista». */
+  /** Ausente = no se llegó desde una lista. Presente = pinta el botón de volver (a la lista de una celda o a la de productos). */
   onVolverALista?: () => void;
+  /** El producto que se tocó en la lista de productos del mapa: va primero y marcado. */
+  productoMarcado?: CatalogItem | null;
+  /** Texto del botón de volver. Por defecto «Volver a la lista» (la de una celda). */
+  etiquetaVolver?: string;
 }) {
   const [perfil, setPerfil] = useState<ProviderPublic | null>(null);
   // Van en la MISMA respuesta que `perfil` (GET /providers/:id ya los incluye: pedirlos aparte
@@ -340,6 +347,12 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
     }
   };
 
+  // El tocado va primero aunque el catálogo filtrado no lo traiga: si la búsqueda coincidió por el
+  // nombre del negocio, /catalog/provider/:id?q= (que solo mira el artículo) no lo devuelve.
+  const productosVistos = productoMarcado
+    ? [productoMarcado, ...productos.filter((p) => p.id !== productoMarcado.id)]
+    : productos;
+
   return (
     <div className="relative">
       {/* Flotante y SIEMPRE en el mismo sitio: con o sin portada, cargando o no, el botón de
@@ -356,7 +369,7 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
 
       {onVolverALista && (
         <button type="button" onClick={onVolverALista} className="btn-ghost btn-sm -ml-2 mb-2">
-          <ArrowLeft className="h-4 w-4" /> Volver a la lista
+          <ArrowLeft className="h-4 w-4" /> {etiquetaVolver ?? 'Volver a la lista'}
         </button>
       )}
 
@@ -445,8 +458,9 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
               )}
               {tab === 'productos' ? (
                 <SeccionProductos
-                  productos={productos}
-                  total={totalProductos}
+                  productos={productosVistos}
+                  total={Math.max(totalProductos, productosVistos.length)}
+                  marcadoId={productoMarcado?.id}
                   cargando={cargandoProductos}
                   error={errorProductos}
                   providerId={punto.id}
