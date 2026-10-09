@@ -3,8 +3,10 @@ import type { Map as LeafletMap } from 'leaflet';
 import { PageLoader } from '../ui';
 import ControlesMapa from './ControlesMapa';
 import PanelMapa from './PanelMapa';
+import type { PropsListaProductos } from './ListaProductos';
 import { usarEsEscritorio } from './usarPanel';
-import type { Category, PuntoMapa } from '../../types';
+import { usarProductosMapa } from './usarProductosMapa';
+import type { Bbox, Category, OrdenProductos, ProductoMapa, PuntoMapa } from '../../types';
 
 // Leaflet pesa ~150 KB: solo se descarga si el usuario abre el mapa.
 const MapaExplorar = lazy(() => import('./MapaExplorar'));
@@ -13,6 +15,7 @@ const MapaExplorar = lazy(() => import('./MapaExplorar'));
 export const ANCHO_PANEL_PX = 352;
 /** Holgura entre el borde del panel y el punto, para que no quede pegado. */
 const MARGEN_PANEL_PX = 32;
+const ORDENES: OrdenProductos[] = ['relevance', 'price_asc', 'price_desc'];
 
 /**
  * La vista de mapa de /explorar: el mapa ES la página. Dueño del layout a sangre y del estado del
@@ -31,11 +34,19 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const [errorLista, setErrorLista] = useState('');
   // Cómo volver a pedir la celda que falló. Lo entrega el mapa, que es quien sabe pedirla.
   const [reintentarLista, setReintentarLista] = useState<(() => void) | null>(null);
+  const [zona, setZona] = useState<Bbox | null>(null);
+  const [verProductos, setVerProductos] = useState(false);
+  // El producto tocado: marca su fila al volver y va primero en la ficha de su negocio.
+  const [productoMarcado, setProductoMarcado] = useState<ProductoMapa | null>(null);
+  const [resaltado, setResaltado] = useState<{ id: string; lat: number; lng: number } | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const esEscritorio = usarEsEscritorio();
 
   const tab = get('tab') || 'servicios';
   const category = get('category');
+  const q = get('q');
+  const orden = (ORDENES as string[]).includes(get('orden')) ? (get('orden') as OrdenProductos) : 'relevance';
+  const productos = usarProductosMapa({ zona, q, category, sort: orden, activo: tab === 'productos' });
 
   // Cambiar de pestaña o de categoría cierra el panel: el punto abierto puede no pertenecer a la
   // pestaña nueva, y dejarlo ahí mostraría algo que ya no está en el mapa.
@@ -44,7 +55,21 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setLista(null);
     setListaPrevia(null);
     setErrorLista('');
+    setVerProductos(tab === 'productos');
+    setProductoMarcado(null);
+    setResaltado(null);
   }, [tab, category]);
+
+  // Una búsqueda nueva vuelve a la lista aunque hubiera una ficha abierta.
+  useEffect(() => {
+    if (tab !== 'productos') return;
+    setPunto(null);
+    setLista(null);
+    setListaPrevia(null);
+    setProductoMarcado(null);
+    setVerProductos(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   // El mapa avisa que la pestaña activa se quedó sin resultados: se salta a la que propone,
   // con la misma convención de URL que el resto de aquí (`servicios` no ensucia la barra).
@@ -64,7 +89,21 @@ export default function ExplorarMapa({ get, update, categorias }: {
     if (pt.x < margen) m.panBy([pt.x - margen, 0], { animate: true });
   }, [esEscritorio]);
 
+  // Para un producto de fuera: alejar lo justo para que su negocio entre, sin perder lo que se
+  // veía. Aquí SÍ cambia el zoom (a diferencia de apartarDelPanel): la zona tiene que crecer.
+  const ampliarHasta = useCallback((p: { lat: number; lng: number }) => {
+    const m = mapRef.current;
+    if (!m) return;
+    const altoHoja = esEscritorio ? 0 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hoja-punto-alto')) || 0;
+    m.flyToBounds(m.getBounds().extend([p.lat, p.lng]), {
+      paddingTopLeft: [esEscritorio ? ANCHO_PANEL_PX + MARGEN_PANEL_PX : 16, 120],
+      paddingBottomRight: [16, altoHoja + 16],
+      duration: 0.6,
+    });
+  }, [esEscritorio]);
+
   const abrirPunto = useCallback((p: PuntoMapa) => {
+    setProductoMarcado(null);
     setLista(null);
     setErrorLista('');
     setPunto(p);
@@ -95,7 +134,25 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setListaPrevia(null);
   }, [listaPrevia]);
 
+  const elegirProducto = useCallback((p: ProductoMapa, deFuera: boolean) => {
+    const negocio: PuntoMapa = {
+      id: p.provider_id, tipo: p.tipo, nombre: p.provider_name, lat: p.lat, lng: p.lng,
+      plan: p.subscription_plan,
+      aproximado: p.aproximado, detras: 0, cy: 0, cx: 0, resumen: '',
+    };
+    setResaltado(null);
+    setProductoMarcado(p);
+    setLista(null);
+    setListaPrevia(null);
+    setPunto(negocio);
+    if (deFuera) ampliarHasta(negocio); else apartarDelPanel(negocio);
+  }, [ampliarHasta, apartarDelPanel]);
+
+  const volverAProductos = useCallback(() => { setPunto(null); }, []);
+
   const cerrarPanel = useCallback(() => {
+    setVerProductos(false);
+    setResaltado(null);
     setPunto(null);
     setLista(null);
     setListaPrevia(null);
@@ -105,21 +162,33 @@ export default function ExplorarMapa({ get, update, categorias }: {
   // Hay panel lateral tapando la izquierda del mapa. Lo miran dos: los controles flotantes, que se
   // apartan a su derecha, y el CSS del control de zoom, que vive abajo a la izquierda — es decir,
   // debajo del panel — y sin apartarse deja de recibir clics.
-  const conPanel = esEscritorio && Boolean(punto || lista);
+  const desdeProductos = Boolean(punto && productoMarcado && punto.id === productoMarcado.provider_id);
+  const panelProductos: PropsListaProductos | null = tab === 'productos' && verProductos ? {
+    dentro: productos.dentro, total: productos.total, fuera: productos.fuera,
+    orden, onOrden: (o) => update({ orden: o === 'relevance' ? null : o }),
+    cargando: productos.cargando, error: productos.error, onReintentar: productos.reintentar,
+    hayMas: productos.hayMas, cargandoMas: productos.cargandoMas, onVerMas: productos.verMas,
+    onElegir: elegirProducto,
+    onResaltar: esEscritorio ? (p) => setResaltado(p ? { id: p.provider_id, lat: p.lat, lng: p.lng } : null) : undefined,
+    ultimoElegidoId: productoMarcado?.id ?? null,
+  } : null;
+  const hayProductos = productos.total > 0 || productos.fuera.length > 0;
+  const conPanel = esEscritorio && Boolean(punto || lista || panelProductos);
 
   return (
     <div className={`region-mapa relative w-full overflow-hidden${conPanel ? ' region-mapa--con-panel' : ''}`}>
       <Suspense fallback={<PageLoader />}>
         <MapaExplorar
           tab={tab}
-          q={get('q')}
+          q={q}
           category={category}
-          seleccionadoId={punto?.id}
+          seleccionado={punto ?? resaltado}
           alMapa={(m) => { mapRef.current = m; }}
           onAbrir={abrirPunto}
           onAbrirLista={abrirLista}
           onCerrarPanel={cerrarPanel}
           onAgotada={alAgotarPestaña}
+          onZona={setZona}
         />
       </Suspense>
 
@@ -138,14 +207,29 @@ export default function ExplorarMapa({ get, update, categorias }: {
       <PanelMapa
         punto={punto}
         lista={lista}
+        productos={panelProductos}
         tab={tab}
-        q={get('q')}
+        q={q}
         errorLista={errorLista || undefined}
         onReintentarLista={reintentarLista ? () => { setErrorLista(''); reintentarLista(); } : undefined}
         onElegirDeLista={elegirDeLista}
-        onVolverALista={listaPrevia ? volverALista : undefined}
+        productoMarcado={desdeProductos ? productoMarcado : null}
+        etiquetaVolver={desdeProductos ? `${productos.total} ${productos.total === 1 ? 'producto' : 'productos'}` : undefined}
+        onVolverALista={desdeProductos ? volverAProductos : listaPrevia ? volverALista : undefined}
         onCerrar={cerrarPanel}
       />
+
+      {/* Cerrada la lista, que no se pierda: en móvil la hoja tapa medio mapa y es normal cerrarla
+          para mirar; reabrirla no puede exigir volver a buscar. */}
+      {tab === 'productos' && !verProductos && !punto && !lista && hayProductos && (
+        <button
+          type="button"
+          onClick={() => setVerProductos(true)}
+          className="btn-primary btn-sm absolute bottom-4 left-1/2 z-[1015] -translate-x-1/2 shadow-lift"
+        >
+          {productos.total > 0 ? `Ver ${productos.total} ${productos.total === 1 ? 'producto' : 'productos'}` : 'Ver productos cercanos'}
+        </button>
+      )}
     </div>
   );
 }

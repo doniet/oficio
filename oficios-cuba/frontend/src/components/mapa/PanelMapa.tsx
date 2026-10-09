@@ -3,6 +3,7 @@ import HojaPunto from './HojaPunto';
 import PanelLateral from './PanelLateral';
 import FichaPunto from './FichaPunto';
 import ListaCelda from './ListaCelda';
+import ListaProductos, { type PropsListaProductos } from './ListaProductos';
 import { usarEsEscritorio, usarPanel } from './usarPanel';
 import type { CatalogItem, PuntoMapa } from '../../types';
 
@@ -12,10 +13,12 @@ import type { CatalogItem, PuntoMapa } from '../../types';
  * sabe qué muestra ni el contenido sabe dónde está.
  */
 export default function PanelMapa({
-  punto, lista, tab, q, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, productoMarcado, etiquetaVolver, onCerrar, focoOrigen,
+  punto, lista, productos, tab, q, errorLista, onReintentarLista, onElegirDeLista, onVolverALista, productoMarcado, etiquetaVolver, onCerrar, focoOrigen,
 }: {
   punto: PuntoMapa | null;
   lista: PuntoMapa[] | null;
+  /** Presente = la lista de productos de la pestaña Productos. Cede ante un punto o una celda. */
+  productos?: PropsListaProductos | null;
   /** Se reenvían tal cual a FichaPunto: con 'productos', cambia lo que se ve bajo «Ver perfil
    *  completo» (ver el comentario en FichaPunto.tsx). */
   tab?: string;
@@ -37,7 +40,7 @@ export default function PanelMapa({
   // ficha NO empuja una entrada de historial nueva, porque es el mismo panel cambiando de
   // contenido. Si empujara una por cada paso, recorrer cinco negocios de una celda dejaría cinco
   // entradas y haría falta pulsar Atrás cinco veces para salir de Explorar.
-  const abierta = punto ? `punto:${punto.id}` : lista ? 'lista' : null;
+  const abierta = punto ? `punto:${punto.id}` : lista ? 'lista' : productos ? 'productos' : null;
 
   // El historial y el foco viven AQUÍ y no en los envoltorios: este componente sobrevive al
   // cambio de envoltorio al cruzar los 1024 px, y ellos no.
@@ -58,16 +61,18 @@ export default function PanelMapa({
           productoMarcado={productoMarcado}
           etiquetaVolver={etiquetaVolver}
         />
-      ) : (
+      ) : lista ? (
         <ListaCelda
-          puntos={lista ?? []}
+          puntos={lista}
           tituloId={tituloId}
           onElegir={onElegirDeLista}
           onCerrar={cerrar}
           error={errorLista}
           onReintentar={onReintentarLista}
         />
-      ))}
+      ) : productos ? (
+        <ListaProductos {...productos} tituloId={tituloId} onCerrar={cerrar} />
+      ) : null)}
     </Envoltorio>
   );
 }

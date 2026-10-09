@@ -132,10 +132,12 @@ function Eventos({ zoomRecien, alMover, onClicVacio }: {
   return null;
 }
 
-export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir, onAbrirLista, onCerrarPanel, onAgotada, onZona, alMapa }: {
+export default function MapaExplorar({ tab, q, category, seleccionado, onAbrir, onAbrirLista, onCerrarPanel, onAgotada, onZona, alMapa }: {
   tab: string; q: string; category: string;
   /** El `id` del punto que tiene su ficha abierta: su marcador cambia de círculo a pin. */
-  seleccionadoId?: string | null;
+  /** El negocio con su ficha abierta o resaltado desde la lista de productos. Si su pin no está
+   *  pintado (agrupado detrás de otro en su celda), se pinta uno suelto en su punto publicado. */
+  seleccionado?: { id: string; lat: number; lng: number } | null;
   onAbrir: (p: PuntoMapa) => void;
   /**
    * Se llama con los negocios de una celda cuando se toca un grupo (un «+N» o un área). Si la
@@ -152,6 +154,7 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
   /** Se llama una vez, al montar, con el mapa de Leaflet ya creado. */
   alMapa?: (m: LeafletMap) => void;
 }) {
+  const seleccionadoId = seleccionado?.id;
   const mapa = usarMapa({ tab, q, category }, onAgotada, onZona);
 
   // Modo zona: por debajo de este tamaño de celda el área de 600 m ya no cabe en ella, así que
@@ -277,6 +280,15 @@ export default function MapaExplorar({ tab, q, category, seleccionadoId, onAbrir
             />
           )
         ))}
+        {seleccionado && !mapa.puntos.some((p) => p.id === seleccionado.id) && (
+          <Marker
+            key={`suelto-${seleccionado.id}`}
+            position={[seleccionado.lat, seleccionado.lng]}
+            icon={pinSeleccionadoIcon('negocio', 0)}
+            zIndexOffset={1000}
+            interactive={false}
+          />
+        )}
       </MapContainer>
 
       <div // top-28: por debajo de la barra flotante de ControlesMapa, que ocupa la franja de arriba.

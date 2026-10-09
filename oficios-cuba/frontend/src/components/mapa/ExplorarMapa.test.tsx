@@ -7,7 +7,7 @@ import ExplorarMapa, { ANCHO_PANEL_PX } from './ExplorarMapa';
 import { darTamanoAlMapa, fijarAncho } from './probarAncho';
 import { configApi, mapaApi, providerApi } from '../../services/api';
 import { AuthProvider } from '../../hooks/useAuth';
-import type { PuntoMapa } from '../../types';
+import type { MapaProductosRespuesta, ProductoMapa, PuntoMapa } from '../../types';
 
 // configApi.get: AuthProvider la llama sola al montar. providerApi.contact/getById: mockeadas
 // para no pegarle a la red de verdad. Necesario desde que FichaPunto puede montar BookingModal
@@ -17,7 +17,8 @@ vi.mock('../../services/api', async () => {
   return {
     ...real,
     configApi: { ...real.configApi, get: vi.fn() },
-    mapaApi: { buscar: vi.fn(), celda: vi.fn() },
+    mapaApi: { buscar: vi.fn(), celda: vi.fn(), productos: vi.fn() },
+    catalogApi: { ...real.catalogApi, ofProvider: vi.fn(() => Promise.resolve({ data: { items: [], total: 0 } })) },
     providerApi: { ...real.providerApi, getById: vi.fn(), contact: vi.fn(() => Promise.resolve()) },
   };
 });
@@ -241,5 +242,109 @@ describe('ExplorarMapa', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /Negocios/ }));
     await waitFor(() => expect(screen.queryByTestId('panel-lateral')).toBeNull());
+  });
+});
+
+function producto(id: string, extra: Partial<ProductoMapa> = {}): ProductoMapa {
+  return {
+    id, name: `Producto ${id}`, description: null, price: 100, price_type: 'fixed', price_currency: 'CUP', image: null, section: null,
+    available: true, created_at: '2026-10-01T00:00:00Z', provider_id: `neg-${id}`, provider_name: `Negocio ${id}`, provider_avatar: null,
+    subscription_plan: 'basic', contact_mode: 'whatsapp', whatsapp: null, province_name: null, municipality_name: 'Cerro',
+    lat: 21.6, lng: -79.6, tipo: 'oficio', aproximado: false, ...extra,
+  } as ProductoMapa;
+}
+
+function respuesta(dentro: ProductoMapa[], fuera: ProductoMapa[] = []): MapaProductosRespuesta {
+  return { dentro: { items: dentro, total: dentro.length, page: 1, pages: 1 }, fuera };
+}
+
+const enProductos = (extra: Record<string, string> = {}) => (k: string) => ({ tab: 'productos', q: 'cake', ...extra } as Record<string, string>)[k] ?? '';
+
+describe('ExplorarMapa — lista de productos', () => {
+  beforeEach(() => {
+    vi.mocked(mapaApi.productos).mockReset();
+    vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
+    vi.mocked(providerApi.getById).mockImplementation((id: string) => Promise.resolve({
+      data: { provider: { id, business_name: `Negocio ${id}`, categories: [], rating: 0, review_count: 0, contact_mode: 'both', whatsapp: null } },
+    }) as never);
+    fijarAncho(1280);
+    window.history.replaceState(null, '');
+  });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('en Productos la lista se abre sola con los productos de la zona', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b')]));
+    montar([], enProductos());
+    expect(await screen.findByRole('heading', { name: '2 productos en esta zona' })).toBeTruthy();
+    expect(vi.mocked(mapaApi.productos).mock.calls[0][1]).toMatchObject({ q: 'cake', sort: 'relevance', page: 1 });
+  });
+
+  it('en Servicios no pide productos', async () => {
+    montar([], () => '');
+    await act(async () => { await espera(400); });
+    expect(mapaApi.productos).not.toHaveBeenCalled();
+  });
+
+  it('el orden sale de la URL y elegir otro la cambia', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')]));
+    const { update } = montar([], enProductos({ orden: 'price_desc' }));
+    await screen.findByRole('heading', { name: '1 producto en esta zona' });
+    expect(vi.mocked(mapaApi.productos).mock.calls[0][1]).toMatchObject({ sort: 'price_desc' });
+    fireEvent.click(screen.getByRole('button', { name: 'Relevancia' }));
+    expect(update).toHaveBeenCalledWith({ orden: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Menor precio' }));
+    expect(update).toHaveBeenCalledWith({ orden: 'price_asc' });
+  });
+
+  it('un orden inventado en la URL se trata como relevancia', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')]));
+    montar([], enProductos({ orden: 'barato' }));
+    await screen.findByRole('heading', { name: '1 producto en esta zona' });
+    expect(vi.mocked(mapaApi.productos).mock.calls[0][1]).toMatchObject({ sort: 'relevance' });
+  });
+
+  it('tocar un producto abre su negocio con el producto marcado, y «N productos» vuelve', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b')]));
+    montar([], enProductos());
+    fireEvent.click(await screen.findByText('Producto b'));
+    expect(await screen.findByText('Lo que tocaste')).toBeTruthy();
+    expect(providerApi.getById).toHaveBeenCalledWith('neg-b');
+    fireEvent.click(screen.getByRole('button', { name: /2 productos/ }));
+    expect(await screen.findByRole('heading', { name: '2 productos en esta zona' })).toBeTruthy();
+    expect(mapaApi.productos).toHaveBeenCalledTimes(1); // volver no vuelve a pedir
+  });
+
+  it('tocar uno de fuera amplía el mapa hasta incluir su negocio', async () => {
+    const lejos = producto('f', { lat: 23.1, lng: -82.4, distancia_km: 300 });
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')], [lejos]));
+    const volar = vi.spyOn(L.Map.prototype, 'flyToBounds').mockImplementation(function (this: L.Map) { return this; });
+    montar([], enProductos());
+    fireEvent.click(await screen.findByText('Producto f'));
+    expect(volar).toHaveBeenCalled();
+    const caja = volar.mock.calls[0][0] as L.LatLngBounds;
+    expect(caja.contains(L.latLng(23.1, -82.4))).toBe(true);
+    expect(await screen.findByText('Lo que tocaste')).toBeTruthy();
+  });
+
+  it('cerrar la lista deja «Ver N productos», que la reabre', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b'), producto('c')]));
+    montar([], enProductos());
+    await screen.findByRole('heading', { name: '3 productos en esta zona' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar la lista de productos' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver 3 productos' }));
+    expect(await screen.findByRole('heading', { name: '3 productos en esta zona' })).toBeTruthy();
+  });
+
+  // Review Focus 5.
+  it('tocar un pin con la lista abierta y cerrar su ficha deja «Ver N productos», no un panel vacío', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')]));
+    const { container } = montar([punto('p', -76)], enProductos());
+    await screen.findByRole('heading', { name: '1 producto en esta zona' });
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(30); });
+    expect(screen.queryByRole('button', { name: /1 productos?$/ })).toBeNull(); // la ficha de un pin no ofrece volver a productos
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(await screen.findByRole('button', { name: 'Ver 1 producto' })).toBeTruthy();
+    expect(container.querySelector('[data-testid="panel-lateral"]')).toBeNull();
   });
 });
