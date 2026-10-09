@@ -46,6 +46,21 @@ describe('textoBotonProductos', () => {
   it('fuera de la pestaña Productos (o de la vista mapa): sin botón', () => {
     expect(textoBotonProductos({ enProductos: false, panel: cerrada, total: 12, fuera: 0 })).toBeNull();
   });
+  // Sin esto, un fallo de red con la lista cerrada deja 0/0, esconde el botón y no queda forma de
+  // volver a la lista ni a su «Reintentar».
+  it('con error y nada contado, sigue ofreciendo volver a la lista', () => {
+    expect(textoBotonProductos({ enProductos: true, panel: cerrada, total: 0, fuera: 0, error: true })).toBe('Ver productos');
+  });
+  it('con error y la hoja abierta: sin botón', () => {
+    const abierta = reduceAbrirProductos(ESTADO_PANEL_VACIO);
+    expect(textoBotonProductos({ enProductos: true, panel: abierta, total: 0, fuera: 0, error: true })).toBeNull();
+  });
+  it('con error fuera de la pestaña Productos: sin botón', () => {
+    expect(textoBotonProductos({ enProductos: false, panel: cerrada, total: 0, fuera: 0, error: true })).toBeNull();
+  });
+  it('sin error y nada contado: sin botón, como antes', () => {
+    expect(textoBotonProductos({ enProductos: true, panel: cerrada, total: 0, fuera: 0, error: false })).toBeNull();
+  });
   it('oculto mientras haya hoja abierta, sea la lista, una ficha o una celda', () => {
     const abierta = reduceAbrirProductos(ESTADO_PANEL_VACIO);
     expect(textoBotonProductos({ enProductos: true, panel: abierta, total: 12, fuera: 0 })).toBeNull();

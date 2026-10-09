@@ -102,9 +102,11 @@ export function contenidoHoja(e: Pick<EstadoPanel, 'punto' | 'lista' | 'producto
  * vista mapa (`enProductos`) y nunca con la hoja abierta, sea lo que sea lo que enseñe: taparía el
  * mismo sitio que la hoja.
  */
-export function textoBotonProductos({ enProductos, panel, total, fuera }: {
-  enProductos: boolean; panel: EstadoPanel; total: number; fuera: number;
+export function textoBotonProductos({ enProductos, panel, total, fuera, error = false }: {
+  enProductos: boolean; panel: EstadoPanel; total: number; fuera: number; error?: boolean;
 }): string | null {
   if (!enProductos || contenidoHoja(panel) !== null) return null;
-  return textoVerProductos(total, fuera);
+  // Con la carga fallida no hay cuenta que enseñar, pero el botón es el único camino de vuelta a la
+  // lista (y a su «Reintentar»): el «Reintentar» del mapa repite la misma zona y no vuelve a pedirla.
+  return textoVerProductos(total, fuera) ?? (error ? 'Ver productos' : null);
 }

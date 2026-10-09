@@ -144,7 +144,7 @@ export default function Explorar() {
   const altoReservado = indiceHoja === 1 ? altoContenedor * ANCLA_ABIERTA : indiceHoja === 0 ? altoContenedor * ANCLA_ASOMADA : 0;
 
   const vieneDeProductos = desdeProductos(panel);
-  const textoBoton = textoBotonProductos({ enProductos, panel, total: productos.total, fuera: productos.fuera.length });
+  const textoBoton = textoBotonProductos({ enProductos, panel, total: productos.total, fuera: productos.fuera.length, error: Boolean(productos.error) });
 
   const filtros = (
     <View style={{ gap: 16 }}>
