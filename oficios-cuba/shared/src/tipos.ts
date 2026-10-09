@@ -322,3 +322,20 @@ export interface CatalogPage {
   page: number;
   pages: number;
 }
+
+export type OrdenProductos = 'relevance' | 'price_asc' | 'price_desc';
+
+/** Un producto de la pestaña Productos del mapa: el artículo más los datos de su perfil y su punto. */
+export type ProductoMapa = CatalogItem & {
+  provider_id: string; provider_name: string; provider_avatar: string | null;
+  subscription_plan: 'free' | 'basic' | 'pro'; contact_mode: ContactMode; whatsapp: string | null;
+  province_name: string | null; municipality_name: string | null;
+  lat: number; lng: number; tipo: 'oficio' | 'negocio'; aproximado: boolean;
+  /** Solo en `fuera`: desde el centro de la zona visible, en km con un decimal. */
+  distancia_km?: number;
+};
+
+export interface MapaProductosRespuesta {
+  dentro: { items: ProductoMapa[]; total: number; page: number; pages: number };
+  fuera: ProductoMapa[];
+}

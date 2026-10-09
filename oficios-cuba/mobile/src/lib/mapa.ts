@@ -99,7 +99,10 @@ const ESTADO_INICIAL: EstadoMapa = { puntos: [], cargando: true, error: false, h
  * mismas cinco reglas: el zoom recarga solo (250 ms), el paneo también (500 ms), el texto
  * recarga solo (300 ms), toda carga cancela la anterior en vuelo, y el centro se acota a Cuba.
  */
-export function usarMapa({ tab, q, category }: { tab: string; q: string; category: string }) {
+export function usarMapa({ tab, q, category }: { tab: string; q: string; category: string }, onZona?: (bbox: Bbox) => void) {
+  // En ref para que `cargar` no cambie de identidad (y no reinicie efectos) si el padre pasa una función nueva.
+  const onZonaRef = useRef(onZona);
+  onZonaRef.current = onZona;
   const [estado, setEstado] = useState<EstadoMapa>(ESTADO_INICIAL);
   const bboxVisible = useRef<Bbox | null>(null);
   const controlador = useRef<AbortController | null>(null);
@@ -148,6 +151,8 @@ export function usarMapa({ tab, q, category }: { tab: string; q: string; categor
     let expiroPorTiempo = false;
     tiempoEspera.current = setTimeout(() => { expiroPorTiempo = true; propio.abort(); }, TIEMPO_ESPERA_MS);
     setEstado((e) => ({ ...e, cargando: true, error: false }));
+    // Antes de pedir los pines: la lista de productos arranca con la misma zona sin esperar a /mapa.
+    onZonaRef.current?.(bbox);
     pedirMapa(bbox, { tab, q: q || undefined, category: category || undefined }, propio.signal)
       .then((r) => {
         limpiarTiempoEspera();

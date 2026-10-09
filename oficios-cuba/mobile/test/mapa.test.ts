@@ -1,14 +1,14 @@
 import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import type { PuntoMapa } from '@oficio/shared';
+import type { Bbox, PuntoMapa } from '@oficio/shared';
 import { acotarACuba, acotarBbox, usarMapa } from '../src/lib/mapa';
 
 // El archivo es .ts (no .tsx: `jest.config.js` solo mira `test/**/*.test.ts`), así que se monta
 // el hook con `createElement` en vez de JSX — el mismo truco que un `renderHook` casero.
-function montarHook(props: { tab: string; q: string; category: string }) {
+function montarHook(props: { tab: string; q: string; category: string }, onZona?: (b: Bbox) => void) {
   let actual!: ReturnType<typeof usarMapa>;
   function Prueba(p: typeof props) {
-    actual = usarMapa(p);
+    actual = usarMapa(p, onZona);
     return null;
   }
   let renderer!: ReactTestRenderer;
@@ -548,5 +548,20 @@ describe('usarMapa', () => {
     const cuba = llamadas[1];
     h.desmontar();
     expect(cuba.signal.aborted).toBe(true);
+  });
+
+  it('onZona recibe el mismo bbox justo antes de pedir /mapa', async () => {
+    const { fetchMock, llamadas } = fetchControlable();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const onZona = jest.fn(() => { expect(fetchMock).not.toHaveBeenCalled(); });
+    const h = montarHook({ tab: 'productos', q: '', category: '' }, onZona);
+
+    act(() => { h.estado.alMoverMapa(BBOX_A, true); });
+    expect(onZona).not.toHaveBeenCalled();
+    await avanzarYVaciar(250);
+    expect(onZona).toHaveBeenCalledWith(BBOX_A);
+    expect(llamadas).toHaveLength(1);
+
+    h.desmontar();
   });
 });
