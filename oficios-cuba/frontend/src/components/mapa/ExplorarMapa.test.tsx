@@ -314,6 +314,25 @@ describe('ExplorarMapa — lista de productos', () => {
     expect(mapaApi.productos).toHaveBeenCalledTimes(1); // volver no vuelve a pedir
   });
 
+  it('en escritorio, abrir un producto cuyo negocio queda bajo el panel y volver no recarga la lista con otra zona', async () => {
+    // A 5 % del borde oeste de un mapa de 800 px: apartarDelPanel lo paneará (y el paneo
+    // mueve la zona que reporta el mapa).
+    const alOeste = producto('b', { lat: 21.6, lng: -83.55 });
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), alOeste]));
+    const panear = vi.spyOn(L.Map.prototype, 'panBy');
+    montar([], enProductos());
+    fireEvent.click(await screen.findByText('Producto b'));
+    expect(await screen.findByText('Lo que tocaste')).toBeTruthy();
+    expect(panear).toHaveBeenCalled();
+    await act(async () => { await espera(900); }); // moveend + antirrebote del paneo
+    fireEvent.click(screen.getByRole('button', { name: /2 productos/ }));
+    expect(await screen.findByRole('heading', { name: '2 productos en esta zona' })).toBeTruthy();
+    expect(screen.getByText('Producto a')).toBeTruthy();
+    expect(screen.getByText('Producto b')).toBeTruthy();
+    await act(async () => { await espera(900); });
+    expect(mapaApi.productos).toHaveBeenCalledTimes(1);
+  });
+
   it('tocar uno de fuera amplía el mapa hasta incluir su negocio', async () => {
     const lejos = producto('f', { lat: 23.1, lng: -82.4, distancia_km: 300 });
     vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')], [lejos]));

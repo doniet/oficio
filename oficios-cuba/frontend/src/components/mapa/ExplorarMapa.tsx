@@ -34,7 +34,11 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const [errorLista, setErrorLista] = useState('');
   // Cómo volver a pedir la celda que falló. Lo entrega el mapa, que es quien sabe pedirla.
   const [reintentarLista, setReintentarLista] = useState<(() => void) | null>(null);
+  // La zona con que se pide la lista de productos. Normalmente es la última que reporta el mapa;
+  // mientras está abierta la ficha de un producto de la zona se queda quieta (ver `alZona`).
   const [zona, setZona] = useState<Bbox | null>(null);
+  const ultimaZonaRef = useRef<Bbox | null>(null);
+  const zonaCongeladaRef = useRef(false);
   const [verProductos, setVerProductos] = useState(false);
   // El producto tocado: marca su fila al volver y va primero en la ficha de su negocio.
   const [productoMarcado, setProductoMarcado] = useState<ProductoMapa | null>(null);
@@ -51,6 +55,23 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const orden = (ORDENES as string[]).includes(get('orden')) ? (get('orden') as OrdenProductos) : 'relevance';
   const productos = usarProductosMapa({ zona, q, category, sort: orden, activo: tab === 'productos' });
 
+  // Abrir un producto de la zona paneará el mapa para sacar su negocio de debajo del panel, y ese
+  // paneo hace que el mapa reporte otra zona: sin congelar, volver a «N productos» encontraría
+  // la lista pidiéndose de nuevo con datos distintos. Congelada, la lista conserva los suyos.
+  const alZona = useCallback((b: Bbox) => {
+    ultimaZonaRef.current = b;
+    if (!zonaCongeladaRef.current) setZona(b);
+  }, []);
+
+  // Al descongelar por cualquier motivo salvo volver a la lista, la lista pasa a la zona real del
+  // mapa. Al volver NO: ahí tiene que seguir con los datos que tenía hasta que el usuario mueva
+  // el mapa (la siguiente zona que llegue sí se aplica).
+  const descongelar = useCallback((aplicarUltima: boolean) => {
+    if (!zonaCongeladaRef.current) return;
+    zonaCongeladaRef.current = false;
+    if (aplicarUltima) setZona(ultimaZonaRef.current);
+  }, []);
+
   // Cambiar de pestaña o de categoría cierra el panel: el punto abierto puede no pertenecer a la
   // pestaña nueva, y dejarlo ahí mostraría algo que ya no está en el mapa.
   useEffect(() => {
@@ -61,7 +82,11 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setVerProductos(tab === 'productos');
     setProductoMarcado(null);
     setResaltado(null);
+    descongelar(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, category]);
+
+  useEffect(() => { descongelar(true); }, [q, orden, descongelar]);
 
   // Una búsqueda nueva vuelve a la lista aunque hubiera una ficha abierta.
   useEffect(() => {
@@ -106,15 +131,17 @@ export default function ExplorarMapa({ get, update, categorias }: {
   }, [esEscritorio]);
 
   const abrirPunto = useCallback((p: PuntoMapa) => {
+    descongelar(true);
     setProductoMarcado(null);
     setFichaDeProductos(false);
     setLista(null);
     setErrorLista('');
     setPunto(p);
     apartarDelPanel(p);
-  }, [apartarDelPanel]);
+  }, [apartarDelPanel, descongelar]);
 
   const abrirLista = useCallback((ps: PuntoMapa[], error?: string, reintentar?: () => void) => {
+    descongelar(true);
     setFichaDeProductos(false);
     setPunto(null);
     setListaPrevia(null);
@@ -123,7 +150,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
     // actualizador y llamaría al reintento en vez de guardarlo.
     setReintentarLista(() => reintentar ?? null);
     setLista(ps);
-  }, []);
+  }, [descongelar]);
 
   const elegirDeLista = useCallback((p: PuntoMapa) => {
     // Se recuerda la lista para poder volver a ella sin pedirla otra vez.
@@ -152,19 +179,28 @@ export default function ExplorarMapa({ get, update, categorias }: {
     setLista(null);
     setListaPrevia(null);
     setPunto(negocio);
-    if (deFuera) ampliarHasta(negocio); else apartarDelPanel(negocio);
+    if (deFuera) {
+      ampliarHasta(negocio);
+    } else {
+      zonaCongeladaRef.current = true;
+      apartarDelPanel(negocio);
+    }
   }, [ampliarHasta, apartarDelPanel]);
 
-  const volverAProductos = useCallback(() => { setPunto(null); }, []);
+  const volverAProductos = useCallback(() => {
+    descongelar(false);
+    setPunto(null);
+  }, [descongelar]);
 
   const cerrarPanel = useCallback(() => {
+    descongelar(true);
     setVerProductos(false);
     setResaltado(null);
     setPunto(null);
     setLista(null);
     setListaPrevia(null);
     setErrorLista('');
-  }, []);
+  }, [descongelar]);
 
   // Hay panel lateral tapando la izquierda del mapa. Lo miran dos: los controles flotantes, que se
   // apartan a su derecha, y el CSS del control de zoom, que vive abajo a la izquierda — es decir,
@@ -195,7 +231,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
           onAbrirLista={abrirLista}
           onCerrarPanel={cerrarPanel}
           onAgotada={alAgotarPestaña}
-          onZona={setZona}
+          onZona={alZona}
         />
       </Suspense>
 
