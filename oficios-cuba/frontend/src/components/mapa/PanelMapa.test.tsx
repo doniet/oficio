@@ -442,6 +442,28 @@ describe('PanelMapa — catálogo filtrado en la pestaña Productos', () => {
     delete (window.HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
+  it('con productoMarcado, el catálogo va ANTES de la descripción (en móvil la hoja asoma y lo de abajo queda tapado)', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem({ id: 'm', name: 'Tuercas' })], sections: [], total: 1, total_all: 1, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tuercas', productoMarcado: catalogItem({ id: 'm', name: 'Tuercas' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const marcado = await screen.findByText('Lo que tocaste');
+    const descripcion = await screen.findByText(perfilMock.description!);
+    expect(marcado.compareDocumentPosition(descripcion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('sin productoMarcado (pin o celda), la descripción sigue yendo antes del catálogo', async () => {
+    vi.mocked(catalogApi.ofProvider).mockResolvedValue({
+      data: { items: [catalogItem({ id: 'm', name: 'Tuercas' })], sections: [], total: 1, total_all: 1, page: 1, pages: 1 },
+    } as any);
+    montar({ tab: 'productos', q: 'tuercas' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver la ficha completa' }));
+    const producto = await screen.findByText('Tuercas');
+    const descripcion = await screen.findByText(perfilMock.description!);
+    expect(descripcion.compareDocumentPosition(producto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   // Review Focus 2: la búsqueda coincidió por el nombre del negocio.
   it('si el catálogo filtrado no trae el producto tocado, igual lo enseña', async () => {
     vi.mocked(catalogApi.ofProvider).mockResolvedValue({

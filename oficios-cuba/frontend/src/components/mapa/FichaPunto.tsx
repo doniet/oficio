@@ -360,6 +360,25 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
     ? [productoMarcado, ...productos.filter((p) => p.id !== productoMarcado.id)]
     : productos;
 
+  const catalogo = tab === 'productos' ? (
+    <SeccionProductos
+      productos={productosVistos}
+      total={Math.max(totalProductos, productosVistos.length)}
+      marcadoId={productoMarcado?.id}
+      cargando={cargandoProductos}
+      error={errorProductos}
+      providerId={punto.id}
+      onReintentar={() => setReintentosProductos((n) => n + 1)}
+      onAbrirProducto={setProductoAbierto}
+    />
+  ) : (
+    <SeccionServicios
+      servicios={serviciosVigentes}
+      abierta={serviciosAbiertos}
+      onToggle={() => setServiciosAbiertos((v) => !v)}
+    />
+  );
+
   return (
     <div className="relative">
       {/* Flotante y SIEMPRE en el mismo sitio: con o sin portada, cargando o no, el botón de
@@ -455,6 +474,11 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
           {errorPerfil && <ErrorState message={errorPerfil} onRetry={() => { pedidoRef.current = null; setReintentos((n) => n + 1); }} />}
           {perfilVigente && !cargandoPerfil && (
             <div className="space-y-4">
+              {/* Abierta desde un producto, lo tocado va PRIMERO: en móvil la hoja asoma a media altura
+                  y lo que queda tras la descripción y las categorías cae bajo el pliegue. (No sirve
+                  `scrollIntoView`: la hoja mide 85vh y está desplazada, así que para su contenedor
+                  la tarjeta ya «se ve» aunque esté fuera de la pantalla.) */}
+              {productoMarcado && catalogo}
               {perfilVigente.description && <p className="text-sm text-ink-700">{perfilVigente.description}</p>}
               {lugar && <p className="text-sm text-ink-500">{lugar}</p>}
               {perfilVigente.horario && <p className="text-sm text-ink-500">Horario: {perfilVigente.horario}</p>}
@@ -463,24 +487,7 @@ export default function FichaPunto({ punto, tituloId, expandida, tab = 'servicio
                   {perfilVigente.categories.map((c) => <li key={c} className="badge bg-sand-100 text-ink-700">{c}</li>)}
                 </ul>
               )}
-              {tab === 'productos' ? (
-                <SeccionProductos
-                  productos={productosVistos}
-                  total={Math.max(totalProductos, productosVistos.length)}
-                  marcadoId={productoMarcado?.id}
-                  cargando={cargandoProductos}
-                  error={errorProductos}
-                  providerId={punto.id}
-                  onReintentar={() => setReintentosProductos((n) => n + 1)}
-                  onAbrirProducto={setProductoAbierto}
-                />
-              ) : (
-                <SeccionServicios
-                  servicios={serviciosVigentes}
-                  abierta={serviciosAbiertos}
-                  onToggle={() => setServiciosAbiertos((v) => !v)}
-                />
-              )}
+              {!productoMarcado && catalogo}
               {/* La calificación va PEGADA a las reseñas, no arriba con el resto de los datos: es
                   el mismo dato que "lo que dicen los demás" — y ambos, al final del todo. Antes el
                   resumen de estrellas abría la ficha, lo que dejaba la ficha leyéndose como
