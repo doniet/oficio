@@ -291,9 +291,9 @@ describe('ExplorarMapa — lista de productos', () => {
     await screen.findByRole('heading', { name: '1 producto en esta zona' });
     expect(vi.mocked(mapaApi.productos).mock.calls[0][1]).toMatchObject({ sort: 'price_desc' });
     fireEvent.click(screen.getByRole('button', { name: 'Relevancia' }));
-    expect(update).toHaveBeenCalledWith({ orden: null });
+    expect(update).toHaveBeenCalledWith({ orden: null }, { replace: true });
     fireEvent.click(screen.getByRole('button', { name: 'Menor precio' }));
-    expect(update).toHaveBeenCalledWith({ orden: 'price_asc' });
+    expect(update).toHaveBeenCalledWith({ orden: 'price_asc' }, { replace: true });
   });
 
   it('un orden inventado en la URL se trata como relevancia', async () => {

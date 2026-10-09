@@ -25,7 +25,7 @@ const ORDENES: OrdenProductos[] = ['relevance', 'price_asc', 'price_desc'];
  */
 export default function ExplorarMapa({ get, update, categorias }: {
   get(k: string): string;
-  update(patch: Record<string, string | null>): void;
+  update(patch: Record<string, string | null>, opts?: { replace?: boolean }): void;
   categorias: Category[];
 }) {
   const [punto, setPunto] = useState<PuntoMapa | null>(null);
@@ -172,7 +172,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const desdeProductos = Boolean(fichaDeProductos && punto && productoMarcado && punto.id === productoMarcado.provider_id);
   const panelProductos: PropsListaProductos | null = tab === 'productos' && verProductos ? {
     dentro: productos.dentro, total: productos.total, fuera: productos.fuera,
-    orden, onOrden: (o) => update({ orden: o === 'relevance' ? null : o }),
+    orden, onOrden: (o) => update({ orden: o === 'relevance' ? null : o }, { replace: true }),
     cargando: productos.cargando, error: productos.error, onReintentar: productos.reintentar,
     hayMas: productos.hayMas, cargandoMas: productos.cargandoMas, onVerMas: productos.verMas,
     onElegir: elegirProducto,

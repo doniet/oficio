@@ -64,14 +64,14 @@ function useUrlFilters() {
   const [params, setParams] = useSearchParams();
   const get = (k: string) => params.get(k) ?? '';
   // Cualquier cambio de filtro vuelve a la página 1; cambiar de provincia invalida el municipio.
-  const update = (patch: Record<string, string | null>, keepPage = false) => {
+  const update = (patch: Record<string, string | null>, opts: { keepPage?: boolean; replace?: boolean } = {}) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) {
       if (v) next.set(k, v); else next.delete(k);
     }
     if ('province' in patch && !('municipality' in patch) && patch.province !== params.get('province')) next.delete('municipality');
-    if (!keepPage) next.delete('page');
-    setParams(next);
+    if (!opts.keepPage) next.delete('page');
+    setParams(next, opts.replace ? { replace: true } : undefined);
   };
   return { params, get, update };
 }

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useSearchParams } from 'react-router-dom';
+import { MemoryRouter, useNavigationType, useSearchParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Search from './Search';
 import { AuthProvider } from '../hooks/useAuth';
@@ -20,7 +20,7 @@ vi.mock('../services/api', async () => {
     serviceApi: { ...real.serviceApi, getAll: vi.fn() },
     providerApi: { ...real.providerApi, getAll: vi.fn() },
     catalogApi: { ...real.catalogApi, search: vi.fn() },
-    mapaApi: { ...real.mapaApi, buscar: vi.fn() },
+    mapaApi: { ...real.mapaApi, buscar: vi.fn(), productos: vi.fn() },
     configApi: { ...real.configApi, get: vi.fn() },
     tasaApi: { ...real.tasaApi, get: vi.fn() },
   };
@@ -33,7 +33,8 @@ const PAGINA_VACIA = { page: 1, limit: 12, total: 0, totalPages: 1 };
 // es justo lo que `update()` decide.
 function EspiaDeUrl() {
   const [params] = useSearchParams();
-  return <div data-testid="url">{params.toString()}</div>;
+  const navegacion = useNavigationType();
+  return <div data-testid="url" data-navegacion={navegacion}>{params.toString()}</div>;
 }
 
 function montar(entradaInicial: string) {
@@ -69,6 +70,7 @@ describe('Search — el switch lista/mapa conserva la URL', () => {
     vi.mocked(providerApi.getAll).mockResolvedValue({ data: { providers: [], pagination: PAGINA_VACIA } } as never);
     vi.mocked(catalogApi.search).mockResolvedValue({ data: { items: [], total: 0, page: 1, pages: 1 } } as never);
     vi.mocked(mapaApi.buscar).mockResolvedValue({ puntos: [], celda: 0.01, hay_mas: false });
+    vi.mocked(mapaApi.productos).mockResolvedValue({ dentro: { items: [], total: 0, page: 1, pages: 1 }, fuera: [] } as never);
     vi.mocked(configApi.get).mockResolvedValue({ data: { demo: false, google: null, google_client_id: null } } as never);
     vi.mocked(tasaApi.get).mockResolvedValue({ data: { usd: 1 } } as never);
   });
@@ -155,5 +157,19 @@ describe('Search — el switch lista/mapa conserva la URL', () => {
     expect(url.get('vista')).toBeNull();
     expect(url.get('tab')).toBe('negocios');
     expect(url.get('q')).toBe('pan');
+  });
+
+  it('5. cambiar el orden de los productos reemplaza la entrada de historial en vez de apilar otra', async () => {
+    // Con un pin: sin resultados `usarMapa` salta sola de pestaña y la lista desaparece.
+    vi.mocked(mapaApi.buscar).mockResolvedValue({
+      puntos: [{ id: 'p1', tipo: 'negocio', nombre: 'Dulcería', lat: 23, lng: -82, plan: 'free', aproximado: false, detras: 0, cy: 0, cx: 0, resumen: '' }],
+      celda: 0.01, hay_mas: false,
+    });
+    montar('/explorar?vista=mapa&tab=productos&q=cake');
+    await waitFor(() => expect(mapaApi.productos).toHaveBeenCalled(), { timeout: 2000 });
+    const boton = await screen.findByRole('button', { name: 'Menor precio' }, { timeout: 2000 });
+    fireEvent.click(boton);
+    expect(urlActual().get('orden')).toBe('price_asc');
+    expect(screen.getByTestId('url').getAttribute('data-navegacion')).toBe('REPLACE');
   });
 });
