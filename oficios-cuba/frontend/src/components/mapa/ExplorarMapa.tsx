@@ -38,6 +38,9 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const [verProductos, setVerProductos] = useState(false);
   // El producto tocado: marca su fila al volver y va primero en la ficha de su negocio.
   const [productoMarcado, setProductoMarcado] = useState<ProductoMapa | null>(null);
+  // La ficha abierta salió de la lista de productos (y no de un pin o de una celda): solo entonces
+  // ofrece volver a ella. `productoMarcado` sobrevive a la vuelta para desplazar la lista.
+  const [fichaDeProductos, setFichaDeProductos] = useState(false);
   const [resaltado, setResaltado] = useState<{ id: string; lat: number; lng: number } | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const esEscritorio = usarEsEscritorio();
@@ -104,6 +107,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
 
   const abrirPunto = useCallback((p: PuntoMapa) => {
     setProductoMarcado(null);
+    setFichaDeProductos(false);
     setLista(null);
     setErrorLista('');
     setPunto(p);
@@ -111,6 +115,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
   }, [apartarDelPanel]);
 
   const abrirLista = useCallback((ps: PuntoMapa[], error?: string, reintentar?: () => void) => {
+    setFichaDeProductos(false);
     setPunto(null);
     setListaPrevia(null);
     setErrorLista(error ?? '');
@@ -123,6 +128,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
   const elegirDeLista = useCallback((p: PuntoMapa) => {
     // Se recuerda la lista para poder volver a ella sin pedirla otra vez.
     setListaPrevia(lista);
+    setFichaDeProductos(false);
     setLista(null);
     setPunto(p);
     apartarDelPanel(p);
@@ -142,6 +148,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
     };
     setResaltado(null);
     setProductoMarcado(p);
+    setFichaDeProductos(true);
     setLista(null);
     setListaPrevia(null);
     setPunto(negocio);
@@ -162,7 +169,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
   // Hay panel lateral tapando la izquierda del mapa. Lo miran dos: los controles flotantes, que se
   // apartan a su derecha, y el CSS del control de zoom, que vive abajo a la izquierda — es decir,
   // debajo del panel — y sin apartarse deja de recibir clics.
-  const desdeProductos = Boolean(punto && productoMarcado && punto.id === productoMarcado.provider_id);
+  const desdeProductos = Boolean(fichaDeProductos && punto && productoMarcado && punto.id === productoMarcado.provider_id);
   const panelProductos: PropsListaProductos | null = tab === 'productos' && verProductos ? {
     dentro: productos.dentro, total: productos.total, fuera: productos.fuera,
     orden, onOrden: (o) => update({ orden: o === 'relevance' ? null : o }),
@@ -215,7 +222,7 @@ export default function ExplorarMapa({ get, update, categorias }: {
         onElegirDeLista={elegirDeLista}
         productoMarcado={desdeProductos ? productoMarcado : null}
         etiquetaVolver={desdeProductos ? `${productos.total} ${productos.total === 1 ? 'producto' : 'productos'}` : undefined}
-        onVolverALista={desdeProductos ? volverAProductos : listaPrevia ? volverALista : undefined}
+        onVolverALista={listaPrevia ? volverALista : desdeProductos ? volverAProductos : undefined}
         onCerrar={cerrarPanel}
       />
 

@@ -335,6 +335,26 @@ describe('ExplorarMapa — lista de productos', () => {
     expect(await screen.findByRole('heading', { name: '3 productos en esta zona' })).toBeTruthy();
   });
 
+  it('una ficha abierta desde una celda no ofrece volver a productos aunque el producto tocado sea de ese negocio', async () => {
+    vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a'), producto('b')]));
+    const agrupado = { ...punto('neg-x', -76), detras: 2 };
+    vi.mocked(mapaApi.celda).mockResolvedValue({ puntos: [punto('neg-b', -76), punto('neg-c', -76)], hay_mas: false } as never);
+    const { container } = montar([agrupado], enProductos());
+    fireEvent.click(await screen.findByText('Producto b'));
+    fireEvent.click(await screen.findByRole('button', { name: /2 productos/ }));
+    await screen.findByRole('heading', { name: '2 productos en esta zona' });
+
+    const pin = container.querySelector('.leaflet-marker-icon') as HTMLElement;
+    await act(async () => { pin.click(); await espera(30); });
+    fireEvent.click(await screen.findByText('Negocio neg-b'));
+
+    expect(await screen.findByRole('button', { name: /Volver a la lista/ })).toBeTruthy();
+    expect(screen.queryByText('Lo que tocaste')).toBeNull();
+    expect(screen.queryByRole('button', { name: /2 productos/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Volver a la lista/ }));
+    expect(await screen.findByText('Negocio neg-c')).toBeTruthy();
+  });
+
   // Review Focus 5.
   it('tocar un pin con la lista abierta y cerrar su ficha deja «Ver N productos», no un panel vacío', async () => {
     vi.mocked(mapaApi.productos).mockResolvedValue(respuesta([producto('a')]));
