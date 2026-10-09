@@ -1,4 +1,4 @@
-import type { Bbox, MapaProductosRespuesta, OrdenProductos, ProductoMapa, PuntoMapa } from '@oficio/shared';
+import type { Bbox, CatalogItem, MapaProductosRespuesta, OrdenProductos, ProductoMapa, PuntoMapa } from '@oficio/shared';
 import { configApi } from './api';
 
 export const ORDENES_PRODUCTOS: { valor: OrdenProductos; etiqueta: string }[] = [
@@ -56,4 +56,10 @@ export function cajaQueIncluye(b: Bbox, punto: { lat: number; lng: number }): Bb
 export function claveProductos(zona: Bbox | null, q: string, category: string, sort: OrdenProductos): string {
   if (!zona) return '';
   return JSON.stringify([zona.sur, zona.oeste, zona.norte, zona.este, q, category, sort]);
+}
+
+/** El tocado va primero aunque el catálogo filtrado no lo traiga: si la búsqueda coincidió por el
+ *  nombre del negocio, el catálogo del negocio (que solo mira el artículo) no lo devuelve. */
+export function articulosConMarcado<T extends CatalogItem>(items: T[], marcado: T | null | undefined): T[] {
+  return marcado ? [marcado, ...items.filter((i) => i.id !== marcado.id)] : items;
 }

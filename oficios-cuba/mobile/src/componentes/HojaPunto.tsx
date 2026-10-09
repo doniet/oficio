@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import type { PuntoMapa } from '@oficio/shared';
+import type { CatalogItem, PuntoMapa } from '@oficio/shared';
 import FichaPunto from './FichaPunto';
 import ListaCelda from './ListaCelda';
 import { accionAtras } from '../lib/hojaPunto';
@@ -22,7 +22,7 @@ const PUNTOS_ANCLAJE = [`${ANCLA_ASOMADA * 100}%`, `${ANCLA_ABIERTA * 100}%`];
  * Hoja inferior que se abre al tocar un punto del mapa. La monta explorar.tsx (no MapaExplorar):
  * el mapa solo avisa con `onAbrir`, quién está abierto vive en la pantalla, igual que en la web.
  */
-export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambiaIndice, onElegirDeLista, onReintentarLista, onVolverALista }: {
+export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambiaIndice, onElegirDeLista, onReintentarLista, onVolverALista, tab, q, productoMarcado, etiquetaVolver }: {
   punto: PuntoMapa | null;
   lista?: PuntoMapa[] | null;
   errorLista?: string;
@@ -36,6 +36,14 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
   onReintentarLista?(): void;
   /** Volver a la lista de la que salió esta ficha. Que exista ES la señal de que hay lista previa. */
   onVolverALista?(): void;
+  /** Pestaña del mapa: con `'productos'` la ficha enseña el catálogo filtrado en lugar de Servicios. */
+  tab?: string;
+  /** Texto de búsqueda activo, para filtrar el catálogo del negocio con el mismo criterio. */
+  q?: string;
+  /** El producto tocado en la lista de productos: va primero y marcado. */
+  productoMarcado?: CatalogItem | null;
+  /** Texto del botón de volver. Por defecto «Volver a la lista». */
+  etiquetaVolver?: string;
 }) {
   const sheetRef = useRef<BottomSheet>(null);
   // El botón físico Atrás y el cierre por `onClose` de la propia hoja necesitan la última
@@ -116,7 +124,8 @@ export default function HojaPunto({ punto, lista, errorLista, onCerrar, onCambia
             onCerrar={() => sheetRef.current?.close()}
           />
         ) : punto ? (
-          <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()} onVolverALista={onVolverALista} />
+          <FichaPunto punto={punto} desplegada={indiceActual === 1} onCerrar={() => sheetRef.current?.close()} onVolverALista={onVolverALista}
+            tab={tab} q={q} productoMarcado={productoMarcado} etiquetaVolver={etiquetaVolver} />
         ) : null}
       </BottomSheetScrollView>
     </BottomSheet>

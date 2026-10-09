@@ -25,6 +25,13 @@ import { brand, fuentes, ink, paper, radios, sand } from '../../src/lib/tema';
 
 type Categoria = { slug: string; nombre: string };
 type Vista = 'lista' | 'mapa';
+type PestanaMapa = 'servicios' | 'negocios' | 'productos';
+
+const PESTANAS_MAPA: { valor: PestanaMapa; etiqueta: string; placeholder: string }[] = [
+  { valor: 'servicios', etiqueta: 'Servicios', placeholder: 'Electricista, clases de inglés…' },
+  { valor: 'negocios', etiqueta: 'Negocios', placeholder: 'Panadería, cafetería, taller…' },
+  { valor: 'productos', etiqueta: 'Productos', placeholder: 'Cake, breaker, zapatos, pintura…' },
+];
 
 export default function Explorar() {
   // `t` cambia en cada navegación desde Inicio: así un mismo chip vuelve a aplicarse aunque el
@@ -41,6 +48,7 @@ export default function Explorar() {
   // aterriza en él. Un mapa es la vista más cara de cargar en una conexión cubana lenta, y un
   // servicio se elige por precio y foto — algo que un mapa no puede mostrar.
   const [vista, setVista] = useState<Vista>('lista');
+  const [tab, setTab] = useState<PestanaMapa>('servicios');
   const [panel, setPanel] = useState<EstadoPanel>(ESTADO_PANEL_VACIO);
   // -1 cerrada, 0 asomada, 1 abierta. Lo mantiene esta pantalla (no HojaPunto) porque también lo
   // necesita el mapa, para no quedar tapado — ver `altoReservado` más abajo.
@@ -91,7 +99,7 @@ export default function Explorar() {
   useEffect(() => {
     setPanel(reduceCerrar);
     setIndiceHoja(-1);
-  }, [q, categoria?.slug]);
+  }, [q, categoria?.slug, tab]);
 
   // 0 % cuando está cerrada; si no, la fracción del anclaje actual (30 % o 85 %) del mismo
   // contenedor que mide `onLayout` más abajo — el mismo que usa HojaPunto para sus snapPoints
@@ -129,7 +137,7 @@ export default function Explorar() {
           <TextInput
             value={texto}
             onChangeText={setTexto}
-            placeholder="Electricista, clases de inglés…"
+            placeholder={vista === 'mapa' ? PESTANAS_MAPA.find((p) => p.valor === tab)!.placeholder : PESTANAS_MAPA[0].placeholder}
             placeholderTextColor={ink[300]}
             returnKeyType="search"
             onSubmitEditing={(ev) => setQ(ev.nativeEvent.text.trim())}
@@ -144,6 +152,22 @@ export default function Explorar() {
         </View>
         <Boton titulo="Buscar" onPress={enviar} />
       </View>
+
+      {vista === 'mapa' ? (
+        <View style={e.switch} accessibilityRole="tablist">
+          {PESTANAS_MAPA.map((p) => (
+            <Pressable
+              key={p.valor}
+              onPress={() => setTab(p.valor)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === p.valor }}
+              style={[e.switchBoton, e.pestana, tab === p.valor && e.switchBotonActivo]}
+            >
+              <Text style={[e.switchTexto, tab === p.valor && e.switchTextoActivo]} numberOfLines={1}>{p.etiqueta}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {categoria ? (
         <View style={e.chips}>
@@ -222,7 +246,7 @@ export default function Explorar() {
             // sin acoplar esta pantalla a los valores animados internos de HojaPunto.
             <View style={{ flex: 1, paddingBottom: altoReservado }}>
               <MapaExplorar
-                tab="servicios"
+                tab={tab}
                 q={q}
                 category={categoria?.slug ?? ''}
                 seleccionadoId={panel.punto?.id ?? null}
@@ -241,6 +265,9 @@ export default function Explorar() {
             onVolverALista={panel.listaPrevia ? alVolverALista : undefined}
             onCerrar={alCerrarHoja}
             onCambiaIndice={setIndiceHoja}
+            tab={tab}
+            q={q}
+            productoMarcado={panel.productoMarcado}
           />
         </View>
       </SafeAreaView>
@@ -256,6 +283,7 @@ const e = StyleSheet.create({
   switchBotonActivo: { backgroundColor: brand[600] },
   switchTexto: { fontFamily: fuentes.textoFuerte, fontSize: 13, color: ink[700] },
   switchTextoActivo: { color: '#ffffff' },
+  pestana: { paddingHorizontal: 12 },
   filaBuscar: { flexDirection: 'row', gap: 8 },
   campo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderWidth: 1, borderColor: sand[300], borderRadius: radios.campo, backgroundColor: '#ffffff', paddingHorizontal: 12 },
   input: { flex: 1, minHeight: 46, fontFamily: fuentes.texto, fontSize: 15, color: ink[900] },

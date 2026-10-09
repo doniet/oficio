@@ -1,6 +1,6 @@
 import type { ProductoMapa } from '@oficio/shared';
 import {
-  ORDENES_PRODUCTOS, cajaQueIncluye, claveProductos, lugarYDistancia, pedirProductos,
+  ORDENES_PRODUCTOS, articulosConMarcado, cajaQueIncluye, claveProductos, lugarYDistancia, pedirProductos,
   puntoDesdeProducto, qsProductos, textoVerProductos, tituloProductos,
 } from '../src/lib/productosMapa';
 
@@ -89,5 +89,24 @@ describe('claveProductos', () => {
     expect(claveProductos(null, 'a', '', 'relevance')).toBe('');
     expect(claveProductos(base, 'a', '', 'relevance')).not.toBe(claveProductos(base, 'a', '', 'price_asc'));
     expect(claveProductos(base, 'a', '', 'relevance')).toBe(claveProductos({ ...base }, 'a', '', 'relevance'));
+  });
+});
+
+describe('articulosConMarcado', () => {
+  const a = producto({ id: 'a' });
+  const b = producto({ id: 'b' });
+  const c = producto({ id: 'c' });
+
+  it('sin marcado deja la lista igual', () => {
+    expect(articulosConMarcado([a, b], null)).toEqual([a, b]);
+  });
+  it('pone el marcado primero', () => {
+    expect(articulosConMarcado([a, b, c], c).map((x) => x.id)).toEqual(['c', 'a', 'b']);
+  });
+  it('no duplica si el catálogo ya lo trae', () => {
+    expect(articulosConMarcado([a, b], a).map((x) => x.id)).toEqual(['a', 'b']);
+  });
+  it('lo incluye aunque el catálogo filtrado venga vacío', () => {
+    expect(articulosConMarcado([], b).map((x) => x.id)).toEqual(['b']);
   });
 });
