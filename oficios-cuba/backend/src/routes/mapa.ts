@@ -384,7 +384,9 @@ router.get('/productos', asyncHandler(async (req, res) => {
   const { q: texto, category, sort = 'relevance' } = queryTextos(req.query, ['q', 'category', 'sort'] as const);
   if (!ORDENES_PRODUCTOS.includes(sort as OrdenProductos)) throw new AppError('Orden no válido', 400);
   const visible = leerBbox(typeof req.query.bbox === 'string' ? req.query.bbox : undefined);
-  const page = Math.max(1, Number(req.query.page) || 1);
+  // Entero y finito: un decimal o un infinito (`1e400`) llegarían a SQL como OFFSET inválido y acabarían en 404.
+  const n = Math.floor(Number(req.query.page));
+  const page = Number.isFinite(n) && n >= 1 ? n : 1;
 
   const { where, params, coincide } = filtroProductos(texto, category);
   // ST_MakeEnvelope toma (oeste, sur, este, norte): OTRO orden que el bbox de la API.

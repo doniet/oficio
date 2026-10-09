@@ -144,6 +144,15 @@ describe('GET /api/mapa/productos — dentro', () => {
     expect(r.body.fuera).toEqual([]);
   });
 
+  it('una página no entera o infinita se trata como entera o como la primera, no como 404', async () => {
+    const decimal = await pedir({ q: 'cake', page: '1.3' });
+    expect(decimal.status).toBe(200);
+    expect(decimal.body.dentro.page).toBe(1);
+    const infinita = await pedir({ q: 'cake', page: '1e400' });
+    expect(infinita.status).toBe(200);
+    expect(infinita.body.dentro.page).toBe(1);
+  });
+
   it('un perfil «zona» se filtra por su punto publicado, no por su casa', async () => {
     const d = 0.0003; // ~33 × 31 m: la esquina queda a ~45 m, muy por debajo de los 100 m mínimos del desplazamiento
     const casa = `${LAT_ZONA_EXACTA - d},${LNG_ZONA_EXACTA - d},${LAT_ZONA_EXACTA + d},${LNG_ZONA_EXACTA + d}`;
