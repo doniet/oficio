@@ -315,6 +315,7 @@ router.get('/celda', asyncHandler(async (req, res) => {
 const ORDENES_PRODUCTOS = ['relevance', 'price_asc', 'price_desc'] as const;
 type OrdenProductos = (typeof ORDENES_PRODUCTOS)[number];
 const POR_PAGINA_PRODUCTOS = 20;
+const TOPE_FUERA = 10;
 
 // En CUP para poder comparar monedas. Con la tasa de RESPALDO, como el filtro de precio de
 // /services: la del día vive en nginx (/api/tasas) y la API no tiene salida para pedirla.
@@ -407,9 +408,28 @@ router.get('/productos', asyncHandler(async (req, res) => {
     ) x ORDER BY ${orden} LIMIT $${conPagina.length - 1} OFFSET $${conPagina.length}
   `, conPagina);
 
+  // `fuera` solo en la primera página: «Ver más» pagina lo de la zona, no lo de alrededor.
+  let fuera: ReturnType<typeof aProductoMapa>[] = [];
+  if (page === 1) {
+    const conCentro = [...params, (visible.oeste + visible.este) / 2, (visible.sur + visible.norte) / 2, TOPE_FUERA];
+    const n = conCentro.length;
+    const centro = `ST_SetSRID(ST_MakePoint($${n - 2}, $${n - 1}), 4326)::geography`;
+    // Primero los TOPE_FUERA más cercanos (KNN `<->`, que usa el GiST de punto_pub); después, entre
+    // esos, el orden pedido. Así «Menor precio» no trae un producto barato de la otra punta de Cuba.
+    const ordenFuera = sort === 'relevance' ? 'distancia_m, id' : ORDEN_PRECIO[sort as 'price_asc' | 'price_desc'];
+    const filasFuera = await q<any>(`
+      SELECT * FROM (
+        SELECT ${COLUMNAS_PRODUCTO_MAPA}, ${PRECIO_CUP_ARTICULO} AS precio_cup, ST_Distance(pp.punto_pub, ${centro}) AS distancia_m
+        ${JOINS_PRODUCTOS} ${where} AND NOT ST_Intersects(pp.punto_pub, ${caja})
+        ORDER BY pp.punto_pub <-> ${centro}, ci.id LIMIT $${n}
+      ) x ORDER BY ${ordenFuera}
+    `, conCentro);
+    fuera = filasFuera.map(aProductoMapa);
+  }
+
   res.json({
     dentro: { items: filas.map(aProductoMapa), total, page, pages: Math.max(1, Math.ceil(total / POR_PAGINA_PRODUCTOS)) },
-    fuera: [],
+    fuera,
   });
 }));
 

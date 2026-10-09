@@ -76,6 +76,13 @@ beforeAll(async () => {
     [zona.providerId],
   ))!;
   LAT_ZONA_PUB = pub.lat; LNG_ZONA_PUB = pub.lng;
+
+  // Fuera de VISIBLE, a distintas distancias del centro (22.05, -79.95).
+  const f1 = await negocio('Pastelería Cerca', 22.15, -79.95); // ~11 km
+  await articulo(f1.auth, 'Cake de Oreo', { price: 25, price_currency: 'USD' }); // ≥ 5000 CUP con cualquier tasa ≥ 200
+  const f2 = await negocio('Pastelería Lejos', 22.40, -79.95); // ~39 km
+  await articulo(f2.auth, 'Cake tres leches', { price: 2800 });
+  for (let i = 1; i <= 9; i++) await articulo(f2.auth, `Cake extra ${i}`, { price: 3000 + i });
 });
 
 describe('GET /api/mapa/productos — dentro', () => {
@@ -152,5 +159,49 @@ describe('GET /api/mapa/productos — dentro', () => {
     expect((await pedir({ sort: 'barato' })).status).toBe(400);
     expect((await api.get('/api/mapa/productos').query({ bbox: '25,-82,26,-81' })).status).toBe(400);
     expect((await api.get('/api/mapa/productos')).status).toBe(400);
+  });
+});
+
+describe('GET /api/mapa/productos — fuera', () => {
+  it('trae como máximo 10, los más cercanos, y por distancia con relevance', async () => {
+    const r = await pedir({ q: 'cake' });
+    const fuera = r.body.fuera;
+    expect(fuera).toHaveLength(10);
+    expect(nombres(fuera).slice(0, 2)).toEqual(['Cake marquesina', 'Cake de Oreo']);
+    const km = fuera.map((p: { distancia_km: number }) => p.distancia_km);
+    expect(km).toEqual([...km].sort((a, b) => a - b));
+    expect(fuera[0].distancia_km).toBeCloseTo(7.8, 0);
+  });
+
+  it('nunca repite nada de dentro', async () => {
+    const r = await pedir({ q: 'cake' });
+    const ids = new Set(r.body.dentro.items.map((p: { id: string }) => p.id));
+    expect(r.body.fuera.some((p: { id: string }) => ids.has(p.id))).toBe(false);
+  });
+
+  it('con price_asc se ordena por precio en CUP entre los 10 más cercanos', async () => {
+    const r = await pedir({ q: 'cake', sort: 'price_asc' });
+    const n = nombres(r.body.fuera);
+    expect(n).toHaveLength(10);
+    // 900 CUP el más barato; 25 USD (≥ 5000 CUP) el más caro, por encima de los 2800-3009 CUP de la tienda lejana.
+    expect(n[0]).toBe('Cake marquesina');
+    expect(n[n.length - 1]).toBe('Cake de Oreo');
+  });
+
+  it('no trae ocultos, agotados ni de plan Gratis', async () => {
+    const r = await pedir({ q: 'cake' });
+    expect(nombres(r.body.fuera)).not.toContain('Cake secreto');
+    expect(nombres(r.body.fuera)).not.toContain('Cake gratis');
+    expect(nombres(r.body.fuera)).not.toContain('Cake agotado');
+  });
+
+  it('la distancia se mide hasta el punto publicado de un perfil «zona»', async () => {
+    const r = await pedir({ q: 'escondido' });
+    const [p] = r.body.fuera;
+    const esperado = (await qOne<{ m: number }>(
+      `SELECT ST_Distance(punto_pub, ST_SetSRID(ST_MakePoint(-79.95, 22.05), 4326)::geography) AS m
+         FROM provider_profiles WHERE business_name = 'Dulces Zona'`,
+    ))!.m;
+    expect(p.distancia_km).toBe(Math.round(esperado / 100) / 10);
   });
 });
